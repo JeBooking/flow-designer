@@ -32,9 +32,16 @@ export default class DiagnosisRenderer extends BaseRenderer {
       'font-weight': 'bold',
       'pointer-events': 'none',
     })
-    marker.textContent = { investigation: '?', conclusion: '=', remediation: '✓', escalation: '↑' }[
-      kind
-    ]
+    marker.textContent = {
+      investigation: '?',
+      investigationAction: '⚙',
+      conclusion: '=',
+      remediation: '✓',
+      deepDiagnosis: '↻',
+      jump: '↗',
+      problemSolved: '✓',
+      escalation: '↑',
+    }[kind]
     append(parent, marker)
     return shape
   }

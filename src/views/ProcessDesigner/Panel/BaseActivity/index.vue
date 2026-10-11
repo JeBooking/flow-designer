@@ -8,6 +8,7 @@ import { isIdValid } from '@/views/ProcessDesigner/utils/ValidationUtil.ts'
 import { ElMessage } from 'element-plus'
 import { useBpmnContextService } from '@/hooks/useService.ts'
 import { getBusinessObject } from 'bpmn-js/lib/util/ModelUtil'
+import { isFixedDiagnosisNode } from '@/views/ProcessDesigner/Diagnosis/model'
 
 defineOptions({
   name: 'BaseActivity',
@@ -23,6 +24,9 @@ const propertiesByName = computed(() => {
   const businessObject = getBusinessObject(selectedElement)
   return businessObject?.$descriptor?.propertiesByName || {}
 })
+const showEditableName = computed(
+  () => propertiesByName.value['name'] && !isFixedDiagnosisNode(selectedElement),
+)
 const updateId = (val: string) => {
   const msg = isIdValid(selectedElement, val)
   if (msg) {
@@ -45,7 +49,7 @@ const updateId = (val: string) => {
                 :placeholder="$t('ui.enterNodeId')"
               />
             </el-form-item>
-            <el-form-item :label="$t('ui.name')" v-if="propertiesByName['name']">
+            <el-form-item :label="$t('ui.name')" v-if="showEditableName">
               <el-input v-model="name" :placeholder="$t('ui.enterNodeName')" />
             </el-form-item>
             <el-form-item :label="$t('ui.name')" v-else-if="propertiesByName['text']">

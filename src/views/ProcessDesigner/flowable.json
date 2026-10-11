@@ -12,6 +12,8 @@
       "extends": ["bpmn:Task"],
       "properties": [
         { "name": "diagnosisKind", "isAttr": true, "type": "String" },
+        { "name": "conclusionText", "isAttr": true, "type": "String" },
+        { "name": "actionText", "isAttr": true, "type": "String" },
         { "name": "observation", "isAttr": true, "type": "String" },
         { "name": "acquisition", "isAttr": true, "type": "String" },
         { "name": "referenceImage", "isAttr": true, "type": "String" },

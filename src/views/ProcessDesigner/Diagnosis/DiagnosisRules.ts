@@ -1,11 +1,23 @@
 import RuleProvider from 'diagram-js/lib/features/rules/RuleProvider'
 import type EventBus from 'diagram-js/lib/core/EventBus'
 import type { Connection, Element, Shape } from 'bpmn-js/lib/model/Types'
+import type {
+  Connection as DiagramConnection,
+  Element as DiagramElement,
+} from 'diagram-js/lib/model/Types'
 import { is } from 'bpmn-js/lib/util/ModelUtil'
 import {
   getDiagnosisKind,
   isDiagnosisConnectionAllowed,
 } from '@/views/ProcessDesigner/Diagnosis/model'
+
+const hasExistingConclusionSuccessor = (
+  source?: DiagramElement,
+  connection?: DiagramConnection,
+) => {
+  if (getDiagnosisKind(source as Element) !== 'conclusion') return false
+  return (source?.outgoing || []).some((outgoing) => outgoing !== connection)
+}
 
 export default class DiagnosisRules extends RuleProvider {
   static $inject = ['eventBus']
@@ -22,6 +34,7 @@ export default class DiagnosisRules extends RuleProvider {
         const source = context.source || context.connection?.source
         const target = context.target || context.connection?.target
         if (!isDiagnosisConnectionAllowed(source, target)) return false
+        if (hasExistingConclusionSuccessor(source, context.connection)) return false
       },
     )
     this.addRule('shape.create', 2000, (context: { source?: Shape; shape: Shape }) => {

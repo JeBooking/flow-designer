@@ -8,7 +8,8 @@ import HandTool from 'diagram-js/lib/features/hand-tool/HandTool'
 import GlobalConnect from 'diagram-js/lib/features/global-connect/GlobalConnect'
 import type { PaletteEntries } from 'diagram-js/lib/features/palette/PaletteProvider'
 import { assign } from 'min-dash'
-import { diagnosisKinds } from '@/views/ProcessDesigner/Diagnosis/model'
+import { diagnosisKinds, diagnosisNodeName } from '@/views/ProcessDesigner/Diagnosis/model'
+import type { DiagnosisKind } from '@/types/diagnosis'
 import { createElement } from '@/views/ProcessDesigner/utils/ElementUtil'
 import type BpmnFactory from 'bpmn-js/lib/features/modeling/BpmnFactory'
 
@@ -47,11 +48,14 @@ export default class CustomPaletteProvider extends PaletteProvider {
 
   getPaletteEntries() {
     const actions: PaletteEntries = super.getPaletteEntries()
-    for (const [kind, definition] of Object.entries(diagnosisKinds)) {
+    for (const [kind, definition] of Object.entries(diagnosisKinds) as [
+      DiagnosisKind,
+      (typeof diagnosisKinds)[DiagnosisKind],
+    ][]) {
       const createDiagnosis = (event: Event) => {
         const businessObject = createElement('bpmn:Task', this.bpmnFactory, {
           'flowable:diagnosisKind': kind,
-          name: this.translate(definition.label),
+          name: diagnosisNodeName(kind, this.translate),
         })
         this.create.start(
           event,

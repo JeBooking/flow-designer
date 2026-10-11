@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import type { Component, VNode } from 'vue'
 import Investigation from '@/views/ProcessDesigner/Panel/Investigation/index.vue'
+import Conclusion from '@/views/ProcessDesigner/Panel/Conclusion/index.vue'
+import InvestigationAction from '@/views/ProcessDesigner/Panel/InvestigationAction/index.vue'
+import FixedDiagnosis from '@/views/ProcessDesigner/Panel/FixedDiagnosis/index.vue'
 import { getDiagnosisKind } from '@/views/ProcessDesigner/Diagnosis/model'
 import BpmnModeler from 'bpmn-js/lib/Modeler'
 import type { Element } from 'bpmn-js/lib/model/Types'
@@ -68,6 +71,9 @@ const renderKey = ref('')
 const renderToken = ref('')
 const PANEL_COMPONENTS = {
   Investigation,
+  Conclusion,
+  InvestigationAction,
+  FixedDiagnosis,
   MessageEvent,
   BusinessRuleTask,
   CallActivity,
@@ -186,8 +192,13 @@ const setCurrentComponents = (element: Element) => {
     basic: [],
     other: [],
   }
-  if (getDiagnosisKind(element)) {
-    slots.basic.push('Investigation')
+  const diagnosisKind = getDiagnosisKind(element)
+  if (diagnosisKind) {
+    if (diagnosisKind === 'conclusion') slots.basic.push('Conclusion')
+    else if (diagnosisKind === 'investigation') slots.basic.push('Investigation')
+    else if (diagnosisKind === 'investigationAction') slots.basic.push('InvestigationAction')
+    else if (diagnosisKind === 'problemSolved' || diagnosisKind === 'escalation')
+      slots.basic.push('FixedDiagnosis')
   } else if (
     isEventDefinition(element, 'bpmn:CompensateEventDefinition') &&
     !is(element, 'bpmn:BoundaryEvent')

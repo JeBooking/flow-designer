@@ -1,7 +1,28 @@
 const uiText: Record<string, string> = {
+  结论: 'Conclusion',
+  排查动作: 'Investigation action',
+  排查动作内容: 'Investigation action',
+  排查动作描述: 'Action description',
+  '描述需要执行的机台动作；不要在此判断现象是否异常。':
+    'Describe the machine action to perform. Do not judge whether an observed symptom is abnormal here.',
+  请描述需要执行的机台动作: 'Describe the machine action to perform',
+  深度诊断: 'Deep diagnosis',
+  跳转节点: 'Jump node',
+  问题解决: 'Problem solved',
+  固定节点内容: 'Fixed node text',
+  修正为固定内容: 'Restore fixed text',
+  '结论内容（必填）': 'Conclusion text (required)',
+  '结论节点用于记录诊断过程中的判断，不代表最终结论。':
+    'A conclusion records a diagnostic judgment; it does not have to be final.',
+  '前序仅允许排查节点；后序必须且只能连接一项：处理动作或上升。':
+    'Predecessor: investigation only. Exactly one successor is required: a handling action or escalation.',
+  结论内容: 'Conclusion text',
+  请描述得到的结论: 'Describe the conclusion reached',
   需要继续排查: 'Further investigation is required',
   '前序仅允许开始事件、排查节点或结论节点；后序仅允许排查节点、结论节点、处置措施或上升。':
     'Predecessors: start event, investigation or conclusion. Successors: investigation, conclusion, remediation or escalation.',
+  '前序仅允许开始事件、排查节点或排查动作；后序仅允许排查节点、排查动作、结论、处理动作或上升。':
+    'Predecessors: start event, investigation or investigation action. Successors: investigation, investigation action, conclusion, handling action or escalation.',
   查看什么数据: 'Data to inspect',
   如何获取数据: 'Data acquisition',
   如何判断问题: 'Assessment criteria',

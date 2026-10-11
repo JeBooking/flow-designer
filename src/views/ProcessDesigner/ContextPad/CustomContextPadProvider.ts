@@ -21,7 +21,11 @@ import type ContextPad from 'diagram-js/lib/features/context-pad/ContextPad'
 import type { ContextPadTarget } from 'diagram-js/lib/features/context-pad/ContextPad'
 import type BpmnFactory from 'bpmn-js/lib/features/modeling/BpmnFactory'
 import { createElement } from '@/views/ProcessDesigner/utils/ElementUtil'
-import { diagnosisKinds, getDiagnosisKind } from '@/views/ProcessDesigner/Diagnosis/model'
+import {
+  diagnosisKinds,
+  diagnosisNodeName,
+  getDiagnosisKind,
+} from '@/views/ProcessDesigner/Diagnosis/model'
 import type { DiagnosisKind } from '@/types/diagnosis'
 
 export default class CustomContextPadProvider extends ContextPadProvider {
@@ -78,17 +82,28 @@ export default class CustomContextPadProvider extends ContextPadProvider {
     if (kind) {
       // 普通替换和快捷追加不保留诊断语义，诊断节点提供专用入口。
       delete actions.replace
-      if (kind === 'investigation') {
-        for (const key of Object.keys(actions)) {
-          if (key.startsWith('append.') || key === 'append') delete actions[key]
-        }
+      for (const key of Object.keys(actions)) {
+        if (key.startsWith('append.') || key === 'append') delete actions[key]
       }
       const successors: DiagnosisKind[] =
         kind === 'investigation'
-          ? ['investigation', 'conclusion', 'remediation', 'escalation']
-          : kind === 'conclusion'
+          ? [
+              'investigation',
+              'investigationAction',
+              'conclusion',
+              'remediation',
+              'jump',
+              'escalation',
+            ]
+          : kind === 'investigationAction'
             ? ['investigation']
-            : []
+            : kind === 'conclusion'
+              ? ['remediation', 'jump', 'escalation']
+              : kind === 'remediation'
+                ? ['remediation', 'jump', 'problemSolved', 'deepDiagnosis', 'escalation']
+                : kind === 'jump'
+                  ? ['remediation', 'jump', 'problemSolved', 'deepDiagnosis', 'escalation']
+                  : []
       for (const successor of successors) {
         const definition = diagnosisKinds[successor]
         const makeShape = () =>
@@ -96,7 +111,7 @@ export default class CustomContextPadProvider extends ContextPadProvider {
             type: 'bpmn:Task',
             businessObject: createElement('bpmn:Task', this.diagnosisBpmnFactory, {
               'flowable:diagnosisKind': successor,
-              name: this.translate(definition.label),
+              name: diagnosisNodeName(successor, this.translate),
             }),
           })
         actions[`append.diagnosis-${successor}`] = {
