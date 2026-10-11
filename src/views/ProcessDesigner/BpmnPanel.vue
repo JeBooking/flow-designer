@@ -47,7 +47,7 @@ import Advanced from './Panel/BaseActivity/Advanced.vue'
 import Participant from './Panel/Participant/index.vue'
 import type EventBus from 'diagram-js/lib/core/EventBus'
 import type Canvas from 'diagram-js/lib/core/Canvas'
-import { debounce, find } from 'min-dash'
+import { find } from 'min-dash'
 import type { RootLike } from 'diagram-js/lib/model/Types'
 import type { Injector } from 'didi'
 import { useBpmnContextService } from '@/hooks/useService.ts'
@@ -116,25 +116,29 @@ type PanelComponentKey = keyof typeof PANEL_COMPONENTS
 type PanelSlotName = 'default' | 'general' | 'basic' | 'other'
 type PanelSlots = Record<PanelSlotName, PanelComponentKey[]>
 
-eventBus.on('selection.changed', (e: { newSelection: Element[] }) => {
-  onSelectionChanged(e)
+const selectionChangedHandler = (e: unknown) => onSelectionChanged(e as { newSelection: Element[] })
+const elementsChangedHandler = (e: unknown) => onElementsChanged(e as { elements: Element[] })
+const rootAddedHandler = (e: unknown) => onRootAdded(e as { element?: RootLike })
+const replaceEndHandler = (e: unknown) =>
+  onReplaceEnd(e as { element?: Element; newElement?: Element })
+
+eventBus.on('selection.changed', selectionChangedHandler)
+eventBus.on('elements.changed', elementsChangedHandler)
+eventBus.on('root.added', rootAddedHandler)
+eventBus.on('replace.end', replaceEndHandler)
+onBeforeUnmount(() => {
+  eventBus.off('selection.changed', selectionChangedHandler)
+  eventBus.off('elements.changed', elementsChangedHandler)
+  eventBus.off('root.added', rootAddedHandler)
+  eventBus.off('replace.end', replaceEndHandler)
 })
-eventBus.on('elements.changed', (e) => {
-  onElementsChanged(e)
-})
-eventBus.on('root.added', (e) => {
-  onRootAdded(e)
-})
-eventBus.on('replace.end', (e) => {
-  onReplaceEnd(e)
-})
-const onReplaceEnd = (e: any) => {
+const onReplaceEnd = (e: { element?: Element; newElement?: Element }) => {
   const { element, newElement } = e
   if (element && newElement) {
     _update(newElement)
   }
 }
-const onRootAdded = (e: any) => {
+const onRootAdded = (e: { element?: RootLike }) => {
   let element = e.element
   if (!element) {
     element = canvas.getRootElement()
@@ -142,9 +146,9 @@ const onRootAdded = (e: any) => {
   if (isImplicitRoot(element)) {
     return
   }
-  _update(element)
+  _update(element as Element)
 }
-const onSelectionChanged = (e: any) => {
+const onSelectionChanged = (e: { newSelection?: Element[] }) => {
   const { newSelection = [] } = e
   const newElement = newSelection[0]
   const rootElement = canvas.getRootElement()
@@ -153,7 +157,7 @@ const onSelectionChanged = (e: any) => {
   }
   _update(newElement || rootElement)
 }
-const onElementsChanged = (e: any) => {
+const onElementsChanged = (e: { elements: Element[] }) => {
   const elements = e.elements
   if (selectedElement.value) {
     const updatedElement = findElement(elements, selectedElement.value)
@@ -162,11 +166,11 @@ const onElementsChanged = (e: any) => {
         selectedElement: updatedElement,
         injector,
       })
-      // _update(updatedElement)
+      setCurrentComponents(updatedElement)
     }
   }
 }
-const _update = debounce((element: Element) => {
+const _update = (element: Element) => {
   if (!element) {
     return
   }
@@ -181,9 +185,11 @@ const _update = debounce((element: Element) => {
   })
   setCurrentComponents(newSelectedElement)
   nextTick(() => {
-    eventBus.fire('propertiesPanel.updated', { element: newSelectedElement })
+    if (selectedElement.value === newSelectedElement) {
+      eventBus.fire('propertiesPanel.updated', { element: newSelectedElement })
+    }
   })
-}, 100)
+}
 const setCurrentComponents = (element: Element) => {
   const businessObject = getBusinessObject(element)
   const slots: PanelSlots = {
