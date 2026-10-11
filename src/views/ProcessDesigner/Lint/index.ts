@@ -1,7 +1,7 @@
 import StaticResolver from 'bpmnlint/lib/resolver/static-resolver'
 import diagnosisRequired from '@/views/ProcessDesigner/Lint/rules/diagnosis-required'
+import diagnosisTerminalReachable from '@/views/ProcessDesigner/Lint/rules/diagnosis-terminal-reachable.ts'
 import StartEventRequired from 'bpmnlint/rules/start-event-required'
-import EndEventRequired from 'bpmnlint/rules/end-event-required'
 import ConditionalFlows from 'bpmnlint/rules/conditional-flows'
 import adHocSubProcess from 'bpmnlint/rules/ad-hoc-sub-process'
 import fakeJoin from 'bpmnlint/rules/fake-join'
@@ -14,7 +14,8 @@ import noDisconnected from 'bpmnlint/rules/no-disconnected'
 import noDuplicateSequenceFlows from 'bpmnlint/rules/no-duplicate-sequence-flows'
 import noGatewayJoinFork from 'bpmnlint/rules/no-gateway-join-fork'
 import noImplicitSplit from 'bpmnlint/rules/no-implicit-split'
-import noImplicitEnd from 'bpmnlint/rules/no-implicit-end'
+import EndEventRequired from './rules/end-event-required.ts'
+import noImplicitEnd from './rules/no-implicit-end.ts'
 import noImplicitStart from 'bpmnlint/rules/no-implicit-start'
 // import noInclusiveGateway from 'bpmnlint/rules/no-inclusive-gateway'
 import noOverlappingElements from 'bpmnlint/rules/no-overlapping-elements'
@@ -46,6 +47,7 @@ import type { Config } from 'bpmnlint/lib/types'
 
 const resolver = new StaticResolver({
   'rule:bpmnlint/diagnosis-required': diagnosisRequired,
+  'rule:bpmnlint/diagnosis-terminal-reachable': diagnosisTerminalReachable,
   'rule:bpmnlint/ad-hoc-sub-process': adHocSubProcess,
   'rule:bpmnlint/conditional-flows': ConditionalFlows,
   'rule:bpmnlint/end-event-required': EndEventRequired,
@@ -91,6 +93,7 @@ const resolver = new StaticResolver({
 const config: Config = {
   rules: {
     'diagnosis-required': 'error',
+    'diagnosis-terminal-reachable': 'error',
     'ad-hoc-sub-process': 'error',
     'conditional-flows': 'error',
     'end-event-required': 'error',

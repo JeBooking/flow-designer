@@ -31,16 +31,26 @@ This project deeply integrates `bpmn-js` and provides Flowable-focused customiza
 
 ## Diagnostic nodes
 
-The palette includes Investigation, Conclusion, Remediation and Escalation tasks. Investigation
+The palette includes Investigation, Investigation Action, Conclusion, Remediation, Deep Diagnosis,
+Jump, Problem Solved and Escalation tasks. Investigation
 means “further investigation is required” and requires data to inspect, acquisition instructions,
 a reference image and assessment criteria. Upload a PNG, JPEG or WebP image (up to 5 MB); the image
-is embedded in BPMN XML for offline sharing. The other three types are placeholders.
+is embedded in BPMN XML for offline sharing. Conclusion is a text-only diagnostic judgment. It must
+follow an investigation and have exactly one successor: a handling action or escalation.
+Investigation Action records a machine action and may only connect from and to an Investigation.
+Remediation and Jump are handling actions; they may continue to another handling action, Deep
+Diagnosis, Problem Solved or Escalation. Jump may end its current diagnostic chain without reaching a final node.
+Problem Solved and Escalation are final nodes with fixed text.
+Every branch in a diagnostic chain must be able to reach Problem Solved or Escalation; a branch may
+instead end at Jump. Investigation/action loops remain valid when they can still reach one of these
+outcomes.
 
-An investigation only accepts a start event, another investigation or a conclusion as predecessor,
-and another investigation, conclusion, remediation or escalation as successor. Self-connections are rejected. These rules
-apply when drawing, reconnecting and inserting nodes; imported invalid connections and missing
-fields are reported by process validation. Drafts can still be saved with validation errors.
-Use Start → Investigation → Conclusion → Remediation → End for an initial example.
+Investigation accepts a start event, another investigation or an Investigation Action as predecessor.
+It may continue to another investigation, Investigation Action, conclusion or handling action.
+Self-connections are rejected. These rules apply when drawing, reconnecting and inserting nodes;
+imported invalid connections and missing fields are reported by process validation. Drafts can still
+be saved with validation errors.
+Use Start → Investigation → Conclusion → Remediation → Problem Solved for an initial example.
 
 All diagnostic fields use `flowable:` attributes on `bpmn:Task`, with command-stack undo/redo.
 This adds the authoring model only; code and manual generation are not implemented yet.
