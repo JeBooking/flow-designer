@@ -29,6 +29,22 @@ This project deeply integrates `bpmn-js` and provides Flowable-focused customiza
   - `unplugin-auto-import` + `unplugin-vue-components` for auto imports
   - ESLint + Prettier integrated
 
+## Diagnostic nodes
+
+The palette includes Investigation, Conclusion, Remediation and Escalation tasks. Investigation
+means “further investigation is required” and requires data to inspect, acquisition instructions,
+a reference image and assessment criteria. Upload a PNG, JPEG or WebP image (up to 5 MB); the image
+is embedded in BPMN XML for offline sharing. The other three types are placeholders.
+
+An investigation only accepts a start event, another investigation or a conclusion as predecessor,
+and another investigation, conclusion, remediation or escalation as successor. Self-connections are rejected. These rules
+apply when drawing, reconnecting and inserting nodes; imported invalid connections and missing
+fields are reported by process validation. Drafts can still be saved with validation errors.
+Use Start → Investigation → Conclusion → Remediation → End for an initial example.
+
+All diagnostic fields use `flowable:` attributes on `bpmn:Task`, with command-stack undo/redo.
+This adds the authoring model only; code and manual generation are not implemented yet.
+
 ## Related Project
 
 - If you are interested in a DingTalk-style flow designer: [lowflow-design](https://gitee.com/cai_xiao_feng/lowflow-design)

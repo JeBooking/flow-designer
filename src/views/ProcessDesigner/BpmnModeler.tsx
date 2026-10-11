@@ -1,4 +1,10 @@
-import { defineComponent, onMounted, type PropType, ref } from 'vue'
+import type { PropType } from 'vue'
+import DiagnosisModule from '@/views/ProcessDesigner/Diagnosis'
+import I18n from '@/languages'
+import type EventBus from 'diagram-js/lib/core/EventBus'
+import type { Linting } from 'bpmn-js-bpmnlint'
+import type ContextPad from 'diagram-js/lib/features/context-pad/ContextPad'
+import type Selection from 'diagram-js/lib/features/selection/Selection'
 import BpmnModeler from 'bpmn-js/lib/Modeler'
 import GridLineModule from 'diagram-js-grid-bg'
 // import GridModule from 'diagram-js-grid'
@@ -30,6 +36,14 @@ export default defineComponent({
   setup(props, { emit }) {
     const canvasRef = ref<HTMLDivElement>()
     const modeler = ref<BpmnModeler>()
+    watch(I18n.global.locale, () => {
+      // BPMN 菜单和校验覆盖层不在 Vue 模板内，需要通知它们重新翻译。
+      modeler.value?.get<EventBus>('eventBus').fire('i18n.changed')
+      modeler.value?.get<Linting>('linting').update()
+      const contextPad = modeler.value?.get<ContextPad>('contextPad')
+      const selected = modeler.value?.get<Selection>('selection').get()[0]
+      if (selected && contextPad?.isOpen()) contextPad.open(selected, true)
+    })
     onMounted(async () => {
       modeler.value = new BpmnModeler({
         container: canvasRef.value,
@@ -39,6 +53,7 @@ export default defineComponent({
           GridLineModule,
           // GridModule,
           CustomModeling,
+          DiagnosisModule,
           MinimapModule,
           Translate,
           LintModule,

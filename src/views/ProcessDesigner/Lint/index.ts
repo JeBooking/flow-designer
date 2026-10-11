@@ -1,4 +1,5 @@
 import StaticResolver from 'bpmnlint/lib/resolver/static-resolver'
+import diagnosisRequired from '@/views/ProcessDesigner/Lint/rules/diagnosis-required'
 import StartEventRequired from 'bpmnlint/rules/start-event-required'
 import EndEventRequired from 'bpmnlint/rules/end-event-required'
 import ConditionalFlows from 'bpmnlint/rules/conditional-flows'
@@ -44,6 +45,7 @@ import type { Config } from 'bpmnlint/lib/types'
 // import recommended from 'bpmnlint/config/recommended'
 
 const resolver = new StaticResolver({
+  'rule:bpmnlint/diagnosis-required': diagnosisRequired,
   'rule:bpmnlint/ad-hoc-sub-process': adHocSubProcess,
   'rule:bpmnlint/conditional-flows': ConditionalFlows,
   'rule:bpmnlint/end-event-required': EndEventRequired,
@@ -88,6 +90,7 @@ const resolver = new StaticResolver({
 })
 const config: Config = {
   rules: {
+    'diagnosis-required': 'error',
     'ad-hoc-sub-process': 'error',
     'conditional-flows': 'error',
     'end-event-required': 'error',

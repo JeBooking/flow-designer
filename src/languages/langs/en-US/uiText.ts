@@ -1,4 +1,28 @@
 const uiText: Record<string, string> = {
+  需要继续排查: 'Further investigation is required',
+  '前序仅允许开始事件、排查节点或结论节点；后序仅允许排查节点、结论节点、处置措施或上升。':
+    'Predecessors: start event, investigation or conclusion. Successors: investigation, conclusion, remediation or escalation.',
+  查看什么数据: 'Data to inspect',
+  如何获取数据: 'Data acquisition',
+  如何判断问题: 'Assessment criteria',
+  '写明数据名称、测点、单位和观察范围':
+    'Specify data names, measurement points, units and observation range',
+  '写明工具、操作步骤、采集条件和注意事项':
+    'Specify tools, steps, acquisition conditions and precautions',
+  '写明正常范围、异常判据及如何对照参考图':
+    'Specify normal ranges, fault criteria and how to compare with the reference image',
+  此项必填: 'This field is required',
+  排查参考图: 'Reference image',
+  请上传有效参考图: 'Upload a valid reference image',
+  '图片随流程保存，无需外网；支持 PNG、JPEG、WebP，最大 5 MB。':
+    'Images are saved with the process; no internet required. PNG, JPEG or WebP, up to 5 MB.',
+  移除参考图: 'Remove reference image',
+  '请选择不超过 5 MB 的 PNG、JPEG 或 WebP 图片':
+    'Choose a PNG, JPEG or WebP image no larger than 5 MB',
+  '图片读取失败，请重新选择有效图片':
+    'Unable to read the image. Choose a valid image and try again',
+  '占位节点：当前仅用于验证诊断流程的连接规则。':
+    'Placeholder node: currently used to verify diagnostic connection rules.',
   '警告：': 'Warning:',
   '检测到非法调试，请关闭后刷新重试！':
     'Unauthorized debugging detected. Close it and refresh to try again!',

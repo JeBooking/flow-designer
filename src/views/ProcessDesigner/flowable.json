@@ -8,6 +8,17 @@
   "associations": [],
   "types": [
     {
+      "name": "DiagnosisTask",
+      "extends": ["bpmn:Task"],
+      "properties": [
+        { "name": "diagnosisKind", "isAttr": true, "type": "String" },
+        { "name": "observation", "isAttr": true, "type": "String" },
+        { "name": "acquisition", "isAttr": true, "type": "String" },
+        { "name": "referenceImage", "isAttr": true, "type": "String" },
+        { "name": "assessment", "isAttr": true, "type": "String" }
+      ]
+    },
+    {
       "name": "EventListener",
       "superClass": ["Element"],
       "meta": {

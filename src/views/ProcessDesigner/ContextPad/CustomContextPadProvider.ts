@@ -19,6 +19,10 @@ import { assign } from 'min-dash'
 import type { ContextPadEntryAction } from 'diagram-js/lib/features/context-pad/ContextPadProvider.ts'
 import type ContextPad from 'diagram-js/lib/features/context-pad/ContextPad'
 import type { ContextPadTarget } from 'diagram-js/lib/features/context-pad/ContextPad'
+import type BpmnFactory from 'bpmn-js/lib/features/modeling/BpmnFactory'
+import { createElement } from '@/views/ProcessDesigner/utils/ElementUtil'
+import { diagnosisKinds, getDiagnosisKind } from '@/views/ProcessDesigner/Diagnosis/model'
+import type { DiagnosisKind } from '@/types/diagnosis'
 
 export default class CustomContextPadProvider extends ContextPadProvider {
   private readonly elementFactory: ElementFactory
@@ -26,6 +30,7 @@ export default class CustomContextPadProvider extends ContextPadProvider {
   private readonly translate: Translate
   private readonly appendPreview: AppendPreview
   private readonly autoPlace: AutoPlace | null = null
+  private readonly diagnosisBpmnFactory: BpmnFactory
 
   constructor(
     config: ContextPadConfig,
@@ -58,6 +63,7 @@ export default class CustomContextPadProvider extends ContextPadProvider {
       appendPreview,
     )
     this.elementFactory = elementFactory
+    this.diagnosisBpmnFactory = injector.get<BpmnFactory>('bpmnFactory')
     this.create = create
     this.translate = translate
     this.appendPreview = appendPreview
@@ -68,6 +74,46 @@ export default class CustomContextPadProvider extends ContextPadProvider {
 
   getContextPadEntries(element: Element): ContextPadEntries {
     const actions: ContextPadEntries = super.getContextPadEntries(element)
+    const kind = getDiagnosisKind(element)
+    if (kind) {
+      // 普通替换和快捷追加不保留诊断语义，诊断节点提供专用入口。
+      delete actions.replace
+      if (kind === 'investigation') {
+        for (const key of Object.keys(actions)) {
+          if (key.startsWith('append.') || key === 'append') delete actions[key]
+        }
+      }
+      const successors: DiagnosisKind[] =
+        kind === 'investigation'
+          ? ['investigation', 'conclusion', 'remediation', 'escalation']
+          : kind === 'conclusion'
+            ? ['investigation']
+            : []
+      for (const successor of successors) {
+        const definition = diagnosisKinds[successor]
+        const makeShape = () =>
+          this.elementFactory.createShape({
+            type: 'bpmn:Task',
+            businessObject: createElement('bpmn:Task', this.diagnosisBpmnFactory, {
+              'flowable:diagnosisKind': successor,
+              name: this.translate(definition.label),
+            }),
+          })
+        actions[`append.diagnosis-${successor}`] = {
+          group: 'model',
+          className: definition.icon,
+          title: this.translate(`Append ${definition.label}`),
+          action: {
+            click: (event: Event) => {
+              const shape = makeShape()
+              if (this.autoPlace) this.autoPlace.append(element as Shape, shape)
+              else this.create.start(event, shape, { source: element })
+            },
+            dragstart: (event: Event) => this.create.start(event, makeShape(), { source: element }),
+          },
+        }
+      }
+    }
     const previewAppend = (type: string) => {
       return (_: Event, target: ContextPadTarget) => {
         if (this.autoPlace) {

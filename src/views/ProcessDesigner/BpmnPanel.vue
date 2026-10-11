@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { type Component, h, nextTick, ref, shallowRef, type VNode } from 'vue'
+import type { Component, VNode } from 'vue'
+import Investigation from '@/views/ProcessDesigner/Panel/Investigation/index.vue'
+import { getDiagnosisKind } from '@/views/ProcessDesigner/Diagnosis/model'
 import BpmnModeler from 'bpmn-js/lib/Modeler'
 import type { Element } from 'bpmn-js/lib/model/Types'
 import type ElementRegistry from 'diagram-js/lib/core/ElementRegistry'
@@ -65,6 +67,7 @@ const renderComponent = shallowRef<Component>(BaseActivity)
 const renderKey = ref('')
 const renderToken = ref('')
 const PANEL_COMPONENTS = {
+  Investigation,
   MessageEvent,
   BusinessRuleTask,
   CallActivity,
@@ -183,7 +186,9 @@ const setCurrentComponents = (element: Element) => {
     basic: [],
     other: [],
   }
-  if (
+  if (getDiagnosisKind(element)) {
+    slots.basic.push('Investigation')
+  } else if (
     isEventDefinition(element, 'bpmn:CompensateEventDefinition') &&
     !is(element, 'bpmn:BoundaryEvent')
   ) {

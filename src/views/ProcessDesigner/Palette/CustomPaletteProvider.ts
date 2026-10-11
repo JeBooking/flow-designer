@@ -8,8 +8,22 @@ import HandTool from 'diagram-js/lib/features/hand-tool/HandTool'
 import GlobalConnect from 'diagram-js/lib/features/global-connect/GlobalConnect'
 import type { PaletteEntries } from 'diagram-js/lib/features/palette/PaletteProvider'
 import { assign } from 'min-dash'
+import { diagnosisKinds } from '@/views/ProcessDesigner/Diagnosis/model'
+import { createElement } from '@/views/ProcessDesigner/utils/ElementUtil'
+import type BpmnFactory from 'bpmn-js/lib/features/modeling/BpmnFactory'
 
 export default class CustomPaletteProvider extends PaletteProvider {
+  static $inject = [
+    'palette',
+    'create',
+    'elementFactory',
+    'spaceTool',
+    'lassoTool',
+    'handTool',
+    'globalConnect',
+    'translate',
+    'bpmnFactory',
+  ]
   private elementFactory: ElementFactory
   private create: Create
   private readonly translate: Translate
@@ -23,6 +37,7 @@ export default class CustomPaletteProvider extends PaletteProvider {
     handTool: HandTool,
     globalConnect: GlobalConnect,
     translate: Translate,
+    private bpmnFactory: BpmnFactory,
   ) {
     super(palette, create, elementFactory, spaceTool, lassoTool, handTool, globalConnect, translate)
     this.elementFactory = elementFactory
@@ -32,6 +47,24 @@ export default class CustomPaletteProvider extends PaletteProvider {
 
   getPaletteEntries() {
     const actions: PaletteEntries = super.getPaletteEntries()
+    for (const [kind, definition] of Object.entries(diagnosisKinds)) {
+      const createDiagnosis = (event: Event) => {
+        const businessObject = createElement('bpmn:Task', this.bpmnFactory, {
+          'flowable:diagnosisKind': kind,
+          name: this.translate(definition.label),
+        })
+        this.create.start(
+          event,
+          this.elementFactory.createShape({ type: 'bpmn:Task', businessObject }),
+        )
+      }
+      actions[`create.diagnosis-${kind}`] = {
+        group: 'diagnosis',
+        className: definition.icon,
+        title: this.translate(`Create ${definition.label}`),
+        action: { click: createDiagnosis, dragstart: createDiagnosis },
+      }
+    }
     const createUserTask = (event: Event) => {
       const userTask = this.elementFactory.createShape({ type: 'bpmn:UserTask' })
       this.create.start(event, userTask)
