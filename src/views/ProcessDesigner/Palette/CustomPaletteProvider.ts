@@ -7,7 +7,6 @@ import LassoTool from 'diagram-js/lib/features/lasso-tool/LassoTool'
 import HandTool from 'diagram-js/lib/features/hand-tool/HandTool'
 import GlobalConnect from 'diagram-js/lib/features/global-connect/GlobalConnect'
 import type { PaletteEntries } from 'diagram-js/lib/features/palette/PaletteProvider'
-import { assign } from 'min-dash'
 import { diagnosisKinds, diagnosisNodeName } from '@/views/ProcessDesigner/Diagnosis/model'
 import type { DiagnosisKind } from '@/types/diagnosis'
 import { createElement } from '@/views/ProcessDesigner/utils/ElementUtil'
@@ -69,39 +68,15 @@ export default class CustomPaletteProvider extends PaletteProvider {
         action: { click: createDiagnosis, dragstart: createDiagnosis },
       }
     }
-    const createUserTask = (event: Event) => {
-      const userTask = this.elementFactory.createShape({ type: 'bpmn:UserTask' })
-      this.create.start(event, userTask)
+    for (const key of Object.keys(actions)) {
+      if (
+        key.startsWith('create.') &&
+        key !== 'create.subprocess-expanded' &&
+        !key.startsWith('create.diagnosis-')
+      ) {
+        delete actions[key]
+      }
     }
-    assign(actions, {
-      'create.task': {
-        group: 'activity',
-        className: 'bpmn-icon-user-task',
-        title: this.translate('Create user task'),
-        action: {
-          click: createUserTask,
-          dragstart: createUserTask,
-        },
-      },
-    })
-    const createServiceTask = (event: Event) => {
-      const userTask = this.elementFactory.createShape({ type: 'bpmn:ServiceTask' })
-      this.create.start(event, userTask)
-    }
-    assign(actions, {
-      'create.service-task': {
-        group: 'activity',
-        className: 'bpmn-icon-service-task',
-        title: this.translate('Create service task'),
-        action: {
-          click: createServiceTask,
-          dragstart: createServiceTask,
-        },
-      },
-    })
-    delete actions['create.group']
-    delete actions['create.data-object']
-    delete actions['create.data-store']
     return actions
   }
 }
