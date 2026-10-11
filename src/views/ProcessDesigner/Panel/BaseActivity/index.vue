@@ -67,7 +67,7 @@ const updateId = (val: string) => {
     <slot></slot>
     <el-tab-pane :label="$t('ui.otherSettings')" name="other">
       <el-scrollbar>
-        <div class="other-configurations">
+        <div class="other-configurations is-disabled" inert aria-disabled="true">
           <ExecuteListener v-if="supportsExecutionListener()" />
           <slot name="other"></slot>
           <ExtendedAttribute />
@@ -83,6 +83,11 @@ const updateId = (val: string) => {
   display: flex;
   flex-direction: column;
   gap: 10px;
+
+  &.is-disabled {
+    opacity: 0.5;
+    pointer-events: none;
+  }
 }
 
 :deep(.el-collapse-item__header) {

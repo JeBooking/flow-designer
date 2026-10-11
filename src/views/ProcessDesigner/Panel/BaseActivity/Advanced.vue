@@ -22,21 +22,28 @@ const propertiesByName = computed(() => {
 
 <template>
   <el-collapse-item name="arg2" :title="$tu('高级')">
-    <el-form-item :label="$tu('跳过表达式')" v-if="propertiesByName['skipExpression']">
-      <Codemirror
-        no-wrap
-        :max-rows="5"
-        autosize
-        :placeholder="$tu('请输入跳过表达式')"
-        :extensions="[juelSupport()]"
-        v-model="skipExpression"
-      />
-      <!--      <el-input v-model="skipExpression" clearable :placeholder="$tu('请输入跳过表达式')" />-->
-    </el-form-item>
-    <MultiInstance v-if="propertiesByName['loopCharacteristics']" />
-    <Async v-if="propertiesByName['async']" />
-    <Document />
+    <div class="advanced-content" inert aria-disabled="true">
+      <el-form-item :label="$tu('跳过表达式')" v-if="propertiesByName['skipExpression']">
+        <Codemirror
+          no-wrap
+          :max-rows="5"
+          autosize
+          :placeholder="$tu('请输入跳过表达式')"
+          :extensions="[juelSupport()]"
+          v-model="skipExpression"
+        />
+        <!--      <el-input v-model="skipExpression" clearable :placeholder="$tu('请输入跳过表达式')" />-->
+      </el-form-item>
+      <MultiInstance v-if="propertiesByName['loopCharacteristics']" />
+      <Async v-if="propertiesByName['async']" />
+      <Document />
+    </div>
   </el-collapse-item>
 </template>
 
-<style scoped lang="scss"></style>
+<style scoped lang="scss">
+.advanced-content {
+  opacity: 0.5;
+  pointer-events: none;
+}
+</style>
