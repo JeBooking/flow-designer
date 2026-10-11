@@ -1,6 +1,6 @@
 export default {
   ui: {
-    title: 'vue-bpmn-designer 流程设计器（Flowable 版）',
+    title: '诊断链路设计器',
     labelPositionTop: '顶部标签',
     labelPositionLeft: '左侧标签',
     formSizeDefault: '默认',

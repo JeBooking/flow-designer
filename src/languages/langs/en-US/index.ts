@@ -1,6 +1,6 @@
 export default {
   ui: {
-    title: 'vue-bpmn-designer Process Designer (Flowable Edition)',
+    title: 'Diagnostic Workflow Designer',
     labelPositionTop: 'Top labels',
     labelPositionLeft: 'Left labels',
     formSizeDefault: 'Default',
