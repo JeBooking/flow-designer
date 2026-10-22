@@ -120,6 +120,14 @@ pnpm format
 2. **Bpmn-js 引擎**：操作底层 BPMN 模型数据时，**必须**通过 `modeling.updateProperties` 等内部命令 API 修改，**严禁**直接修改 DOM 或业务对象，否则会破坏撤销重做功能。
 3. **AI 规则约束**：请查阅根目录的 `AGENTS.md`，了解本项目为 AI / Copilot 定义的特殊规则。
 
+## 接入已有 Python 工程
+
+分别启动 `python backend/server.py` 和 `pnpm dev`，在顶栏点击 **Python 项目**。
+填写已有工程的目录及可导入的入口模块，即可查看公开函数并在 Python 中调用。
+外部工程保持独立维护，可指定其已有虚拟环境中的解释器。
+参见 [后端接入说明](backend/README.md)，包含 `__all__` 导出方式、可运行示例及通用调用 API。
+该入口只负责工程登记、接口发现和调用，不强制业务数据格式，暂未绑定 BPMN 节点。
+
 ## 导出诊断 Python 工程
 
 点击工具栏的 **导出 Python 骨架**，解压 ZIP 后使用 Python 3.10+ 执行

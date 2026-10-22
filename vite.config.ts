@@ -13,6 +13,11 @@ import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 // https://vite.dev/config/
 export default defineConfig({
   base: '/vue-bpmn-designer',
+  server: {
+    proxy: {
+      '/api': { target: 'http://127.0.0.1:8765', changeOrigin: true, timeout: 180000 },
+    },
+  },
   plugins: [
     vue(),
     vueJsx(),

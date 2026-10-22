@@ -137,6 +137,16 @@ pnpm format
 2. **Bpmn-js Engine**: For BPMN model updates, always use command APIs such as `modeling.updateProperties`. Do **not** mutate DOM or business objects directly, otherwise Undo/Redo may break.
 3. **AI Rules**: Check `AGENTS.md` for project-specific AI development constraints.
 
+## Connect existing Python projects
+
+Start `python backend/server.py` and `pnpm dev` in separate terminals. The
+**Python projects** toolbar entry registers a local project directory and its
+importable entry module, lists public functions and calls them in Python.
+Existing projects remain independently maintained; optional interpreter paths
+support their existing virtual environments. See [backend integration guide](backend/README.md)
+for `__all__` exports, the included example and the generic invocation API.
+No BPMN node binding or business input/output schema is imposed by this entry point.
+
 ## Export a diagnostic Python project
 
 Click **Export Python skeleton** in the modeling toolbar, extract the ZIP, and run

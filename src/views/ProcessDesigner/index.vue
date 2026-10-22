@@ -38,6 +38,7 @@ import useAppStore from '@/stores/modules/app.ts'
 import { generateProject } from '@/views/ProcessDesigner/CodeGeneration/generate'
 import type { ModelElement } from '@/views/ProcessDesigner/CodeGeneration/generate'
 import { createArchive } from '@/views/ProcessDesigner/CodeGeneration/archive'
+import PythonProjects from '@/views/ProcessDesigner/PythonProjects.vue'
 
 defineOptions({
   name: 'ProcessDesigner',
@@ -125,6 +126,7 @@ const issuesList = ref<ElementIssue[]>([])
 const modeler = ref<BpmnModeler>()
 const injector = ref<Injector>()
 const fileRef = ref<HTMLInputElement>()
+const pythonProjectsRef = ref<InstanceType<typeof PythonProjects>>()
 const labelPosition = ref('left')
 const formSize = ref('small')
 const importXml = () => {
@@ -268,6 +270,7 @@ defineExpose({
 
 <template>
   <el-container class="design-container">
+    <PythonProjects ref="pythonProjectsRef" />
     <input
       ref="fileRef"
       accept=".xml,.bpmn"
@@ -278,6 +281,9 @@ defineExpose({
     <el-header class="design-header">
       <el-text tag="b" :size="'large'">{{ $t('ui.title') }}</el-text>
       <el-space>
+        <el-button @click="pythonProjectsRef?.open()">
+          {{ $tu('Python 项目', 'Python projects') }}
+        </el-button>
         <el-switch
           inline-prompt
           :active-text="$t('ui.labelPositionTop')"
