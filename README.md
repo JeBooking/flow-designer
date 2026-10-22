@@ -137,6 +137,33 @@ pnpm format
 2. **Bpmn-js Engine**: For BPMN model updates, always use command APIs such as `modeling.updateProperties`. Do **not** mutate DOM or business objects directly, otherwise Undo/Redo may break.
 3. **AI Rules**: Check `AGENTS.md` for project-specific AI development constraints.
 
+## Export a diagnostic Python project
+
+Click **Export Python skeleton** in the modeling toolbar, extract the ZIP, and run
+`python runner.py` with Python 3.10+. The generated project uses only the standard
+library and works offline without AI, a workflow server, or additional packages.
+
+The project separates acquisition, parsing, display, diagnosis, routing, machine
+actions and orchestration into Python modules. Each module maps stable BPMN node
+IDs to editable functions. Unimplemented acquisition displays the manual data
+collection instructions and accepts text, JSON or `@path/to/data.json`. You can
+also pass `{node_id: raw_data}` via `run(supplied=...)` or `--data inputs.json`.
+Unimplemented diagnosis displays the diagram's assessment instructions and asks
+the operator to choose an outgoing flow. Automatic diagnosis must return an
+outgoing flow ID. Machine actions require explicit confirmation when unimplemented.
+
+The ZIP includes the original BPMN XML, extracted reference images, workflow JSON,
+sample inputs and a bilingual README. Nested plain subprocesses and exclusive
+branches are supported; conditions are displayed, never evaluated as code.
+Unsupported BPMN constructs, incomplete required fields, unreachable nodes and
+paths without an exit block export. Jump returns a handoff status rather than a
+successful diagnosis; connecting an external workflow remains an integration task.
+Regenerate into a new directory to preserve your handwritten implementations.
+
+Run `pnpm exec node scripts/verify-code-export.mjs` for an end-to-end verification
+of real Moddle models, ZIP integrity and the generated Python runtime. Python is
+required for this check (`PYTHON` can override its executable).
+
 ## Community
 
 > Add WeChat (note: bpmn) and request a group invitation.

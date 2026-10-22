@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { customRef, provide, ref } from 'vue'
 import 'bpmn-js/dist/assets/diagram-js.css'
 import 'bpmn-js/dist/assets/bpmn-font/css/bpmn.css'
 import 'bpmn-js/dist/assets/bpmn-js.css'
@@ -33,10 +32,12 @@ import type { ElementIssue, Issues, Linting } from 'bpmn-js-bpmnlint'
 import type Canvas from 'diagram-js/lib/core/Canvas'
 import type { Minimap } from 'diagram-js-minimap'
 import { layoutProcess } from 'bpmn-auto-layout'
-import { ElMessage } from 'element-plus'
 import { storeToRefs } from 'pinia'
 import { useI18n } from 'vue-i18n'
 import useAppStore from '@/stores/modules/app.ts'
+import { generateProject } from '@/views/ProcessDesigner/CodeGeneration/generate'
+import type { ModelElement } from '@/views/ProcessDesigner/CodeGeneration/generate'
+import { createArchive } from '@/views/ProcessDesigner/CodeGeneration/archive'
 
 defineOptions({
   name: 'ProcessDesigner',
@@ -157,6 +158,36 @@ const exportXml = async () => {
     a.download = `${rootElement?.businessObject.get('name') || t('ui.anonymousProcess')}.bpmn20.xml`
     a.click()
     window.URL.revokeObjectURL(url)
+  }
+}
+const exportingCode = ref(false)
+const exportCode = async () => {
+  if (!modeler.value || exportingCode.value) return
+  exportingCode.value = true
+  try {
+    const xml = await getXml()
+    if (!xml) throw new Error(translateUi('无法读取流程', 'Unable to read the process'))
+    const files = generateProject(modeler.value.getDefinitions() as unknown as ModelElement, xml)
+    const url = URL.createObjectURL(createArchive(files))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'diagnostic-workflow-python.zip'
+    link.click()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+    ElMessage.success(
+      translateUi(
+        'Python 工程已导出，请解压后阅读 README.md',
+        'Python project exported. Extract it and read README.md.',
+      ),
+    )
+  } catch (error) {
+    ElNotification.error({
+      title: translateUi('代码导出失败', 'Code export failed'),
+      message: error instanceof Error ? error.message : String(error),
+      duration: 0,
+    })
+  } finally {
+    exportingCode.value = false
   }
 }
 const exportSvg = () => {
@@ -300,6 +331,9 @@ defineExpose({
               <el-tooltip placement="top" :content="$t('ui.export')">
                 <el-button :icon="Download" size="small" @click="exportXml" />
               </el-tooltip>
+              <el-button :loading="exportingCode" @click="exportCode">
+                {{ $tu('导出 Python 骨架', 'Export Python skeleton') }}
+              </el-button>
             </el-button-group>
 
             <el-button-group size="small">
