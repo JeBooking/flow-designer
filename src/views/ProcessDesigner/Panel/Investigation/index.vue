@@ -38,8 +38,32 @@ const update = (field: keyof InvestigationData, value: string) => {
   updateProperties({ [`flowable:${field}`]: value || undefined })
 }
 const notifyImageError = (message: string) => {
-  ElNotification.error({ message })
+  ElNotification.error({
+    title: translateUi('参考图处理失败', 'Reference image processing failed'),
+    message,
+    duration: 0,
+  })
 }
+const imageFileDetails = (file: File) =>
+  `${translateUi('文件', 'File')}: ${file.name} (${file.size} ${translateUi('字节', 'bytes')}, MIME ${file.type || translateUi('未识别', 'unrecognized')})`
+const describeImageError = (error: unknown) => {
+  if (error instanceof DOMException || error instanceof Error) {
+    return `${error.name}: ${error.message || translateUi('浏览器未提供错误详情', 'The browser provided no error details')}`
+  }
+  return String(
+    error || translateUi('浏览器未提供错误详情', 'The browser provided no error details'),
+  )
+}
+const formatImageFailure = (stage: string, stageEnglish: string, reason: string, file: File) =>
+  [
+    `${translateUi('失败阶段', 'Failed at')}: ${translateUi(stage, stageEnglish)}`,
+    `${translateUi('具体错误', 'Error details')}: ${reason}`,
+    imageFileDetails(file),
+    translateUi(
+      '网络状态：没有发起上传请求；文件由浏览器本地读取并保存。',
+      'Network: no upload request was made; the file is read and saved locally by the browser.',
+    ),
+  ].join('；')
 const fields: { key: 'observation' | 'acquisition' | 'assessment'; label: string; hint: string }[] =
   [
     { key: 'observation', label: '查看什么数据', hint: '写明数据名称、测点、单位和观察范围' },
@@ -52,30 +76,62 @@ const uploadImage = async (event: Event) => {
   const file = input.files?.[0]
   input.value = ''
   if (!file) return
-  if (
-    !['image/png', 'image/jpeg', 'image/webp'].includes(file.type) ||
-    file.size > 5 * 1024 * 1024
-  ) {
-    notifyImageError(translateUi('请选择不超过 5 MB 的 PNG、JPEG 或 WebP 图片'))
+  if (file.size > 5 * 1024 * 1024) {
+    notifyImageError(
+      formatImageFailure(
+        '文件检查',
+        'File validation',
+        translateUi('图片超过 5 MB 限制', 'The image exceeds the 5 MB limit'),
+        file,
+      ),
+    )
+    return
+  }
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+    notifyImageError(
+      formatImageFailure(
+        '文件检查',
+        'File validation',
+        translateUi(
+          '不支持此图片类型；允许 PNG、JPEG 或 WebP',
+          'Unsupported image type; PNG, JPEG or WebP is required',
+        ),
+        file,
+      ),
+    )
     return
   }
   uploading.value = true
+  let stage: '本地读取' | '图片解码' | '写入流程模型' = '本地读取'
   try {
     const value = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader()
       reader.onload = () => resolve(String(reader.result))
-      reader.onerror = () => reject(reader.error)
+      reader.onerror = () =>
+        reject(reader.error || new Error('FileReader failed without browser error details'))
+      reader.onabort = () => reject(new DOMException('File reading was aborted', 'AbortError'))
       reader.readAsDataURL(file)
     })
+    stage = '图片解码'
     const image = new Image()
     image.src = value
     await image.decode()
     // 读取文件期间可能切换节点，不能把图片写入新选中的节点。
     if (!disposed && useBpmnContextService().selectedElement === selectedElement) {
+      stage = '写入流程模型'
       update('referenceImage', value)
     }
-  } catch {
-    if (!disposed) notifyImageError(translateUi('图片读取失败，请重新选择有效图片'))
+  } catch (error) {
+    if (!disposed) {
+      const stageDetails = {
+        本地读取: 'Local file read',
+        图片解码: 'Image decoding',
+        写入流程模型: 'Saving to the process model',
+      } as const
+      notifyImageError(
+        formatImageFailure(stage, stageDetails[stage], describeImageError(error), file),
+      )
+    }
   } finally {
     uploading.value = false
   }
@@ -121,7 +177,14 @@ const uploadImage = async (event: Event) => {
             :aria-label="$tu('排查参考图')"
             @change="uploadImage"
           />
-          <span>{{ $tu('图片随流程保存，无需外网；支持 PNG、JPEG、WebP，最大 5 MB。') }}</span>
+          <span>
+            {{
+              $tu(
+                '图片在浏览器本地读取并保存到流程，无需网络；支持 PNG、JPEG、WebP，最大 5 MB。若文件选择窗口被浏览器或系统策略拦截，页面可能收不到事件，因此无法显示具体拦截原因。',
+                'Images are read locally and saved in the process; no network is used. PNG, JPEG or WebP, up to 5 MB. If the browser or system blocks the file picker, the page may receive no event and cannot report the specific reason.',
+              )
+            }}
+          </span>
           <template v-if="isReferenceImage(data.referenceImage)">
             <el-image
               :src="data.referenceImage"

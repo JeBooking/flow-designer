@@ -40,8 +40,6 @@ const uiText: Record<string, string> = {
   移除参考图: 'Remove reference image',
   '请选择不超过 5 MB 的 PNG、JPEG 或 WebP 图片':
     'Choose a PNG, JPEG or WebP image no larger than 5 MB',
-  '图片读取失败，请重新选择有效图片':
-    'Unable to read the image. Choose a valid image and try again',
   '占位节点：当前仅用于验证诊断流程的连接规则。':
     'Placeholder node: currently used to verify diagnostic connection rules.',
   '警告：': 'Warning:',
