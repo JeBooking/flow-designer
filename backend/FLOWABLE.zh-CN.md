@@ -75,6 +75,34 @@ python backend/server.py
 跳转函数记录 `handoff_requested` 及目标链路；不假装已执行目标链路。
 跳转任务成功后允许本实例交接结束。接入实际项目时由对应业务函数实现目标链路交接。
 
+## 上升复核与回退重查
+
+新导出的执行流程到达“上升”时不会立即结束，而是进入 Flowable 人工复核任务。
+画布中的“上升”仍然是最终节点；编译器在引擎定义里插入等待复核步骤。
+只有点击“确认上升并结束”才到达真正的结束事件。“问题解决”仍然直接结束。
+更新后需重新构建并启动 Java 服务，重新导出执行包并启动对应的 worker；已有旧版本实例不改变行为。
+
+1. 在执行抽屉点击“刷新执行结果”，出现“已到达上升，等待人工复核”。
+2. 选择此前实际执行过的排查节点，填写回退原因。
+3. 可选填写复查输入变量，例如传感器示例从 `{"scenario":"severe"}` 改为 `{"scenario":"sensor-b"}`。
+   这表示更换模拟采样条件；真实工程通常在重新调用采集接口时获得新数据。
+4. 点击“回退重查”。Flowable 在同一实例中返回所选节点，Python 重新执行该节点及后续路径。
+5. 如果重查后仍上升，可以继续复核；如果确认无法恢复，点击“确认上升并结束”。
+
+回退不是撤销：不会恢复机台状态，也不会删除原诊断路径。后续机台动作可能再次执行。
+输入相同、代码相同的确定性算法可能给出相同判断；回退本身不会自动纠正算法。
+
+回退会清理目标及需要重算的下游结果和路由变量，并保留有效的上游结果。
+旧结果、输入修改前后的值、回退原因和时间保存为 `diagnosticReviews` 流程变量，
+可在“执行详情”中查看；Flowable 活动历史保留每次经过节点和复核的记录。
+清理、记录与状态变更在同一事务内执行，避免 worker 读取半更新状态。
+不能通过输入变量覆盖节点结果、路由变量或复核记录，也不能使用过期的复核页面提交操作。
+
+复核接口 `/diagnosis-api/instances/{id}/review` 由同一 Java 服务提供，并使用相同认证。
+`GET` 返回待复核状态和可回退节点；`POST` 的 `action` 为 `recheck` 或 `confirm`，
+必须携带当前 `taskId`。回退还需要 `targetNodeId`、`reason`，可选 `variables`。
+已经确认结束的实例不再允许回退。
+
 ## 接入自己的工程
 
 在非最终节点的“Python 外部接口”中填写模块路径、函数名、JSON 关键字参数。
@@ -110,7 +138,10 @@ python scripts/verify-flowable.py --unit-only
 backend/.local/venv/Scripts/python.exe scripts/verify-flowable.py
 backend/.local/venv/Scripts/python.exe scripts/verify-diagnostic-examples.py
 node scripts/verify-diagnostic-lint.mjs
+backend/.local/venv/Scripts/python.exe scripts/verify-diagnostic-review.py
 ```
 
 第二条验证真实引擎、官方客户端、六种路径、路由互斥、判断结果与生成 SVG。
-第三条运行新增四图的十三种场景；最后一条验证五图的全部规则、XML 往返和普通 BPMN 汇合规则。
+第三条运行新增四图的十三种场景；第四条验证五图的全部规则、XML 往返和普通 BPMN 汇合规则。
+复核脚本验证等待、连续回退、局部重查、A/B 分支旧结果隔离、非法/过期请求及最终确认。
+原示例验证脚本会显式确认上升后检查结束状态。

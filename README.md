@@ -201,3 +201,5 @@ Diagnostic nodes can bind external Python module functions. Open **Flowable exec
 choose from five examples (temperature, voltage, communication retries, sensor comparison and pressure), export an execution bundle, deploy/start and inspect
 execution results with real Python-generated charts. Flowable schedules the process and the
 official Python client runs the existing projects. See [setup and example](backend/FLOWABLE.md).
+Escalation now waits for review: return to an earlier executed investigation with preserved
+history, or explicitly confirm escalation to finish.

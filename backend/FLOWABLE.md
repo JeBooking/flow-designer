@@ -67,6 +67,31 @@ execution are real. Revisited nodes update their result variable; activity histo
 visit. Bound pure-diagnostic graphs use exclusive routing and do not wait for other branches at
 joins. Ordinary BPMN parallel-flow join validation remains enabled.
 
+## Escalation review and rechecking
+
+Newly exported processes pause at escalation using a Flowable user task. The editor still
+shows escalation as a final diagnostic node; only **Confirm escalation and finish** reaches
+the actual end event. Problem solved still finishes immediately. Rebuild/restart the Java
+service and re-export bindings after upgrading; existing deployments retain their behavior.
+
+Refresh execution results, select a previously executed investigation, and provide a reason.
+Optionally update input variables (for the sensor example, `{"scenario":"sensor-b"}` supplies
+new simulated measurements), then choose **Recheck**. Flowable resumes at that node in the
+same instance. You can review again if escalation is reached, or explicitly confirm escalation.
+
+This reruns logic and may repeat downstream machine actions; it does not undo physical actions.
+A deterministic algorithm with the same inputs can produce the same answer again. Upstream
+results remain available, while results requiring recomputation and their routing variables
+are cleared. Previous values, changed inputs, reasons and timestamps are retained in the JSON
+variable `diagnosticReviews`, visible in execution details. Activity history retains every visit.
+Cleanup, audit recording and state change share a transaction. Unvisited targets, stale review
+tasks and attempts to overwrite results, routing or audit variables are rejected.
+
+The authenticated Java endpoint `GET /diagnosis-api/instances/{id}/review` returns pending
+status and eligible nodes. `POST` accepts `action` (`recheck` or `confirm`) and the current
+`taskId`; rechecking also requires `targetNodeId` and `reason`, with optional input `variables`.
+Ended instances cannot be rechecked.
+
 ## Bind a project
 
 On non-final nodes, configure module, function and JSON keyword arguments. Repeat `--project`
@@ -96,9 +121,13 @@ python scripts/verify-flowable.py --unit-only
 backend/.local/venv/Scripts/python.exe scripts/verify-flowable.py
 backend/.local/venv/Scripts/python.exe scripts/verify-diagnostic-examples.py
 node scripts/verify-diagnostic-lint.mjs
+backend/.local/venv/Scripts/python.exe scripts/verify-diagnostic-review.py
 ```
 
 The second command requires a running engine and verifies six complete execution paths,
 exclusive routing, threshold results and actual SVG output using the official Python client.
 The third runs thirteen scenarios across the four added diagrams. The last checks all five diagrams
 against the complete lint configuration, XML round-trips and ordinary BPMN join validation.
+The review script verifies waiting, repeated and selective rechecks, A/B result isolation,
+invalid/stale requests and explicit final confirmation. Existing example checks now explicitly
+confirm escalation before checking process completion.

@@ -24,3 +24,10 @@ export interface DiagnosticExample {
   xml: string
   scenarios: string[]
 }
+
+export interface DiagnosisReviewState {
+  pending: boolean
+  taskId?: string
+  nodeId?: string
+  candidates?: { id: string; name: string }[]
+}

@@ -4,6 +4,7 @@ import type Canvas from 'diagram-js/lib/core/Canvas'
 import { flowableRequest } from '@/services/flowable'
 import { createArchive } from '@/views/ProcessDesigner/CodeGeneration/archive'
 import { diagnosticExamples } from '@/views/ProcessDesigner/examples/catalog'
+import type { DiagnosisReviewState } from '@/types/diagnosis'
 
 const props = defineProps<{ modeler: BpmnModeler }>()
 const visible = ref(false)
@@ -15,6 +16,10 @@ const history = ref('')
 const charts = ref<string[]>([])
 const finished = ref(false)
 const visitedNodes = ref<string[]>([])
+const review = ref<DiagnosisReviewState>({ pending: false })
+const reviewTarget = ref('')
+const reviewReason = ref('')
+const reviewVariables = ref('{}')
 const selectedExampleId = ref(diagnosticExamples[0].id)
 const selectedExample = computed(
   () =>
@@ -84,6 +89,7 @@ const loadDemo = () =>
     history.value = ''
     charts.value = []
     visitedNodes.value = []
+    review.value = { pending: false }
   })
 const exportBundle = () =>
   perform(async () => {
@@ -104,27 +110,79 @@ const start = () =>
     history.value = ''
     charts.value = []
     visitedNodes.value = []
+    review.value = { pending: false }
   })
-const refresh = () =>
+async function loadExecution() {
+  const result = await flowableRequest<{
+    process: { endTime?: string }
+    activities: { data: { activityType: string; activityId: string; activityName?: string }[] }
+    variables: { data: { variable?: { value?: { chartSvg?: string } } }[] }
+    review: DiagnosisReviewState
+  }>(`history/${encodeURIComponent(runId.value)}`)
+  history.value = JSON.stringify(result, null, 2)
+  finished.value = Boolean(result.process.endTime)
+  const previousTaskId = review.value.taskId
+  review.value = result.review
+  if (previousTaskId !== result.review.taskId) {
+    reviewTarget.value = ''
+    reviewReason.value = ''
+    reviewVariables.value = '{}'
+  }
+  visitedNodes.value = result.activities.data
+    .filter((item) =>
+      ['serviceTask', 'externalWorkerServiceTask', 'userTask', 'endEvent'].includes(
+        item.activityType,
+      ),
+    )
+    .map((item) => item.activityName || item.activityId)
+  charts.value = result.variables.data.flatMap((item) => {
+    const svg = item.variable?.value?.chartSvg
+    return typeof svg === 'string'
+      ? [`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`]
+      : []
+  })
+}
+const refresh = () => perform(loadExecution)
+const submitReview = (action: 'recheck' | 'confirm') =>
   perform(async () => {
-    const result = await flowableRequest<{
-      process: { endTime?: string }
-      activities: { data: { activityType: string; activityId: string; activityName?: string }[] }
-      variables: { data: { variable?: { value?: { chartSvg?: string } } }[] }
-    }>(`history/${encodeURIComponent(runId.value)}`)
-    history.value = JSON.stringify(result, null, 2)
-    finished.value = Boolean(result.process.endTime)
-    visitedNodes.value = result.activities.data
-      .filter((item) =>
-        ['serviceTask', 'externalWorkerServiceTask', 'endEvent'].includes(item.activityType),
+    if (action === 'recheck' && (!reviewTarget.value || !reviewReason.value.trim())) {
+      throw new Error(
+        translateUi('请选择回退节点并填写原因', 'Select a recheck node and provide a reason'),
       )
-      .map((item) => item.activityName || item.activityId)
-    charts.value = result.variables.data.flatMap((item) => {
-      const svg = item.variable?.value?.chartSvg
-      return typeof svg === 'string'
-        ? [`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`]
-        : []
+    }
+    const variables: unknown = action === 'recheck' ? JSON.parse(reviewVariables.value) : {}
+    if (!variables || typeof variables !== 'object' || Array.isArray(variables)) {
+      throw new Error(translateUi('变量必须是 JSON 对象', 'Variables must be a JSON object'))
+    }
+    await ElMessageBox.confirm(
+      action === 'recheck'
+        ? translateUi(
+            '将重新执行选中节点及后续逻辑，可能再次执行机台动作。原记录保留，但不会撤销已经执行的动作。',
+            'The selected node and downstream logic will run again, including possible machine actions. Previous records are retained; completed actions are not undone.',
+          )
+        : translateUi(
+            '确认上升后本轮流程结束。',
+            'Confirming escalation ends this process instance.',
+          ),
+      action === 'recheck'
+        ? translateUi('回退重查', 'Recheck an earlier node')
+        : translateUi('确认上升', 'Confirm escalation'),
+      { type: 'warning' },
+    )
+    await flowableRequest(`review/${encodeURIComponent(runId.value)}`, {
+      action,
+      taskId: review.value.taskId,
+      targetNodeId: reviewTarget.value,
+      reason: reviewReason.value,
+      variables,
     })
+    // 回退后旧页面中的结果不能再作为当前判断依据；历史快照仍保存在执行详情中。
+    history.value = ''
+    charts.value = []
+    visitedNodes.value = []
+    review.value = { pending: false }
+    finished.value = false
+    await loadExecution()
   })
 defineExpose({
   open: () => {
@@ -194,11 +252,52 @@ defineExpose({
       }}</el-button>
       <p v-if="history">
         {{
-          finished
-            ? $tu('流程已结束', 'Process completed')
-            : $tu('正在执行或等待外部任务', 'Running or waiting for an external worker')
+          review.pending
+            ? $tu('已到达上升，等待人工复核', 'Escalation reached; awaiting review')
+            : finished
+              ? $tu('流程已结束', 'Process completed')
+              : $tu('正在执行或等待外部任务', 'Running or waiting for an external worker')
         }}
       </p>
+      <el-card v-if="review.pending" shadow="never">
+        <template #header>{{ $tu('诊断复核', 'Diagnostic review') }}</template>
+        <el-form label-position="top">
+          <el-form-item
+            :label="$tu('回退到已执行的排查节点', 'Return to a previously executed investigation')"
+          >
+            <el-select v-model="reviewTarget" style="width: 100%">
+              <el-option
+                v-for="candidate in review.candidates || []"
+                :key="candidate.id"
+                :value="candidate.id"
+                :label="`${candidate.name} (${candidate.id})`"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item :label="$tu('回退原因', 'Recheck reason')">
+            <el-input v-model="reviewReason" type="textarea" :rows="2" />
+          </el-form-item>
+          <el-form-item :label="$tu('复查输入变量（可选）', 'Updated input variables (optional)')">
+            <el-input v-model="reviewVariables" type="textarea" :rows="3" />
+          </el-form-item>
+        </el-form>
+        <p>
+          {{
+            $tu(
+              '回退将重新采集和判断，并清理需重算的结果；旧路径与结果保留在复核记录中。',
+              'Rechecking reruns acquisition and diagnosis and clears results that must be recomputed. Previous paths and results remain in review history.',
+            )
+          }}
+        </p>
+        <el-space wrap>
+          <el-button type="primary" :disabled="busy" @click="submitReview('recheck')">{{
+            $tu('回退重查', 'Recheck')
+          }}</el-button>
+          <el-button :disabled="busy" @click="submitReview('confirm')">{{
+            $tu('确认上升并结束', 'Confirm escalation and finish')
+          }}</el-button>
+        </el-space>
+      </el-card>
       <p v-if="visitedNodes.length">
         {{ $tu('已执行节点', 'Executed nodes') }}: {{ visitedNodes.join(' → ') }}
       </p>
