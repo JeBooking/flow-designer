@@ -46,6 +46,11 @@ with tempfile.TemporaryDirectory(prefix='diagnostic-examples-') as temporary:
                     run_id = run['id']
                     deadline = time.monotonic() + 45
                     while not engine_request('/process-api/history/historic-process-instances/' + run_id).get('endTime'):
+                        review = engine_request('/diagnosis-api/instances/' + run_id + '/review')
+                        if review['pending']:
+                            assert terminal == 'Escalation'
+                            engine_request('/diagnosis-api/instances/' + run_id + '/review', json.dumps({
+                                'action': 'confirm', 'taskId': review['taskId'], 'reason': 'Example verification'}).encode())
                         if time.monotonic() > deadline or worker.poll() is not None:
                             raise AssertionError(f'{filename}/{scenario} did not finish; inspect {log_file}')
                         time.sleep(0.3)

@@ -42,7 +42,7 @@ def compile_workflow(xml):
     if not process_id:
         raise ValueError('Missing process ID / 缺少流程 ID')
     # 工作主题取决于执行定义，移动节点、翻译文字或 XML 重排不应使已启动的 worker 失效。
-    signature = {'processId': process_id, 'nodes': [], 'flows': []}
+    signature = {'formatVersion': 2, 'processId': process_id, 'nodes': [], 'flows': []}
     executable_elements = [e for e in process if e.tag in (b('task'), b('startEvent'), b('sequenceFlow'))]
     execution_ids = [e.get('id') for e in executable_elements]
     if any(not value for value in execution_ids) or len(set(execution_ids)) != len(execution_ids):
@@ -63,7 +63,7 @@ def compile_workflow(xml):
     signature['nodes'].sort(key=lambda item: item['id'])
     signature['flows'].sort()
     version = hashlib.sha256(json.dumps(signature, sort_keys=True, ensure_ascii=True, allow_nan=False).encode()).hexdigest()[:12]
-    manifest = {'processId': process_id, 'version': version, 'bindings': {}}
+    manifest = {'processId': process_id, 'version': version, 'bindings': {}, 'reviews': {}}
     starts = process.findall(b('startEvent'))
     if len(starts) != 1 or any(child.tag not in (b('outgoing'), b('documentation')) for child in starts[0]):
         raise ValueError('One plain start event is required / 需要一个普通开始事件')
@@ -109,10 +109,10 @@ def compile_workflow(xml):
     if len([e for e in flows if e.get('sourceRef') == starts[0].get('id')]) != 1:
         raise ValueError('Start requires one successor / 开始事件必须有一个后继')
     terminals = set()
-    successors = {}
+    successors = {node_id: [edge.get('targetRef') for edge in flows if edge.get('sourceRef') == node_id]
+                  for node_id in nodes}
     for node_id, node in nodes.items():
         outgoing = [e for e in flows if e.get('sourceRef') == node_id]
-        successors[node_id] = [e.get('targetRef') for e in outgoing]
         if node.tag == b('startEvent'):
             continue
         kind = node.get(f('diagnosisKind'))
@@ -130,7 +130,21 @@ def compile_workflow(xml):
             if outgoing:
                 raise ValueError('Final node has outgoing flow / 最终节点不能有后继')
             terminals.add(node_id)
-            node.tag = b('endEvent')
+            if kind == 'escalation':
+                # 业务上仍是最终节点；引擎在结束前等待复核，避免结束后无法回退。
+                review_id = new_id(node_id + '_review')
+                node.tag = b('userTask')
+                node.set('id', review_id)
+                node.set('name', '上升：等待复核 / Escalation review')
+                for edge in flows:
+                    if edge.get('targetRef') == node_id:
+                        edge.set('targetRef', review_id)
+                ET.SubElement(process, b('endEvent'), {'id': node_id, 'name': '上升'})
+                ET.SubElement(process, b('sequenceFlow'), {'id': new_id(node_id + '_confirm'),
+                    'sourceRef': review_id, 'targetRef': node_id})
+                manifest['reviews'][review_id] = {'nodeId': node_id}
+            else:
+                node.tag = b('endEvent')
         elif kind == 'jump' and not outgoing:
             terminals.add(node_id)
         elif not outgoing:
@@ -189,6 +203,14 @@ def compile_workflow(xml):
     if set(nodes) - can_finish:
         raise ValueError('Chain cannot reach an end / 存在无法到达最终节点的链路')
     process.set('isExecutable', 'true')
+    # 使用标准 documentation 保存本次部署的绑定，复核始终以实际部署版本为准。
+    original_documentation = [item.text or '' for item in process.findall(b('documentation'))]
+    for item in process.findall(b('documentation')):
+        process.remove(item)
+    documentation = ET.Element(b('documentation'))
+    documentation.text = json.dumps({'diagnosticExecution': manifest,
+                                     'sourceDocumentation': original_documentation}, ensure_ascii=False)
+    process.insert(0, documentation)
     for diagram in root.findall('{' + DI + '}BPMNDiagram'):
         root.remove(diagram)
     return {'processId': process_id, 'files': {'source.bpmn': xml,

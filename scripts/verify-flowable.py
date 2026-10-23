@@ -71,6 +71,11 @@ with tempfile.TemporaryDirectory(prefix='flowable-smoke-') as temp:
                     history = engine_request('/process-api/history/historic-process-instances/' + run_id)
                     if history.get('endTime'):
                         break
+                    review = engine_request('/diagnosis-api/instances/' + run_id + '/review')
+                    if review['pending']:
+                        assert scenario in ('escalate', 'severe')
+                        engine_request('/diagnosis-api/instances/' + run_id + '/review', json.dumps({
+                            'action': 'confirm', 'taskId': review['taskId'], 'reason': 'Smoke test confirmation'}).encode())
                     if time.monotonic() > deadline or worker.poll() is not None:
                         raise AssertionError(f'{scenario} did not finish; inspect {log_file}')
                     time.sleep(0.5)

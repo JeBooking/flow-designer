@@ -119,7 +119,8 @@ def make_handler(registry):
                 try:
                     self.reply({'process': engine_request('/process-api/history/historic-process-instances/' + run_id),
                         'variables': engine_request('/process-api/history/historic-variable-instances?processInstanceId=' + run_id + '&size=200'),
-                        'activities': engine_request('/process-api/history/historic-activity-instances?processInstanceId=' + run_id + '&size=200&sort=startTime&order=asc')})
+                        'activities': engine_request('/process-api/history/historic-activity-instances?processInstanceId=' + run_id + '&size=200&sort=startTime&order=asc'),
+                        'review': engine_request('/diagnosis-api/instances/' + run_id + '/review')})
                 except RuntimeError as error:
                     self.reply({'error': str(error)}, 502)
                 return
@@ -153,6 +154,10 @@ def make_handler(registry):
                 parts = urlparse(self.path).path.strip('/').split('/')
                 if parts == ['api', 'flowable', 'compile']:
                     result = {'ok': True, **compile_workflow(data['xml'])}
+                elif len(parts) == 4 and parts[:2] == ['api', 'flowable'] and parts[2] == 'review':
+                    if not re.fullmatch(r'[A-Za-z0-9_-]+', parts[3]):
+                        raise ValueError('Invalid run ID')
+                    result = engine_request('/diagnosis-api/instances/' + parts[3] + '/review', json.dumps(data).encode())
                 elif parts == ['api', 'flowable', 'start']:
                     compiled = compile_workflow(data['xml'])
                     variables = data.get('variables', {})
