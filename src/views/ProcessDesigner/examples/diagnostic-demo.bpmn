@@ -1,0 +1,155 @@
+<?xml version='1.0' encoding='cp936'?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:flowable="http://flowable.org/bpmn" id="Definitions_Demo" targetNamespace="http://diagnosis.local/example">
+  <bpmn:process id="DiagnosticDemo" name="温度诊断 / Temperature diagnosis" isExecutable="false">
+    <bpmn:startEvent id="Start" name="开始 / Start">
+      <bpmn:outgoing>F_start</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:task id="Inspect" name="采集温度、绘图并判断" flowable:diagnosisKind="investigation" flowable:pythonModule="diagnostic_demo.api" flowable:pythonFunction="inspect_temperature" flowable:pythonArguments="{&quot;scenario&quot;: &quot;$scenario&quot;}" flowable:observation="温度采样值（摄氏度）" flowable:acquisition="示例生成模拟温度数据；实际工程替换为采集接口" flowable:assessment="任一采样值大于 70°C 则判为异常；蓝线为采样趋势，红线为阈值" flowable:referenceImage="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAPAAAAB4CAIAAABD1OhwAAABtUlEQVR4nO3XsW3DMABFQS8TL5a1s0GGiAOktkVAskI+3eGXBMHiNbz9QMjtvx8ARxI0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkbAT9db+bTbVdQcNaBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBM0yPj6/f/f6jKCZwl+srzdyj6B5u6NiHSFodjkz1hGC5qnZYh0h6ItaMdYRgg6qxjpC0Iu5cqwjBD0Rse4n6JOI9RyCPoBY5yHoDWJdy6WDFmtPNmixXtOSQYuVZ6YLWqzscWrQYuXdDgtarMxgKGixsoqNoMXKWqb7FMIegiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBk/IAUAlcYCiwr8oAAAAASUVORK5CYII=">
+      <bpmn:incoming>F_start</bpmn:incoming>
+      <bpmn:outgoing>F_action</bpmn:outgoing>
+      <bpmn:outgoing>F_conclusion</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Action" name="执行风扇自检（模拟）" flowable:diagnosisKind="investigationAction" flowable:pythonModule="diagnostic_demo.api" flowable:pythonFunction="machine_action" flowable:pythonArguments="{}" flowable:actionText="模拟执行风扇自检以推动后续诊断；不控制真实机台，不在这里进行现象判断">
+      <bpmn:incoming>F_action</bpmn:incoming>
+      <bpmn:outgoing>F_recheck</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Recheck" name="自检后重新采集并判断" flowable:diagnosisKind="investigation" flowable:pythonModule="diagnostic_demo.api" flowable:pythonFunction="recheck" flowable:pythonArguments="{&quot;action&quot;: &quot;$Action&quot;}" flowable:observation="温度采样值（摄氏度）" flowable:acquisition="示例生成模拟温度数据；实际工程替换为采集接口" flowable:assessment="任一采样值大于 70°C 则判为异常；蓝线为采样趋势，红线为阈值" flowable:referenceImage="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAPAAAAB4CAIAAABD1OhwAAABtUlEQVR4nO3XsW3DMABFQS8TL5a1s0GGiAOktkVAskI+3eGXBMHiNbz9QMjtvx8ARxI0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkbAT9db+bTbVdQcNaBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBM0yPj6/f/f6jKCZwl+srzdyj6B5u6NiHSFodjkz1hGC5qnZYh0h6ItaMdYRgg6qxjpC0Iu5cqwjBD0Rse4n6JOI9RyCPoBY5yHoDWJdy6WDFmtPNmixXtOSQYuVZ6YLWqzscWrQYuXdDgtarMxgKGixsoqNoMXKWqb7FMIegiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBk/IAUAlcYCiwr8oAAAAASUVORK5CYII=">
+      <bpmn:incoming>F_recheck</bpmn:incoming>
+      <bpmn:outgoing>F_checked</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Conclusion" name="得到温度诊断结论" flowable:diagnosisKind="conclusion" flowable:pythonModule="diagnostic_demo.api" flowable:pythonFunction="conclude" flowable:pythonArguments="{&quot;context&quot;: &quot;$&quot;}" flowable:conclusionText="根据阈值判断温度正常或异常；本结论不意味着诊断已经结束">
+      <bpmn:incoming>F_conclusion</bpmn:incoming>
+      <bpmn:incoming>F_checked</bpmn:incoming>
+      <bpmn:outgoing>F_repair</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Repair" name="按结论采取恢复措施（模拟）" flowable:diagnosisKind="remediation" flowable:pythonModule="diagnostic_demo.api" flowable:pythonFunction="recover" flowable:pythonArguments="{&quot;scenario&quot;: &quot;$scenario&quot;, &quot;conclusion&quot;: &quot;$Conclusion&quot;}">
+      <bpmn:incoming>F_repair</bpmn:incoming>
+      <bpmn:outgoing>F_solved</bpmn:outgoing>
+      <bpmn:outgoing>F_deep</bpmn:outgoing>
+      <bpmn:outgoing>F_escalate</bpmn:outgoing>
+      <bpmn:outgoing>F_jump</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Solved" name="问题解决" flowable:diagnosisKind="problemSolved">
+      <bpmn:incoming>F_solved</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:task id="Deep" name="分析温度趋势及均值" flowable:diagnosisKind="deepDiagnosis" flowable:pythonModule="diagnostic_demo.api" flowable:pythonFunction="deep_diagnosis" flowable:pythonArguments="{&quot;inspection&quot;: &quot;$Inspect&quot;}">
+      <bpmn:incoming>F_deep</bpmn:incoming>
+      <bpmn:outgoing>F_deep_end</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Escalation" name="上升" flowable:diagnosisKind="escalation">
+      <bpmn:incoming>F_escalate</bpmn:incoming>
+      <bpmn:incoming>F_deep_end</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:task id="Jump" name="交接至冷却子系统链路" flowable:diagnosisKind="jump" flowable:pythonModule="diagnostic_demo.api" flowable:pythonFunction="handoff" flowable:pythonArguments="{&quot;inspection&quot;: &quot;$Inspect&quot;}">
+      <bpmn:incoming>F_jump</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="F_start" sourceRef="Start" targetRef="Inspect" name="" />
+    <bpmn:sequenceFlow id="F_action" sourceRef="Inspect" targetRef="Action" name="action 场景" />
+    <bpmn:sequenceFlow id="F_conclusion" sourceRef="Inspect" targetRef="Conclusion" name="无需自检" />
+    <bpmn:sequenceFlow id="F_recheck" sourceRef="Action" targetRef="Recheck" name="" />
+    <bpmn:sequenceFlow id="F_checked" sourceRef="Recheck" targetRef="Conclusion" name="" />
+    <bpmn:sequenceFlow id="F_repair" sourceRef="Conclusion" targetRef="Repair" name="" />
+    <bpmn:sequenceFlow id="F_solved" sourceRef="Repair" targetRef="Solved" name="正常或恢复成功" />
+    <bpmn:sequenceFlow id="F_deep" sourceRef="Repair" targetRef="Deep" name="需要深度诊断" />
+    <bpmn:sequenceFlow id="F_escalate" sourceRef="Repair" targetRef="Escalation" name="严重异常" />
+    <bpmn:sequenceFlow id="F_jump" sourceRef="Repair" targetRef="Jump" name="交接其他链路" />
+    <bpmn:sequenceFlow id="F_deep_end" sourceRef="Deep" targetRef="Escalation" name="转交专家" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Diagram_Demo">
+    <bpmndi:BPMNPlane id="Plane_Demo" bpmnElement="DiagnosticDemo">
+      <bpmndi:BPMNShape id="Start_di" bpmnElement="Start">
+        <dc:Bounds x="40" y="210" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Inspect_di" bpmnElement="Inspect">
+        <dc:Bounds x="140" y="190" width="145" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Action_di" bpmnElement="Action">
+        <dc:Bounds x="330" y="50" width="145" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Recheck_di" bpmnElement="Recheck">
+        <dc:Bounds x="510" y="50" width="145" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Conclusion_di" bpmnElement="Conclusion">
+        <dc:Bounds x="520" y="240" width="145" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Repair_di" bpmnElement="Repair">
+        <dc:Bounds x="740" y="240" width="145" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Solved_di" bpmnElement="Solved">
+        <dc:Bounds x="1020" y="90" width="145" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Deep_di" bpmnElement="Deep">
+        <dc:Bounds x="1000" y="240" width="145" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Escalation_di" bpmnElement="Escalation">
+        <dc:Bounds x="1230" y="340" width="145" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Jump_di" bpmnElement="Jump">
+        <dc:Bounds x="1000" y="440" width="145" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="F_start_di" bpmnElement="F_start">
+        <di:waypoint x="76" y="228.0" />
+        <di:waypoint x="108.0" y="228.0" />
+        <di:waypoint x="108.0" y="230.0" />
+        <di:waypoint x="140" y="230.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_action_di" bpmnElement="F_action">
+        <di:waypoint x="285" y="230.0" />
+        <di:waypoint x="307.5" y="230.0" />
+        <di:waypoint x="307.5" y="90.0" />
+        <di:waypoint x="330" y="90.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_conclusion_di" bpmnElement="F_conclusion">
+        <di:waypoint x="285" y="230.0" />
+        <di:waypoint x="402.5" y="230.0" />
+        <di:waypoint x="402.5" y="280.0" />
+        <di:waypoint x="520" y="280.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_recheck_di" bpmnElement="F_recheck">
+        <di:waypoint x="475" y="90.0" />
+        <di:waypoint x="492.5" y="90.0" />
+        <di:waypoint x="492.5" y="90.0" />
+        <di:waypoint x="510" y="90.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_checked_di" bpmnElement="F_checked">
+        <di:waypoint x="582.5" y="130" />
+        <di:waypoint x="582.5" y="240" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_repair_di" bpmnElement="F_repair">
+        <di:waypoint x="665" y="280.0" />
+        <di:waypoint x="702.5" y="280.0" />
+        <di:waypoint x="702.5" y="280.0" />
+        <di:waypoint x="740" y="280.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_solved_di" bpmnElement="F_solved">
+        <di:waypoint x="885" y="280.0" />
+        <di:waypoint x="952.5" y="280.0" />
+        <di:waypoint x="952.5" y="130.0" />
+        <di:waypoint x="1020" y="130.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_deep_di" bpmnElement="F_deep">
+        <di:waypoint x="885" y="280.0" />
+        <di:waypoint x="942.5" y="280.0" />
+        <di:waypoint x="942.5" y="280.0" />
+        <di:waypoint x="1000" y="280.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_escalate_di" bpmnElement="F_escalate">
+        <di:waypoint x="812.5" y="320" />
+        <di:waypoint x="812.5" y="380" />
+        <di:waypoint x="1230" y="380" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_jump_di" bpmnElement="F_jump">
+        <di:waypoint x="885" y="280.0" />
+        <di:waypoint x="942.5" y="280.0" />
+        <di:waypoint x="942.5" y="480.0" />
+        <di:waypoint x="1000" y="480.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_deep_end_di" bpmnElement="F_deep_end">
+        <di:waypoint x="1145" y="280.0" />
+        <di:waypoint x="1187.5" y="280.0" />
+        <di:waypoint x="1187.5" y="380.0" />
+        <di:waypoint x="1230" y="380.0" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

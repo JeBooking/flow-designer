@@ -17,7 +17,11 @@
         { "name": "observation", "isAttr": true, "type": "String" },
         { "name": "acquisition", "isAttr": true, "type": "String" },
         { "name": "referenceImage", "isAttr": true, "type": "String" },
-        { "name": "assessment", "isAttr": true, "type": "String" }
+        { "name": "assessment", "isAttr": true, "type": "String" },
+        { "name": "pythonModule", "isAttr": true, "type": "String" },
+        { "name": "pythonFunction", "isAttr": true, "type": "String" },
+        { "name": "pythonArguments", "isAttr": true, "type": "String" },
+        { "name": "pythonTopic", "isAttr": true, "type": "String" }
       ]
     },
     {

@@ -10,6 +10,7 @@ declare module 'vue' {
   export interface GlobalComponents {
     CodemirrorDialog: typeof import('./../components/CodemirrorEditor/CodemirrorDialog.vue')['default']
     CodemirrorEditor: typeof import('./../components/CodemirrorEditor/index.vue')['default']
+    ElAlert: typeof import('element-plus/es')['ElAlert']
     ElAside: typeof import('element-plus/es')['ElAside']
     ElBadge: typeof import('element-plus/es')['ElBadge']
     ElButton: typeof import('element-plus/es')['ElButton']

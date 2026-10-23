@@ -2,10 +2,8 @@
 import { useCustomRef } from '@/views/ProcessDesigner/utils/ElementUtil.ts'
 import ExecuteListener from './ExecuteListener.vue'
 import ExtendedAttribute from './ExtendedProperties.vue'
-import { computed, ref } from 'vue'
 import { supportsExecutionListener } from '@/views/ProcessDesigner/utils/EventDefinitionUtil.ts'
 import { isIdValid } from '@/views/ProcessDesigner/utils/ValidationUtil.ts'
-import { ElMessage } from 'element-plus'
 import { useBpmnContextService } from '@/hooks/useService.ts'
 import { getBusinessObject } from 'bpmn-js/lib/util/ModelUtil'
 import { isFixedDiagnosisNode } from '@/views/ProcessDesigner/Diagnosis/model'
@@ -15,7 +13,7 @@ defineOptions({
 })
 const { selectedElement } = useBpmnContextService()
 const activeTabName = ref('basic')
-const actives = ref<string[]>(['general', 'arg1', 'arg2', 'arg3', 'arg4'])
+const actives = ref<string[]>(['general', 'arg1', 'arg2', 'arg3', 'arg4', 'pythonBinding'])
 const id = useCustomRef('id')
 const isExecutable = useCustomRef('isExecutable')
 const name = useCustomRef('name')

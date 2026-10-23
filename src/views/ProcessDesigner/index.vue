@@ -39,6 +39,7 @@ import { generateProject } from '@/views/ProcessDesigner/CodeGeneration/generate
 import type { ModelElement } from '@/views/ProcessDesigner/CodeGeneration/generate'
 import { createArchive } from '@/views/ProcessDesigner/CodeGeneration/archive'
 import PythonProjects from '@/views/ProcessDesigner/PythonProjects.vue'
+import FlowableExecution from '@/views/ProcessDesigner/FlowableExecution.vue'
 
 defineOptions({
   name: 'ProcessDesigner',
@@ -127,6 +128,7 @@ const modeler = ref<BpmnModeler>()
 const injector = ref<Injector>()
 const fileRef = ref<HTMLInputElement>()
 const pythonProjectsRef = ref<InstanceType<typeof PythonProjects>>()
+const flowableRef = ref<InstanceType<typeof FlowableExecution>>()
 const labelPosition = ref('left')
 const formSize = ref('small')
 const importXml = () => {
@@ -271,6 +273,7 @@ defineExpose({
 <template>
   <el-container class="design-container">
     <PythonProjects ref="pythonProjectsRef" />
+    <FlowableExecution v-if="modeler" ref="flowableRef" :modeler="modeler" />
     <input
       ref="fileRef"
       accept=".xml,.bpmn"
@@ -281,6 +284,9 @@ defineExpose({
     <el-header class="design-header">
       <el-text tag="b" :size="'large'">{{ $t('ui.title') }}</el-text>
       <el-space>
+        <el-button @click="flowableRef?.open()">{{
+          $tu('Flowable 执行', 'Flowable execution')
+        }}</el-button>
         <el-button @click="pythonProjectsRef?.open()">
           {{ $tu('Python 项目', 'Python projects') }}
         </el-button>

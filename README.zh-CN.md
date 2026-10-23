@@ -169,3 +169,9 @@ ZIP 包含原始 BPMN XML、参考图、工作流 JSON、示例输入和双语�
 ## 📄 协议
 
 [Apache-2.0 License](./LICENSE)
+# Flowable 诊断执行
+
+诊断节点支持绑定外部 Python 模块函数。通过“Flowable 执行”载入包含全部八类节点的示例，
+导出执行包、部署启动流程，并查看执行记录和 Python 实际生成的图表。
+流程由 Flowable 调度，已有工程由官方 Python 客户端调用。
+详见[启动与示例说明](backend/FLOWABLE.zh-CN.md)。

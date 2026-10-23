@@ -30,3 +30,6 @@ coverage
 *.tsbuildinfo
 __pycache__/
 backend/examples/sample_project/example-chart.svg
+flowable-runtime/target/
+flowable-runtime/data/
+backend/examples/diagnostic_demo/output/

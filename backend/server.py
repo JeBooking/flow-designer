@@ -11,6 +11,7 @@ import threading
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, unquote
 import uuid
+from flowable_bridge import compile_workflow, deploy, engine_request
 
 ROOT = Path(__file__).resolve().parent.parent
 WORKER = Path(__file__).with_name('worker.py')
@@ -110,6 +111,18 @@ def make_handler(registry):
                 with registry.lock:
                     self.reply({'projects': list(registry.projects.values())})
                 return
+            if route.startswith('/api/flowable/history/'):
+                run_id = route.rsplit('/', 1)[-1]
+                if not re.fullmatch(r'[A-Za-z0-9_-]+', run_id):
+                    self.reply({'error': 'Invalid run ID'}, 400)
+                    return
+                try:
+                    self.reply({'process': engine_request('/process-api/history/historic-process-instances/' + run_id),
+                        'variables': engine_request('/process-api/history/historic-variable-instances?processInstanceId=' + run_id + '&size=200'),
+                        'activities': engine_request('/process-api/history/historic-activity-instances?processInstanceId=' + run_id + '&size=200&sort=startTime&order=asc')})
+                except RuntimeError as error:
+                    self.reply({'error': str(error)}, 502)
+                return
             if route.startswith('/api/'):
                 self.reply({'error': 'Not found'}, 404)
                 return
@@ -138,7 +151,23 @@ def make_handler(registry):
                 if not isinstance(data, dict):
                     raise ValueError('Request must be a JSON object')
                 parts = urlparse(self.path).path.strip('/').split('/')
-                if parts == ['api', 'projects']:
+                if parts == ['api', 'flowable', 'compile']:
+                    result = {'ok': True, **compile_workflow(data['xml'])}
+                elif parts == ['api', 'flowable', 'start']:
+                    compiled = compile_workflow(data['xml'])
+                    variables = data.get('variables', {})
+                    if not isinstance(variables, dict):
+                        raise ValueError('Variables must be an object')
+                    deployment = deploy(compiled['files']['workflow.bpmn20.xml'])
+                    definitions = engine_request('/process-api/repository/process-definitions?deploymentId=' + deployment['id'])
+                    definition_id = definitions['data'][0]['id']
+                    # JSON 变量可保存嵌套结果，工作进程与网关共享同一流程实例。
+                    run = engine_request('/process-api/runtime/process-instances', json.dumps({
+                        'processDefinitionId': definition_id,
+                        'variables': [{'name': key, 'type': 'json', 'value': value} for key, value in variables.items()]
+                    }).encode())
+                    result = {'ok': True, 'run': run, 'files': compiled['files']}
+                elif parts == ['api', 'projects']:
                     result = registry.register(data)
                 elif len(parts) == 4 and parts[:2] == ['api', 'projects']:
                     project = registry.get(parts[2])
@@ -159,7 +188,7 @@ def make_handler(registry):
                     self.reply({'error': 'Not found'}, 404)
                     return
                 self.reply(result, 200 if result.get('ok') else 422)
-            except (ValueError, KeyError, OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+            except (ValueError, TypeError, KeyError, OSError, RuntimeError, subprocess.TimeoutExpired) as error:
                 self.reply({'ok': False, 'error': f'{type(error).__name__}: {error}'}, 400)
 
     return Handler
