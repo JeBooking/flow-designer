@@ -1,0 +1,137 @@
+<?xml version='1.0' encoding='cp936'?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:flowable="http://flowable.org/bpmn" id="Definitions_SensorComparison" targetNamespace="http://diagnosis.local/examples">
+  <bpmn:process id="SensorComparison" name="双传感器差异分析与分支汇合" isExecutable="false">
+    <bpmn:startEvent id="Start" name="开始">
+      <bpmn:outgoing>S_start</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:task id="ReadSensors" name="比较两路传感器并绘图" flowable:diagnosisKind="investigation" flowable:pythonModule="diagnostic_demo.scenarios" flowable:pythonFunction="compare_sensors" flowable:pythonArguments="{&quot;scenario&quot;: &quot;$scenario&quot;, &quot;source_label&quot;: &quot;$$sensor-input&quot;}" flowable:observation="两路温度采样及对应差值" flowable:acquisition="调用模拟传感器采集接口。A/B 分析接口共享同一个已有工程。" flowable:assessment="比较每对采样的绝对差值；差值超过 3°C 为不一致。参考图蓝线为差值、红线为上限。" flowable:referenceImage="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAPAAAAB4CAIAAABD1OhwAAABtUlEQVR4nO3XsW3DMABFQS8TL5a1s0GGiAOktkVAskI+3eGXBMHiNbz9QMjtvx8ARxI0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkbAT9db+bTbVdQcNaBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBM0yPj6/f/f6jKCZwl+srzdyj6B5u6NiHSFodjkz1hGC5qnZYh0h6ItaMdYRgg6qxjpC0Iu5cqwjBD0Rse4n6JOI9RyCPoBY5yHoDWJdy6WDFmtPNmixXtOSQYuVZ6YLWqzscWrQYuXdDgtarMxgKGixsoqNoMXKWqb7FMIegiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBk/IAUAlcYCiwr8oAAAAASUVORK5CYII=">
+      <bpmn:incoming>S_start</bpmn:incoming>
+      <bpmn:outgoing>S_channel_a</bpmn:outgoing>
+      <bpmn:outgoing>S_channel_b</bpmn:outgoing>
+      <bpmn:outgoing>S_normal</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="SensorA" name="分析传感器 A" flowable:diagnosisKind="investigation" flowable:pythonModule="diagnostic_demo.scenarios" flowable:pythonFunction="analyze_channel" flowable:pythonArguments="{&quot;reading&quot;: &quot;$ReadSensors&quot;, &quot;channel&quot;: &quot;A&quot;}" flowable:observation="两路温度采样及对应差值" flowable:acquisition="调用模拟传感器采集接口。A/B 分析接口共享同一个已有工程。" flowable:assessment="比较每对采样的绝对差值；差值超过 3°C 为不一致。参考图蓝线为差值、红线为上限。" flowable:referenceImage="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAPAAAAB4CAIAAABD1OhwAAABtUlEQVR4nO3XsW3DMABFQS8TL5a1s0GGiAOktkVAskI+3eGXBMHiNbz9QMjtvx8ARxI0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkbAT9db+bTbVdQcNaBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBM0yPj6/f/f6jKCZwl+srzdyj6B5u6NiHSFodjkz1hGC5qnZYh0h6ItaMdYRgg6qxjpC0Iu5cqwjBD0Rse4n6JOI9RyCPoBY5yHoDWJdy6WDFmtPNmixXtOSQYuVZ6YLWqzscWrQYuXdDgtarMxgKGixsoqNoMXKWqb7FMIegiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBk/IAUAlcYCiwr8oAAAAASUVORK5CYII=">
+      <bpmn:incoming>S_channel_a</bpmn:incoming>
+      <bpmn:outgoing>S_a_join</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="SensorB" name="分析传感器 B" flowable:diagnosisKind="investigation" flowable:pythonModule="diagnostic_demo.scenarios" flowable:pythonFunction="analyze_channel" flowable:pythonArguments="{&quot;reading&quot;: &quot;$ReadSensors&quot;, &quot;channel&quot;: &quot;B&quot;}" flowable:observation="两路温度采样及对应差值" flowable:acquisition="调用模拟传感器采集接口。A/B 分析接口共享同一个已有工程。" flowable:assessment="比较每对采样的绝对差值；差值超过 3°C 为不一致。参考图蓝线为差值、红线为上限。" flowable:referenceImage="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAPAAAAB4CAIAAABD1OhwAAABtUlEQVR4nO3XsW3DMABFQS8TL5a1s0GGiAOktkVAskI+3eGXBMHiNbz9QMjtvx8ARxI0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkbAT9db+bTbVdQcNaBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBM0yPj6/f/f6jKCZwl+srzdyj6B5u6NiHSFodjkz1hGC5qnZYh0h6ItaMdYRgg6qxjpC0Iu5cqwjBD0Rse4n6JOI9RyCPoBY5yHoDWJdy6WDFmtPNmixXtOSQYuVZ6YLWqzscWrQYuXdDgtarMxgKGixsoqNoMXKWqb7FMIegiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBk/IAUAlcYCiwr8oAAAAASUVORK5CYII=">
+      <bpmn:incoming>S_channel_b</bpmn:incoming>
+      <bpmn:outgoing>S_b_join</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="SensorConclusion" name="汇总当前支路结论" flowable:diagnosisKind="conclusion" flowable:pythonModule="diagnostic_demo.scenarios" flowable:pythonFunction="sensor_conclusion" flowable:pythonArguments="{&quot;context&quot;: &quot;$&quot;}" flowable:conclusionText="只读取实际执行的传感器分析结果；两路一致时直接确认一致。">
+      <bpmn:incoming>S_normal</bpmn:incoming>
+      <bpmn:incoming>S_a_join</bpmn:incoming>
+      <bpmn:incoming>S_b_join</bpmn:incoming>
+      <bpmn:outgoing>S_calibrate</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Calibrate" name="校准或确认传感器（模拟）" flowable:diagnosisKind="remediation" flowable:pythonModule="diagnostic_demo.scenarios" flowable:pythonFunction="calibrate_sensor" flowable:pythonArguments="{&quot;conclusion&quot;: &quot;$SensorConclusion&quot;, &quot;scenario&quot;: &quot;$scenario&quot;}">
+      <bpmn:incoming>S_calibrate</bpmn:incoming>
+      <bpmn:outgoing>S_solved</bpmn:outgoing>
+      <bpmn:outgoing>S_escalate</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Solved" name="问题解决" flowable:diagnosisKind="problemSolved">
+      <bpmn:incoming>S_solved</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:task id="Escalation" name="上升" flowable:diagnosisKind="escalation">
+      <bpmn:incoming>S_escalate</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="S_start" sourceRef="Start" targetRef="ReadSensors" name="" />
+    <bpmn:sequenceFlow id="S_channel_a" sourceRef="ReadSensors" targetRef="SensorA" name="疑似 A 偏移" />
+    <bpmn:sequenceFlow id="S_channel_b" sourceRef="ReadSensors" targetRef="SensorB" name="疑似 B 偏移" />
+    <bpmn:sequenceFlow id="S_normal" sourceRef="ReadSensors" targetRef="SensorConclusion" name="读数一致" />
+    <bpmn:sequenceFlow id="S_a_join" sourceRef="SensorA" targetRef="SensorConclusion" name="" />
+    <bpmn:sequenceFlow id="S_b_join" sourceRef="SensorB" targetRef="SensorConclusion" name="" />
+    <bpmn:sequenceFlow id="S_calibrate" sourceRef="SensorConclusion" targetRef="Calibrate" name="" />
+    <bpmn:sequenceFlow id="S_solved" sourceRef="Calibrate" targetRef="Solved" name="确认正常或已校准" />
+    <bpmn:sequenceFlow id="S_escalate" sourceRef="Calibrate" targetRef="Escalation" name="严重偏移" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="SensorComparison_diagram">
+    <bpmndi:BPMNPlane id="SensorComparison_plane" bpmnElement="SensorComparison">
+      <bpmndi:BPMNShape id="Start_di" bpmnElement="Start">
+        <dc:Bounds x="80" y="275" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ReadSensors_di" bpmnElement="ReadSensors">
+        <dc:Bounds x="190" y="250" width="170" height="86" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="SensorA_di" bpmnElement="SensorA">
+        <dc:Bounds x="460" y="70" width="170" height="86" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="SensorB_di" bpmnElement="SensorB">
+        <dc:Bounds x="460" y="450" width="170" height="86" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="SensorConclusion_di" bpmnElement="SensorConclusion">
+        <dc:Bounds x="740" y="250" width="170" height="86" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Calibrate_di" bpmnElement="Calibrate">
+        <dc:Bounds x="1030" y="250" width="170" height="86" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Solved_di" bpmnElement="Solved">
+        <dc:Bounds x="1330" y="100" width="170" height="86" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Escalation_di" bpmnElement="Escalation">
+        <dc:Bounds x="1330" y="440" width="170" height="86" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="S_start_di" bpmnElement="S_start">
+        <di:waypoint x="116" y="293.0" />
+        <di:waypoint x="190" y="293.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="S_channel_a_di" bpmnElement="S_channel_a">
+        <di:waypoint x="360" y="275" />
+        <di:waypoint x="410" y="275" />
+        <di:waypoint x="410" y="113" />
+        <di:waypoint x="460" y="113" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="345.0" y="251.0" width="80" height="20" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="S_channel_b_di" bpmnElement="S_channel_b">
+        <di:waypoint x="360" y="310" />
+        <di:waypoint x="400" y="310" />
+        <di:waypoint x="400" y="493" />
+        <di:waypoint x="460" y="493" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="340.0" y="286.0" width="80" height="20" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="S_normal_di" bpmnElement="S_normal">
+        <di:waypoint x="360" y="293.0" />
+        <di:waypoint x="740" y="293.0" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="510.0" y="269.0" width="80" height="20" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="S_a_join_di" bpmnElement="S_a_join">
+        <di:waypoint x="630" y="113" />
+        <di:waypoint x="825" y="113" />
+        <di:waypoint x="825" y="250" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="S_b_join_di" bpmnElement="S_b_join">
+        <di:waypoint x="630" y="493" />
+        <di:waypoint x="825" y="493" />
+        <di:waypoint x="825" y="336" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="S_calibrate_di" bpmnElement="S_calibrate">
+        <di:waypoint x="910" y="293.0" />
+        <di:waypoint x="1030" y="293.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="S_solved_di" bpmnElement="S_solved">
+        <di:waypoint x="1200" y="275" />
+        <di:waypoint x="1260" y="275" />
+        <di:waypoint x="1260" y="143" />
+        <di:waypoint x="1330" y="143" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1190.0" y="251.0" width="80" height="20" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="S_escalate_di" bpmnElement="S_escalate">
+        <di:waypoint x="1200" y="310" />
+        <di:waypoint x="1250" y="310" />
+        <di:waypoint x="1250" y="483" />
+        <di:waypoint x="1330" y="483" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1185.0" y="286.0" width="80" height="20" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

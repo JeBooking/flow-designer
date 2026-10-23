@@ -31,7 +31,7 @@ pnpm dev
 
 ## Example
 
-Open **Flowable execution**, load the diagnostic example (export your current diagram first),
+Open **Flowable execution**, select and load a diagnostic example (export your current diagram first),
 then export and extract the execution bundle. Keep `source.bpmn` for editing; deploy
 `workflow.bpmn20.xml` and give `bindings.json` to the worker:
 
@@ -49,6 +49,23 @@ performs deep diagnosis before escalation; `severe` escalates directly after rem
 `jump` records a handoff request and ends the local chain. The target chain is not executed
 by this example. Temperature samples and machine actions are simulated; chart generation
 and threshold calculations run real Python code.
+
+The gallery contains five independent diagrams, all using the same `diagnostic_demo` project.
+Select a scenario after loading a diagram to fill initial variables, and use that diagram's
+exported bindings with the worker:
+
+| Diagram | Scenarios | Focus |
+| --- | --- | --- |
+| Temperature | recover, normal, action, escalate, severe, jump | All eight node types |
+| Power supply | recover, normal, severe | Lower-limit analysis and recovery results |
+| Communication | recover, normal, offline | Async checks and reset/recheck loop, at most three attempts |
+| Dual sensors | sensor-a, sensor-b, normal, severe | Exclusive branches and a shared conclusion |
+| Pressure | stable, leak, unknown | Ordered actions, deep analysis and handoff |
+
+All machine samples and actions are simulated, while plots, numerical analysis and process
+execution are real. Revisited nodes update their result variable; activity history retains each
+visit. Bound pure-diagnostic graphs use exclusive routing and do not wait for other branches at
+joins. Ordinary BPMN parallel-flow join validation remains enabled.
 
 ## Bind a project
 
@@ -77,7 +94,11 @@ launch a separate desktop process from their entry point; client callbacks execu
 ```powershell
 python scripts/verify-flowable.py --unit-only
 backend/.local/venv/Scripts/python.exe scripts/verify-flowable.py
+backend/.local/venv/Scripts/python.exe scripts/verify-diagnostic-examples.py
+node scripts/verify-diagnostic-lint.mjs
 ```
 
 The second command requires a running engine and verifies six complete execution paths,
 exclusive routing, threshold results and actual SVG output using the official Python client.
+The third runs thirteen scenarios across the four added diagrams. The last checks all five diagrams
+against the complete lint configuration, XML round-trips and ordinary BPMN join validation.

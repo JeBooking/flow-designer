@@ -3,7 +3,7 @@ import type BpmnModeler from 'bpmn-js/lib/Modeler'
 import type Canvas from 'diagram-js/lib/core/Canvas'
 import { flowableRequest } from '@/services/flowable'
 import { createArchive } from '@/views/ProcessDesigner/CodeGeneration/archive'
-import demoXml from '@/views/ProcessDesigner/examples/diagnostic-demo.bpmn?raw'
+import { diagnosticExamples } from '@/views/ProcessDesigner/examples/catalog'
 
 const props = defineProps<{ modeler: BpmnModeler }>()
 const visible = ref(false)
@@ -15,6 +15,19 @@ const history = ref('')
 const charts = ref<string[]>([])
 const finished = ref(false)
 const visitedNodes = ref<string[]>([])
+const selectedExampleId = ref(diagnosticExamples[0].id)
+const selectedExample = computed(
+  () =>
+    diagnosticExamples.find((item) => item.id === selectedExampleId.value) || diagnosticExamples[0],
+)
+const loadedExampleId = ref('')
+const loadedExample = computed(() =>
+  diagnosticExamples.find((item) => item.id === loadedExampleId.value),
+)
+const selectedScenario = ref('')
+const applyScenario = (scenario: string) => {
+  variablesText.value = JSON.stringify({ scenario }, null, 2)
+}
 interface Bundle {
   files: Record<string, string>
   processId: string
@@ -54,7 +67,10 @@ const loadDemo = () =>
       translateUi('载入诊断示例', 'Load diagnostic example'),
       { type: 'warning' },
     )
-    await props.modeler.importXML(demoXml)
+    await props.modeler.importXML(selectedExample.value.xml)
+    loadedExampleId.value = selectedExample.value.id
+    selectedScenario.value = selectedExample.value.scenarios[0]
+    applyScenario(selectedScenario.value)
     const canvas = props.modeler.get<Canvas>('canvas')
     canvas.zoom('fit-viewport')
     const box = canvas.viewbox()
@@ -118,7 +134,24 @@ defineExpose({
 </script>
 
 <template>
-  <el-drawer v-model="visible" :title="$tu('Flowable 执行', 'Flowable execution')" size="620px">
+  <el-drawer
+    v-model="visible"
+    :title="$tu('Flowable 执行', 'Flowable execution')"
+    size="min(620px, 100vw)"
+  >
+    <el-form label-position="top">
+      <el-form-item :label="$tu('诊断示例', 'Diagnostic example')">
+        <el-select v-model="selectedExampleId" style="width: 100%">
+          <el-option
+            v-for="example in diagnosticExamples"
+            :key="example.id"
+            :value="example.id"
+            :label="$tu(example.title, example.titleEn)"
+          />
+        </el-select>
+      </el-form-item>
+    </el-form>
+    <p>{{ $tu(selectedExample.description, selectedExample.descriptionEn) }}</p>
     <el-space wrap>
       <el-button :disabled="busy" @click="loadDemo">{{
         $tu('载入诊断示例', 'Load diagnostic example')
@@ -136,18 +169,20 @@ defineExpose({
       }}
     </p>
     <el-form label-position="top">
+      <el-form-item v-if="loadedExample" :label="$tu('示例场景', 'Example scenario')">
+        <el-select v-model="selectedScenario" @change="applyScenario" style="width: 100%">
+          <el-option
+            v-for="scenario in loadedExample.scenarios"
+            :key="scenario"
+            :label="scenario"
+            :value="scenario"
+          />
+        </el-select>
+      </el-form-item>
       <el-form-item :label="$tu('初始流程变量', 'Initial process variables')">
         <el-input v-model="variablesText" type="textarea" :rows="4" />
       </el-form-item>
     </el-form>
-    <p>
-      {{
-        $tu(
-          '示例场景：normal、recover、escalate、severe、jump、action。',
-          'Example scenarios: normal, recover, escalate, severe, jump, action.',
-        )
-      }}
-    </p>
     <el-button type="primary" :loading="busy" @click="start">{{
       $tu('部署并启动', 'Deploy and start')
     }}</el-button>

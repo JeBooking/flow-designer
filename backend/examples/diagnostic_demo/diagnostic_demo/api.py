@@ -1,17 +1,23 @@
 """使用模拟温度数据完成真实绘图与阈值判断，不控制真实机台。"""
 from pathlib import Path
+import math
 import uuid
 
 OUTPUT = Path(__file__).resolve().parent.parent / 'output'
 
 
-def plot(values):
-    points = ' '.join(f'{40 + index * 60},{240 - value * 2}' for index, value in enumerate(values))
+def plot(values, title='Temperature', threshold=70):
+    if not values or any(isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) for value in values):
+        raise ValueError('Chart samples must be finite numbers')
+    from html import escape
+    scale = max(max(abs(value) for value in values), abs(threshold), 1) * 1.2
+    points = ' '.join(f'{40 + index * 500 / max(1, len(values) - 1):.2f},{240 - value * 180 / scale:.2f}' for index, value in enumerate(values))
+    threshold_y = 240 - threshold * 180 / scale
     svg = ('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="300" viewBox="0 0 600 300">'
         '<rect width="600" height="300" fill="white"/>'
-        '<text x="40" y="25" font-size="18">Temperature / threshold: 70 C</text>'
+        f'<text x="40" y="25" font-size="18">{escape(title)} / threshold: {threshold}</text>'
         '<path d="M40 40 V240 H560" fill="none" stroke="#475569"/>'
-        '<path d="M40 100 H560" stroke="#dc2626" stroke-dasharray="6 4"/>'
+        f'<path d="M40 {threshold_y:.2f} H560" stroke="#dc2626" stroke-dasharray="6 4"/>'
         f'<polyline points="{points}" fill="none" stroke="#2563eb" stroke-width="3"/>'
         '<text x="40" y="280">Samples (simulated machine data)</text></svg>')
     OUTPUT.mkdir(parents=True, exist_ok=True)

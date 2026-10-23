@@ -1,0 +1,125 @@
+<?xml version='1.0' encoding='cp936'?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:flowable="http://flowable.org/bpmn" id="Definitions_PressureRecovery" targetNamespace="http://diagnosis.local/examples">
+  <bpmn:process id="PressureRecovery" name="压力诊断：连续处置、深度分析与交接" isExecutable="false">
+    <bpmn:startEvent id="Start" name="开始">
+      <bpmn:outgoing>P_start</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:task id="PressureRead" name="采集压力并判断" flowable:diagnosisKind="investigation" flowable:pythonModule="diagnostic_demo.scenarios" flowable:pythonFunction="pressure" flowable:pythonArguments="{&quot;scenario&quot;: &quot;$scenario&quot;}" flowable:observation="压力采样，单位 bar" flowable:acquisition="模拟采集压力；后续处置由独立业务函数提供。" flowable:assessment="压力超过 8 bar 为超限；蓝线为压力，红线为阈值。处置后需再次绘图分析趋势。" flowable:referenceImage="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAPAAAAB4CAIAAABD1OhwAAABtUlEQVR4nO3XsW3DMABFQS8TL5a1s0GGiAOktkVAskI+3eGXBMHiNbz9QMjtvx8ARxI0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkbAT9db+bTbVdQcNaBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBM0yPj6/f/f6jKCZwl+srzdyj6B5u6NiHSFodjkz1hGC5qnZYh0h6ItaMdYRgg6qxjpC0Iu5cqwjBD0Rse4n6JOI9RyCPoBY5yHoDWJdy6WDFmtPNmixXtOSQYuVZ6YLWqzscWrQYuXdDgtarMxgKGixsoqNoMXKWqb7FMIegiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBk/IAUAlcYCiwr8oAAAAASUVORK5CYII=">
+      <bpmn:incoming>P_start</bpmn:incoming>
+      <bpmn:outgoing>P_conclude</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="PressureConclusion" name="压力超限" flowable:diagnosisKind="conclusion" flowable:pythonModule="diagnostic_demo.scenarios" flowable:pythonFunction="pressure_conclusion" flowable:pythonArguments="{&quot;reading&quot;: &quot;$PressureRead&quot;}" flowable:conclusionText="压力超过 8 bar，需要先泄压，再复位控制器。">
+      <bpmn:incoming>P_conclude</bpmn:incoming>
+      <bpmn:outgoing>P_vent</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Vent" name="先执行泄压（模拟）" flowable:diagnosisKind="remediation" flowable:pythonModule="diagnostic_demo.scenarios" flowable:pythonFunction="vent_pressure" flowable:pythonArguments="{&quot;conclusion&quot;: &quot;$PressureConclusion&quot;}">
+      <bpmn:incoming>P_vent</bpmn:incoming>
+      <bpmn:outgoing>P_reset</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Reset" name="再复位控制器（模拟）" flowable:diagnosisKind="remediation" flowable:pythonModule="diagnostic_demo.scenarios" flowable:pythonFunction="reset_controller" flowable:pythonArguments="{&quot;vent&quot;: &quot;$Vent&quot;}">
+      <bpmn:incoming>P_reset</bpmn:incoming>
+      <bpmn:outgoing>P_analyze</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="PressureDeep" name="绘图并分析恢复后趋势" flowable:diagnosisKind="deepDiagnosis" flowable:pythonModule="diagnostic_demo.scenarios" flowable:pythonFunction="analyze_pressure" flowable:pythonArguments="{&quot;reading&quot;: &quot;$PressureRead&quot;, &quot;reset&quot;: &quot;$Reset&quot;, &quot;scenario&quot;: &quot;$scenario&quot;}">
+      <bpmn:incoming>P_analyze</bpmn:incoming>
+      <bpmn:outgoing>P_solved</bpmn:outgoing>
+      <bpmn:outgoing>P_escalate</bpmn:outgoing>
+      <bpmn:outgoing>P_jump</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Solved" name="问题解决" flowable:diagnosisKind="problemSolved">
+      <bpmn:incoming>P_solved</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:task id="Escalation" name="上升" flowable:diagnosisKind="escalation">
+      <bpmn:incoming>P_escalate</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:task id="PressureJump" name="交接调压阀诊断链路" flowable:diagnosisKind="jump" flowable:pythonModule="diagnostic_demo.scenarios" flowable:pythonFunction="pressure_handoff" flowable:pythonArguments="{&quot;analysis&quot;: &quot;$PressureDeep&quot;}">
+      <bpmn:incoming>P_jump</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="P_start" sourceRef="Start" targetRef="PressureRead" name="" />
+    <bpmn:sequenceFlow id="P_conclude" sourceRef="PressureRead" targetRef="PressureConclusion" name="" />
+    <bpmn:sequenceFlow id="P_vent" sourceRef="PressureConclusion" targetRef="Vent" name="" />
+    <bpmn:sequenceFlow id="P_reset" sourceRef="Vent" targetRef="Reset" name="" />
+    <bpmn:sequenceFlow id="P_analyze" sourceRef="Reset" targetRef="PressureDeep" name="" />
+    <bpmn:sequenceFlow id="P_solved" sourceRef="PressureDeep" targetRef="Solved" name="压力稳定" />
+    <bpmn:sequenceFlow id="P_escalate" sourceRef="PressureDeep" targetRef="Escalation" name="持续升压" />
+    <bpmn:sequenceFlow id="P_jump" sourceRef="PressureDeep" targetRef="PressureJump" name="需要其它链路" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="PressureRecovery_diagram">
+    <bpmndi:BPMNPlane id="PressureRecovery_plane" bpmnElement="PressureRecovery">
+      <bpmndi:BPMNShape id="Start_di" bpmnElement="Start">
+        <dc:Bounds x="80" y="275" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="PressureRead_di" bpmnElement="PressureRead">
+        <dc:Bounds x="190" y="250" width="170" height="86" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="PressureConclusion_di" bpmnElement="PressureConclusion">
+        <dc:Bounds x="460" y="250" width="170" height="86" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Vent_di" bpmnElement="Vent">
+        <dc:Bounds x="730" y="250" width="170" height="86" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Reset_di" bpmnElement="Reset">
+        <dc:Bounds x="1000" y="250" width="170" height="86" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="PressureDeep_di" bpmnElement="PressureDeep">
+        <dc:Bounds x="1270" y="250" width="170" height="86" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Solved_di" bpmnElement="Solved">
+        <dc:Bounds x="1580" y="70" width="170" height="86" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Escalation_di" bpmnElement="Escalation">
+        <dc:Bounds x="1580" y="270" width="170" height="86" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="PressureJump_di" bpmnElement="PressureJump">
+        <dc:Bounds x="1580" y="470" width="170" height="86" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="P_start_di" bpmnElement="P_start">
+        <di:waypoint x="116" y="293.0" />
+        <di:waypoint x="190" y="293.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="P_conclude_di" bpmnElement="P_conclude">
+        <di:waypoint x="360" y="293.0" />
+        <di:waypoint x="460" y="293.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="P_vent_di" bpmnElement="P_vent">
+        <di:waypoint x="630" y="293.0" />
+        <di:waypoint x="730" y="293.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="P_reset_di" bpmnElement="P_reset">
+        <di:waypoint x="900" y="293.0" />
+        <di:waypoint x="1000" y="293.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="P_analyze_di" bpmnElement="P_analyze">
+        <di:waypoint x="1170" y="293.0" />
+        <di:waypoint x="1270" y="293.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="P_solved_di" bpmnElement="P_solved">
+        <di:waypoint x="1440" y="275" />
+        <di:waypoint x="1500" y="275" />
+        <di:waypoint x="1500" y="113" />
+        <di:waypoint x="1580" y="113" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1430.0" y="251.0" width="80" height="20" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="P_escalate_di" bpmnElement="P_escalate">
+        <di:waypoint x="1440" y="293" />
+        <di:waypoint x="1510" y="293" />
+        <di:waypoint x="1510" y="313" />
+        <di:waypoint x="1580" y="313" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1435.0" y="269.0" width="80" height="20" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="P_jump_di" bpmnElement="P_jump">
+        <di:waypoint x="1440" y="320" />
+        <di:waypoint x="1490" y="320" />
+        <di:waypoint x="1490" y="513" />
+        <di:waypoint x="1580" y="513" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1425.0" y="296.0" width="80" height="20" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

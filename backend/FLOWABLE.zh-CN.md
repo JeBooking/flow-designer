@@ -32,7 +32,7 @@ python backend/server.py
 
 ## 运行完整示例
 
-1. 点击“Flowable 执行”→“载入诊断示例”。会替换画布，先导出需要保留的图。
+1. 点击“Flowable 执行”，选择诊断示例，再点击“载入诊断示例”。会替换画布，先导出需要保留的图。
 2. 点击“导出执行包”，解压，得到 `source.bpmn`、`workflow.bpmn20.xml`、`bindings.json`。
    前者用于继续编辑，后者是引擎执行定义；不使用引擎定义替换原始图。
 3. 在仓库根目录运行：
@@ -47,6 +47,21 @@ python backend/server.py
 
 示例包含全部八类诊断节点：排查、排查动作、结论、处置措施、深度诊断、跳转、问题解决、上升。
 它使用模拟温度数据执行真实阈值判断并生成真实 SVG；风扇自检和恢复动作明确为模拟，不控制机台。
+
+界面提供五张可独立执行的示例图；载入后可用“示例场景”下拉框填写相应的初始变量。
+各图共享 `diagnostic_demo` 工程，执行时仍需使用该图导出的 `bindings.json`。
+
+| 示例图 | 场景 | 验证重点 |
+| --- | --- | --- |
+| 温度综合诊断 | recover / normal / action / escalate / severe / jump | 八类节点及所有结果分支 |
+| 电源电压诊断 | recover / normal / severe | 下限判断、恢复成功与失败 |
+| 通信重试诊断 | recover / normal / offline | 异步接口、排查→动作→排查的循环；最多三次 |
+| 双传感器对比 | sensor-a / sensor-b / normal / severe | 多个排查支路互斥执行，汇合后不读取未执行支路 |
+| 压力处置与交接 | stable / leak / unknown | 连续处置的顺序、深度分析及跳转交接 |
+
+这些图的采样数据与机台动作均为模拟；绘图、数值计算和流程执行为真实运行。
+回访同一节点时，结果变量更新为最新值；执行记录保留每次经过节点的信息。
+纯诊断图的分支为排他路由，因此合流不要求等待其它支路；普通 BPMN 并行流程仍保持原有汇合校验。
 
 | scenario | 路径 |
 | --- | --- |
@@ -93,6 +108,9 @@ python backend/server.py
 python scripts/verify-flowable.py --unit-only
 # Flowable 已启动时，使用装有官方客户端的解释器
 backend/.local/venv/Scripts/python.exe scripts/verify-flowable.py
+backend/.local/venv/Scripts/python.exe scripts/verify-diagnostic-examples.py
+node scripts/verify-diagnostic-lint.mjs
 ```
 
 第二条验证真实引擎、官方客户端、六种路径、路由互斥、判断结果与生成 SVG。
+第三条运行新增四图的十三种场景；最后一条验证五图的全部规则、XML 往返和普通 BPMN 汇合规则。

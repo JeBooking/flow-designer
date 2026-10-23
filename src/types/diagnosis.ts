@@ -14,3 +14,13 @@ export interface InvestigationData {
   referenceImage: string
   assessment: string
 }
+
+export interface DiagnosticExample {
+  id: string
+  title: string
+  titleEn: string
+  description: string
+  descriptionEn: string
+  xml: string
+  scenarios: string[]
+}
