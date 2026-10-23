@@ -60,8 +60,11 @@ must return `{"next":"outgoingFlowId", ...}`. Invalid routing fails the job rath
 executing every branch. The compiler creates exclusive gateways without evaluating arbitrary
 user Python or condition expressions.
 
-Topics include process ID and a source digest. Re-export and restart the matching worker after
-editing; previous instances still need their original worker. Topics must be unique in a diagram.
+Topics include process ID and an execution-definition digest. Layout, descriptive text and
+XML/argument-JSON formatting changes preserve topics. Re-export and restart the matching worker
+after changing connections, bindings or parameters; previous instances still need their original
+worker. Topics must be unique in a diagram. Source conditions and default flows are rejected;
+Python's `next` result is the single source of branch selection.
 Export currently supports one top-level process, one plain start event, and diagnostic nodes.
 Unsupported subprocesses and events are rejected. All non-final nodes require bindings. The
 example does not provide a human task UI. Real machine operations need business-specific

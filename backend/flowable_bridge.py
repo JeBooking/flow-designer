@@ -41,10 +41,31 @@ def compile_workflow(xml):
     process_id = process.get('id')
     if not process_id:
         raise ValueError('Missing process ID / 缺少流程 ID')
-    version = hashlib.sha256(xml.encode()).hexdigest()[:12]
+    # 工作主题取决于执行定义，移动节点、翻译文字或 XML 重排不应使已启动的 worker 失效。
+    signature = {'processId': process_id, 'nodes': [], 'flows': []}
+    executable_elements = [e for e in process if e.tag in (b('task'), b('startEvent'), b('sequenceFlow'))]
+    execution_ids = [e.get('id') for e in executable_elements]
+    if any(not value for value in execution_ids) or len(set(execution_ids)) != len(execution_ids):
+        raise ValueError('Missing or duplicate element ID / 元素 ID 缺失或重复')
+    for element in executable_elements:
+        if element.get('default') or element.find(b('conditionExpression')) is not None:
+            raise ValueError('Use the Python next result instead of flow conditions / 请使用 Python 的 next 返回值选择分支，并移除条件表达式和默认分支: ' + element.get('id'))
+        if element.tag == b('sequenceFlow'):
+            signature['flows'].append([element.get('id'), element.get('sourceRef'), element.get('targetRef')])
+        else:
+            kwargs = json.loads(element.get(f('pythonArguments')) or '{}')
+            if not isinstance(kwargs, dict):
+                raise ValueError('Arguments must be an object / 参数必须是 JSON 对象')
+            signature['nodes'].append({'id': element.get('id'), 'kind': element.get(f('diagnosisKind')),
+                'module': element.get(f('pythonModule'), '').strip(),
+                'function': element.get(f('pythonFunction'), '').strip(), 'kwargs': kwargs,
+                'topic': element.get(f('pythonTopic'), '').strip()})
+    signature['nodes'].sort(key=lambda item: item['id'])
+    signature['flows'].sort()
+    version = hashlib.sha256(json.dumps(signature, sort_keys=True, ensure_ascii=True, allow_nan=False).encode()).hexdigest()[:12]
     manifest = {'processId': process_id, 'version': version, 'bindings': {}}
     starts = process.findall(b('startEvent'))
-    if len(starts) != 1 or any(child.tag != b('outgoing') for child in starts[0]):
+    if len(starts) != 1 or any(child.tag not in (b('outgoing'), b('documentation')) for child in starts[0]):
         raise ValueError('One plain start event is required / 需要一个普通开始事件')
     ids = {e.get('id') for e in root.iter() if e.get('id')}
     def new_id(stem):
@@ -125,11 +146,11 @@ def compile_workflow(xml):
             kwargs = json.loads(node.get(f('pythonArguments')) or '{}')
             if not isinstance(kwargs, dict):
                 raise ValueError('Arguments must be an object / 参数必须是 JSON 对象')
-            topic = f'{process_id}.{version}.' + (node.get(f('pythonTopic')) or node_id)
+            topic = f'{process_id}.{version}.' + (node.get(f('pythonTopic'), '').strip() or node_id)
             if topic in manifest['bindings']:
                 raise ValueError('Duplicate topic / 重复工作主题: ' + topic)
             manifest['bindings'][topic] = {'nodeId': node_id, 'module': module, 'function': function,
-                'kwargs': kwargs, 'outgoing': [e.get('id') for e in outgoing], 'kind': kind}
+                'kwargs': kwargs, 'outgoing': sorted(e.get('id') for e in outgoing), 'kind': kind}
             node.tag = b('serviceTask')
             node.set(f('type'), 'external-worker')
             node.set(f('topic'), topic)
