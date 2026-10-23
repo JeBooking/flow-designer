@@ -4,7 +4,7 @@ import diagnosisTerminalReachable from '@/views/ProcessDesigner/Lint/rules/diagn
 import StartEventRequired from 'bpmnlint/rules/start-event-required'
 import ConditionalFlows from 'bpmnlint/rules/conditional-flows'
 import adHocSubProcess from 'bpmnlint/rules/ad-hoc-sub-process'
-import fakeJoin from 'bpmnlint/rules/fake-join'
+import fakeJoin from '@/views/ProcessDesigner/Lint/rules/fake-join'
 import Global from 'bpmnlint/rules/global'
 // import labelRequired from 'bpmnlint/rules/label-required'
 import linkEvent from 'bpmnlint/rules/link-event'
