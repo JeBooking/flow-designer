@@ -94,7 +94,9 @@ const mapVisible = customRef<boolean>((track, trigger) => {
     },
   }
 })
+let notifyZoomChanged: (() => void) | undefined
 const zoom = customRef<number>((track, trigger) => {
+  notifyZoomChanged = trigger
   return {
     get() {
       track()
@@ -237,6 +239,7 @@ const getXml = async () => {
 const modelerReady = async (bpmnModeler: BpmnModeler) => {
   modeler.value = bpmnModeler
   injector.value = bpmnModeler.get<Injector>('injector')
+  bpmnModeler.on('canvas.viewbox.changed', () => notifyZoomChanged?.())
   modeler.value?.on<{ issues: Issues }>('linting.completed', ({ issues }) => {
     issuesList.value = Object.values(issues).flat()
   })
