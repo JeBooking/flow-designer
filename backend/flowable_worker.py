@@ -1,6 +1,8 @@
 """使用官方 Python 客户端执行绑定函数；业务工程通过普通 Python 导入复用。"""
 import argparse
+import asyncio
 import importlib
+import inspect
 import json
 import os
 from pathlib import Path
@@ -10,6 +12,8 @@ import threading
 
 def resolve(value, variables):
     if isinstance(value, str) and value.startswith('$'):
+        if value.startswith('$$'):
+            return value[1:]
         if value == '$':
             return variables
         current = variables
@@ -27,6 +31,8 @@ def execute(binding, variables):
     module = importlib.import_module(binding['module'])
     function = getattr(module, binding['function'])
     result = function(**resolve(binding['kwargs'], variables))
+    if inspect.isawaitable(result):
+        result = asyncio.run(result)
     # 约定只限制执行器需要的路由信息，业务结果仍可采用各工程自己的结构。
     json.dumps(result, allow_nan=False)
     outgoing = binding['outgoing']

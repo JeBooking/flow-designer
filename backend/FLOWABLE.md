@@ -55,7 +55,8 @@ and threshold calculations run real Python code.
 On non-final nodes, configure module, function and JSON keyword arguments. Repeat `--project`
 to add project roots (including `src/`). Install project dependencies into the worker's Python
 environment. `$Inspect.data` reads an earlier result; `$` passes the complete variable dictionary. Dot paths support dictionaries and list
-indices. Results must be JSON serializable and are stored under the node ID. Branch functions
+indices. `$$device` passes the literal string `$device`. Both synchronous and `async def`
+functions are supported. Results must be JSON serializable and are stored under the node ID. Branch functions
 must return `{"next":"outgoingFlowId", ...}`. Invalid routing fails the job rather than
 executing every branch. The compiler creates exclusive gateways without evaluating arbitrary
 user Python or condition expressions.
