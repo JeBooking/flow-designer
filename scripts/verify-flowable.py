@@ -18,7 +18,7 @@ compiled = compile_workflow(xml)
 bindings = json.loads(compiled['files']['bindings.json'])['bindings']
 assert len(bindings) == 7
 engine_xml = ET.fromstring(compiled['files']['workflow.bpmn20.xml'])
-assert len(engine_xml.findall('.//' + b('exclusiveGateway'))) == 2
+assert len(engine_xml.findall('.//' + b('userTask'))) == len(bindings) + 1
 assert len(engine_xml.findall('.//' + b('endEvent'))) == 3
 assert len(engine_xml.findall('.//' + b('serviceTask'))) == 7
 assert resolve({'values': ['$Inspect.data.0']}, {'Inspect': {'data': [42]}}) == {'values': [42]}

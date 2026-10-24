@@ -42,7 +42,7 @@ def compile_workflow(xml):
     if not process_id:
         raise ValueError('Missing process ID / 缺少流程 ID')
     # 工作主题取决于执行定义，移动节点、翻译文字或 XML 重排不应使已启动的 worker 失效。
-    signature = {'formatVersion': 3, 'processId': process_id, 'nodes': [], 'flows': []}
+    signature = {'formatVersion': 4, 'processId': process_id, 'nodes': [], 'flows': []}
     executable_elements = [e for e in process if e.tag in (b('task'), b('startEvent'), b('sequenceFlow'))]
     execution_ids = [e.get('id') for e in executable_elements]
     if any(not value for value in execution_ids) or len(set(execution_ids)) != len(execution_ids):
@@ -176,15 +176,29 @@ def compile_workflow(xml):
                 node.set(f('type'), 'external-worker')
                 node.set(f('topic'), topic)
             continuation_id = node_id
-            if human:
-                # 人工选择始终发生在分支网关之前；有 Python 时先采集/绘图，无绑定时直接等待人。
+            if human or has_python:
+                # 引擎只消费组件发出的等待请求；自动结果直接绕过人工任务。
                 review_id = new_id(node_id + '_review') if has_python else node_id
                 if has_python:
                     ET.SubElement(process, b('userTask'), {'id': review_id,
                         'name': (node.get('name') or node_id) + ' / 人工判断 / Human decision'})
-                    ET.SubElement(process, b('sequenceFlow'), {'id': new_id(node_id + '_to_review'),
-                        'sourceRef': node_id, 'targetRef': review_id})
-                continuation_id = review_id
+                    wait_id = new_id(node_id + '_wait')
+                    resume_id = new_id(node_id + '_resume')
+                    ET.SubElement(process, b('exclusiveGateway'), {'id': wait_id})
+                    ET.SubElement(process, b('exclusiveGateway'), {'id': resume_id})
+                    ET.SubElement(process, b('sequenceFlow'), {'id': new_id(node_id + '_to_wait'),
+                        'sourceRef': node_id, 'targetRef': wait_id})
+                    for target, expected in ((review_id, 'true'), (resume_id, 'false')):
+                        edge = ET.SubElement(process, b('sequenceFlow'), {'id': new_id(node_id + '_wait_route'),
+                            'sourceRef': wait_id, 'targetRef': target})
+                        expression = ET.SubElement(edge, b('conditionExpression'), {
+                            '{http://www.w3.org/2001/XMLSchema-instance}type': 'bpmn:tFormalExpression'})
+                        expression.text = '${execution.getVariable(' + json.dumps('human_' + node_id) + ') == ' + expected + '}'
+                    ET.SubElement(process, b('sequenceFlow'), {'id': new_id(node_id + '_reviewed'),
+                        'sourceRef': review_id, 'targetRef': resume_id})
+                    continuation_id = resume_id
+                else:
+                    continuation_id = review_id
                 manifest['reviews'][review_id] = {'nodeId': node_id, 'mode': 'decision',
                     'name': node.get('name') or node_id,
                     'instructions': {field: node.get(f(field), '') for field in

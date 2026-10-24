@@ -95,6 +95,13 @@ public class ReviewController {
         Map<String, JsonNode> bindings = bindings(metadata);
         JsonNode review = metadata.path("reviews").path(task.getTaskDefinitionKey());
         String currentNode = review.path("nodeId").asText();
+        var instructions = review.path("instructions").isObject()
+            ? ((com.fasterxml.jackson.databind.node.ObjectNode) review.path("instructions")).deepCopy()
+            : json.createObjectNode();
+        Object componentRequest = runtime.getVariable(instanceId, "request_" + currentNode);
+        if (componentRequest instanceof JsonNode request && !request.path("instructions").asText().isBlank()) {
+            instructions.put("assessment", request.path("instructions").asText());
+        }
         Map<String, Object> candidates = new LinkedHashMap<>();
         for (HistoricActivityInstance visit : visits(instanceId)) {
             String id = nodeId(visit, metadata);
@@ -107,7 +114,8 @@ public class ReviewController {
             "nodeId", currentNode, "mode", review.path("mode").asText("escalation"),
             "name", review.path("name").asText(task.getName()),
             "options", review.path("options").isArray() ? review.path("options") : json.createArrayNode(),
-            "instructions", review.path("instructions").isObject() ? review.path("instructions") : json.createObjectNode(),
+            "instructions", instructions,
+            "evidence", json.valueToTree(runtime.getVariable(instanceId, currentNode)),
             "candidates", new ArrayList<>(candidates.values()));
     }
 
@@ -156,11 +164,14 @@ public class ReviewController {
                 if (!preserved.contains(nodeId)) {
                     cleared.add(nodeId);
                     cleared.add("route_" + nodeId);
+                    cleared.add("human_" + nodeId);
+                    cleared.add("request_" + nodeId);
                 }
             }
             Map<String, Object> changes = request.variables() == null ? Map.of() : request.variables();
             for (String key : changes.keySet()) {
-                if (bindings.containsKey(key) || key.startsWith("route_") || key.startsWith("diagnostic")) {
+                if (bindings.containsKey(key) || key.startsWith("route_") || key.startsWith("diagnostic")
+                    || key.startsWith("human_") || key.startsWith("request_")) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot overwrite execution results or audit fields / 不可覆盖执行结果和复核记录");
                 }
             }

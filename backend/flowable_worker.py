@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import sys
 import threading
+from diagnostic_components import HumanDecisionRequest
 
 
 def resolve(value, variables):
@@ -34,6 +35,13 @@ def execute(binding, variables):
     if inspect.isawaitable(result):
         result = asyncio.run(result)
     # 约定只限制执行器需要的路由信息，业务结果仍可采用各工程自己的结构。
+    if isinstance(result, HumanDecisionRequest):
+        if not isinstance(result.instructions, str):
+            raise ValueError('Human decision instructions must be text')
+        if result.options and set(result.options) != set(binding['outgoing']):
+            raise ValueError('Human decision options must match outgoing flow IDs')
+        json.dumps(result.data, allow_nan=False)
+        return result
     json.dumps(result, allow_nan=False)
     outgoing = binding['outgoing']
     if len(outgoing) > 1 and not binding.get('humanDecision'):
@@ -46,10 +54,17 @@ def make_callback(binding):
     def callback(job, builder):
         variables = {variable.name: variable.value for variable in job.variables}
         result = execute(binding, variables)
-        success = builder.success().variable_json(binding['nodeId'], result)
-        if len(binding['outgoing']) > 1 and not binding.get('humanDecision'):
+        requested = isinstance(result, HumanDecisionRequest)
+        manual = requested or bool(binding.get('humanDecision'))
+        payload = result.data if requested else result
+        success = builder.success().variable_json(binding['nodeId'], payload)
+        # 适配层只传递组件请求，不捕获业务异常，也不判断业务代码是否已实现。
+        success.variable_boolean('human_' + binding['nodeId'], manual)
+        success.variable_json('request_' + binding['nodeId'],
+            {'instructions': result.instructions} if requested else {})
+        if len(binding['outgoing']) > 1 and not manual:
             success.variable_string('route_' + binding['nodeId'], result['next'])
-        print(json.dumps({'node': binding['nodeId'], 'result': result}, ensure_ascii=False), flush=True)
+        print(json.dumps({'node': binding['nodeId'], 'result': payload, 'human': manual}, ensure_ascii=False), flush=True)
         return success
     return callback
 

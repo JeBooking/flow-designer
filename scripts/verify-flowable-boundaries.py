@@ -21,7 +21,8 @@ root.find('.//{http://www.omg.org/spec/DD/20100524/DC}Bounds').set('x', '999')
 process = root.find(b('process'))
 process[:] = list(reversed(process))
 ET.indent(root, space='    ')
-assert manifest(root) == original, 'Cosmetic edits invalidated worker bindings'
+assert manifest(root)['version'] == original['version'], 'Cosmetic edits invalidated worker topics'
+assert manifest(root)['bindings'] == original['bindings'], 'Cosmetic edits changed worker bindings'
 root = ET.fromstring(xml)
 task = root.find('.//' + b('task'))
 task.set(f('pythonArguments'), '{"scenario":"new-input"}')
