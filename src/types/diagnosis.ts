@@ -27,6 +27,7 @@ export interface DiagnosticExample {
 
 export interface DiagnosisReviewState {
   pending: boolean
+  evidence?: unknown
   taskId?: string
   nodeId?: string
   mode?: 'decision' | 'escalation'

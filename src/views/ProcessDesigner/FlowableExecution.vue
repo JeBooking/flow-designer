@@ -307,6 +307,10 @@ defineExpose({
       <el-card v-if="review.pending" shadow="never">
         <template #header>{{ $tu('诊断复核', 'Diagnostic review') }}</template>
         <p>{{ review.name }} ({{ review.nodeId }})</p>
+        <details v-if="review.evidence != null">
+          <summary>{{ $tu('查看判断依据数据', 'View decision evidence') }}</summary>
+          <pre class="execution-results">{{ JSON.stringify(review.evidence, null, 2) }}</pre>
+        </details>
         <img
           v-for="(chart, index) in charts"
           :key="chart"

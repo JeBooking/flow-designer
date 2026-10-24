@@ -155,6 +155,36 @@ Python 的 `next` 在人工模式中只是建议，可以省略；实际路由�
 
 ## 验证
 
+### 判断组件自动转人工
+
+`backend/diagnostic_components.py` 提供可复用的 Python 判断组件。Flowable 只接收等待请求、保存状态和继续执行，不判断业务逻辑是否实现。所有绑定 Python 的非最终节点都支持此协议，无需开启“人工判断／确认”；该开关用于额外要求人工复核自动结果。
+
+```python
+from diagnostic_components import DecisionComponent, decision
+
+judge = DecisionComponent()
+
+def diagnose(reading):
+    return judge.run(reading, instructions='查看曲线，选择符合现场情况的后继')
+
+@decision(instructions='查看曲线，选择符合现场情况的后继')
+def diagnose_with_decorator(data):
+    raise NotImplementedError('待实现业务判断')
+```
+
+基类未覆盖 `decide(self, data)`，或被装饰函数明确抛出 `NotImplementedError`，都会返回 `HumanDecisionRequest`。补齐实现后正常返回 JSON，多分支包含 `{"next": "连线ID", ...}`，即自动继续。`pass` / 返回 `None` 不表示未实现；其他异常仍是任务失败。同步、异步函数均支持。装饰器用于普通函数，其第一个参数或 `data` 关键字参数作为判断依据；类方法建议使用基类。
+
+接口应直接返回请求对象，不要自行转成 JSON。请求携带数据与可选说明，不阻塞 worker 等待人工输入。说明留空时沿用流程图中的诊断方法；参考图和后继选项仍来自流程图。可选 `options` 必须与全部后继连线 ID 一致。界面展示依据数据和图表，允许选择分支或回退；回退同时清理失效的请求。
+
+worker 已提供该模块的导入路径，业务工程正常导入即可；独立运行业务工程时应将 `backend` 加入 Python 导入路径。导出的代码骨架包含同一模块，由命令行界面收集人工选择。示例接口见 `backend/examples/diagnostic_demo/diagnostic_demo/decisions.py`。
+
+升级后需重新导出、部署执行包并启动对应 worker；已有实例继续使用原版本 worker。组件独立验证与真实引擎验证（关闭人工开关，验证结论/处置节点的等待、图表依据、分支和回退）：
+
+```powershell
+backend/.local/venv/Scripts/python.exe scripts/verify-decision-components.py
+backend/.local/venv/Scripts/python.exe scripts/verify-component-decisions.py
+```
+
 ```powershell
 python scripts/verify-flowable.py --unit-only
 # Flowable 已启动时，使用装有官方客户端的解释器

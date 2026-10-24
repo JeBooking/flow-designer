@@ -144,6 +144,36 @@ launch a separate desktop process from their entry point; client callbacks execu
 
 ## Checks
 
+### Automatic human fallback in decision components
+
+`backend/diagnostic_components.py` provides reusable Python decision components. Flowable only transports wait requests, persists state and resumes execution. Every Python-bound non-final node supports this protocol without the human checkbox; that checkbox can still require extra review of automatic results.
+
+```python
+from diagnostic_components import DecisionComponent, decision
+
+judge = DecisionComponent()
+
+def diagnose(reading):
+    return judge.run(reading, instructions='Inspect the curve and select a successor')
+
+@decision(instructions='Inspect the curve and select a successor')
+def diagnose_with_decorator(data):
+    raise NotImplementedError('Business decision pending')
+```
+
+An inherited `decide(self, data)` or explicit `NotImplementedError` returns a `HumanDecisionRequest`. Implement the method/function to return normal JSON, including `{"next": "flow ID", ...}` for branching, and execution proceeds automatically. `pass` / `None` does not mean unimplemented. Other exceptions remain failures. Sync and async functions are supported. Decorators target ordinary functions whose first argument or `data` keyword supplies evidence; use the base class for methods.
+
+Return the typed request directly without converting it into JSON. It carries evidence and optional instructions without blocking the worker. Empty instructions preserve the diagram's diagnosis method; reference images and successor options come from the diagram. Optional `options` must match all outgoing flow IDs. The UI displays evidence and charts, offers successor selection and rechecking, and clears obsolete requests on recheck.
+
+The worker already exposes this module on its import path. Independent business-project execution must add `backend` to the Python import path. Exported skeletons include the same module and collect human choices through the CLI. See `backend/examples/diagnostic_demo/diagnostic_demo/decisions.py`.
+
+Re-export, redeploy and start the matching worker after upgrading; existing instances require their original worker version. Independent component checks and engine checks (human mode disabled, conclusion/action waits, chart evidence, routing and rechecks):
+
+```powershell
+backend/.local/venv/Scripts/python.exe scripts/verify-decision-components.py
+backend/.local/venv/Scripts/python.exe scripts/verify-component-decisions.py
+```
+
 ```powershell
 python scripts/verify-flowable.py --unit-only
 backend/.local/venv/Scripts/python.exe scripts/verify-flowable.py

@@ -204,3 +204,4 @@ official Python client runs the existing projects. See [setup and example](backe
 Human decision/confirmation nodes and escalation offer a return to earlier executed nodes
 with preserved history. Python bindings are optional in human mode; bound nodes run Python
 before waiting. Try the **Human decisions and rechecks** example.
+Python decision base classes and decorators automatically request human judgment when business logic is unimplemented, without enabling human mode. Exported skeletons reuse the same component.

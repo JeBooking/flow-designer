@@ -22,6 +22,14 @@ const argumentError = computed(() => {
     name="pythonBinding"
     :title="$tu('执行与人工判断', 'Execution and human decisions')"
   >
+    <p>
+      {{
+        $tu(
+          '判断组件未实现业务逻辑时会自动请求人工判断，无需开启下方开关。下方开关用于额外要求人工复核。',
+          'Decision components automatically request human judgment when their business logic is unimplemented. The switch below additionally requires human review.',
+        )
+      }}
+    </p>
     <el-form-item :label="$tu('人工判断／确认', 'Human decision / confirmation')">
       <el-switch
         v-model="humanDecision"
