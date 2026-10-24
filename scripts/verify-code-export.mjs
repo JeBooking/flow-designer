@@ -28,7 +28,9 @@ await build({
       name: 'raw-python',
       setup(builder) {
         builder.onResolve({ filter: /\.py\?raw$/ }, (args) => ({
-          path: path.resolve(args.resolveDir, args.path.slice(0, -4)),
+          path: args.path.startsWith('/backend/')
+            ? path.join(root, args.path.slice(1, -4))
+            : path.resolve(args.resolveDir, args.path.slice(0, -4)),
           namespace: 'raw',
         }))
         builder.onLoad({ filter: /.*/, namespace: 'raw' }, async (args) => ({

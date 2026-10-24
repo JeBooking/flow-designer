@@ -2,6 +2,7 @@ import acquisition from './templates/acquisition.py?raw'
 import parsing from './templates/parsing.py?raw'
 import display from './templates/display.py?raw'
 import diagnosis from './templates/diagnosis.py?raw'
+import diagnosticComponents from '/backend/diagnostic_components.py?raw'
 import actions from './templates/actions.py?raw'
 import routing from './templates/routing.py?raw'
 import runner from './templates/runner.py?raw'
@@ -219,6 +220,7 @@ export function generateProject(definitions: ModelElement, xml: string): Project
   files['workflow.json'] = JSON.stringify({ version: 1, start, nodes }, null, 2)
   files['runner.py'] = runner
   files['routing.py'] = routing
+  files['diagnostic_components.py'] = diagnosticComponents
   const investigations = Object.values(nodes).filter((n) => n.kind === 'investigation')
   const actionNodes = Object.values(nodes).filter((n) =>
     ['investigationAction', 'remediation', 'deepDiagnosis'].includes(n.kind),
