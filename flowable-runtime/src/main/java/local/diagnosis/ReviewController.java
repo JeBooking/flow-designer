@@ -41,12 +41,17 @@ public class ReviewController {
     }
 
     public record ReviewRequest(String action, String taskId, String targetNodeId, String reason,
-                                Map<String, Object> variables) {}
+                                Map<String, Object> variables, String next) {}
 
     private JsonNode metadata(ProcessInstance instance) {
-        String documentation = repository.getBpmnModel(instance.getProcessDefinitionId())
-            .getMainProcess().getDocumentation();
+        var process = repository.getBpmnModel(instance.getProcessDefinitionId()).getMainProcess();
+        String documentation = process.getDocumentation();
         try {
+            var extensions = process.getExtensionElements().get("diagnosticExecution");
+            if (extensions != null && !extensions.isEmpty()) {
+                return json.readTree(extensions.get(0).getAttributes().get("value").get(0).getValue());
+            }
+            // 已部署的旧版本仍从说明字段读取，不改变正在执行的实例。
             return documentation == null ? json.createObjectNode()
                 : json.readTree(documentation).path("diagnosticExecution");
         } catch (Exception ignored) {
@@ -69,8 +74,14 @@ public class ReviewController {
 
     private List<HistoricActivityInstance> visits(String instanceId) {
         return history.createHistoricActivityInstanceQuery().processInstanceId(instanceId)
-            .activityType("externalWorkerServiceTask").finished()
-            .orderByHistoricActivityInstanceStartTime().asc().list();
+            .finished().orderByHistoricActivityInstanceStartTime().asc().list().stream()
+            .filter(visit -> Set.of("externalWorkerServiceTask", "userTask").contains(visit.getActivityType()))
+            .toList();
+    }
+
+    private String nodeId(HistoricActivityInstance visit, JsonNode metadata) {
+        return metadata.path("reviews").path(visit.getActivityId()).path("nodeId")
+            .asText(visit.getActivityId());
     }
 
     @GetMapping
@@ -82,16 +93,21 @@ public class ReviewController {
         Task task = reviewTask(instanceId, metadata);
         if (task == null) return Map.of("pending", false);
         Map<String, JsonNode> bindings = bindings(metadata);
+        JsonNode review = metadata.path("reviews").path(task.getTaskDefinitionKey());
+        String currentNode = review.path("nodeId").asText();
         Map<String, Object> candidates = new LinkedHashMap<>();
         for (HistoricActivityInstance visit : visits(instanceId)) {
-            JsonNode binding = bindings.get(visit.getActivityId());
-            if (binding != null && "investigation".equals(binding.path("kind").asText())) {
-                candidates.put(visit.getActivityId(), Map.of("id", visit.getActivityId(),
-                    "name", visit.getActivityName() == null ? visit.getActivityId() : visit.getActivityName()));
+            String id = nodeId(visit, metadata);
+            if (bindings.containsKey(id) && !id.equals(currentNode)) {
+                candidates.putIfAbsent(id, Map.of("id", id,
+                    "name", visit.getActivityName() == null ? id : visit.getActivityName()));
             }
         }
         return Map.of("pending", true, "taskId", task.getId(),
-            "nodeId", metadata.path("reviews").path(task.getTaskDefinitionKey()).path("nodeId").asText(),
+            "nodeId", currentNode, "mode", review.path("mode").asText("escalation"),
+            "name", review.path("name").asText(task.getName()),
+            "options", review.path("options").isArray() ? review.path("options") : json.createArrayNode(),
+            "instructions", review.path("instructions").isObject() ? review.path("instructions") : json.createObjectNode(),
             "candidates", new ArrayList<>(candidates.values()));
     }
 
@@ -110,6 +126,8 @@ public class ReviewController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown review action / 未知复核动作");
         }
         Map<String, JsonNode> bindings = bindings(metadata);
+        JsonNode review = metadata.path("reviews").path(task.getTaskDefinitionKey());
+        String currentNode = review.path("nodeId").asText();
         List<HistoricActivityInstance> visits = visits(instanceId);
         Map<String, Object> variables = runtime.getVariables(instanceId);
         Map<String, Object> record = new LinkedHashMap<>();
@@ -122,17 +140,17 @@ public class ReviewController {
             JsonNode target = bindings.get(request.targetNodeId());
             int targetVisit = -1;
             for (int index = 0; index < visits.size(); index++) {
-                if (visits.get(index).getActivityId().equals(request.targetNodeId())) targetVisit = index;
+                if (nodeId(visits.get(index), metadata).equals(request.targetNodeId())) targetVisit = index;
             }
-            if (target == null || !"investigation".equals(target.path("kind").asText()) || targetVisit < 0) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Choose a previously executed investigation / 请选择此前实际执行过的排查节点");
+            if (target == null || targetVisit < 0 || currentNode.equals(request.targetNodeId())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Choose a previously executed node / 请选择此前实际执行过的节点");
             }
             if (request.reason() == null || request.reason().isBlank()) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A recheck reason is required / 必须填写回退原因");
             }
             Set<String> preserved = new LinkedHashSet<>();
-            for (int index = 0; index < targetVisit; index++) preserved.add(visits.get(index).getActivityId());
-            for (int index = targetVisit; index < visits.size(); index++) preserved.remove(visits.get(index).getActivityId());
+            for (int index = 0; index < targetVisit; index++) preserved.add(nodeId(visits.get(index), metadata));
+            for (int index = targetVisit; index < visits.size(); index++) preserved.remove(nodeId(visits.get(index), metadata));
             Set<String> cleared = new LinkedHashSet<>();
             for (String nodeId : bindings.keySet()) {
                 if (!preserved.contains(nodeId)) {
@@ -157,6 +175,29 @@ public class ReviewController {
             // 清理、记录与状态变更在同一事务中完成，worker 无法领取到半更新的重查任务。
             runtime.removeVariables(instanceId, cleared);
             changes.forEach((key, value) -> runtime.setVariable(instanceId, key, json.valueToTree(value)));
+        } else if ("decision".equals(review.path("mode").asText())) {
+            List<String> options = new ArrayList<>();
+            review.path("options").forEach(option -> options.add(option.path("id").asText()));
+            String next = request.next();
+            if (options.size() == 1 && (next == null || next.isBlank())) next = options.get(0);
+            if ((!options.isEmpty() && !options.contains(next)) ||
+                (options.isEmpty() && next != null && !next.isBlank())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Choose a valid outgoing option / 请选择有效的后继选项");
+            }
+            // 保留 Python 原始建议用于追溯；当前节点结果的 next 与人工实际选择保持一致。
+            Object previousResult = variables.get(currentNode);
+            record.put("previousResult", previousResult);
+            record.put("next", next);
+            var result = previousResult instanceof JsonNode value && value.isObject()
+                ? ((com.fasterxml.jackson.databind.node.ObjectNode) value).deepCopy()
+                : json.createObjectNode();
+            if (previousResult != null && !(previousResult instanceof JsonNode value && value.isObject())) {
+                result.set("data", json.valueToTree(previousResult));
+            }
+            if (next != null) result.put("next", next);
+            result.put("humanConfirmed", true);
+            runtime.setVariable(instanceId, currentNode, result);
+            if (options.size() > 1) runtime.setVariable(instanceId, "route_" + currentNode, next);
         }
         List<Object> records = new ArrayList<>();
         Object existing = variables.get("diagnosticReviews");

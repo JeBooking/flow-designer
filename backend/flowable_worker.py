@@ -36,7 +36,7 @@ def execute(binding, variables):
     # 约定只限制执行器需要的路由信息，业务结果仍可采用各工程自己的结构。
     json.dumps(result, allow_nan=False)
     outgoing = binding['outgoing']
-    if len(outgoing) > 1:
+    if len(outgoing) > 1 and not binding.get('humanDecision'):
         if not isinstance(result, dict) or result.get('next') not in outgoing:
             raise ValueError('Branch function must return {"next": "outgoing flow ID", ...}')
     return result
@@ -47,7 +47,7 @@ def make_callback(binding):
         variables = {variable.name: variable.value for variable in job.variables}
         result = execute(binding, variables)
         success = builder.success().variable_json(binding['nodeId'], result)
-        if len(binding['outgoing']) > 1:
+        if len(binding['outgoing']) > 1 and not binding.get('humanDecision'):
             success.variable_string('route_' + binding['nodeId'], result['next'])
         print(json.dumps({'node': binding['nodeId'], 'result': result}, ensure_ascii=False), flush=True)
         return success
@@ -67,9 +67,10 @@ def main():
     client = ExternalWorkerClient(os.environ.get('FLOWABLE_URL', 'http://127.0.0.1:8080'),
         auth=HTTPBasicAuth(os.environ.get('FLOWABLE_USER', 'diagnostic'),
                            os.environ.get('FLOWABLE_PASSWORD', 'local-demo')))
+    automatic = {topic: binding for topic, binding in manifest['bindings'].items() if binding.get('module')}
     subscriptions = [client.subscribe(topic, make_callback(binding), lock_duration='PT5M',
-        wait_period_seconds=1) for topic, binding in manifest['bindings'].items()]
-    print('Subscribed: ' + ', '.join(manifest['bindings']), flush=True)
+        wait_period_seconds=1) for topic, binding in automatic.items()]
+    print('Subscribed: ' + ', '.join(automatic), flush=True)
     try:
         threading.Event().wait()
     except KeyboardInterrupt:

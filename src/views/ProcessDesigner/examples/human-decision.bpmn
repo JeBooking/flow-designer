@@ -1,0 +1,85 @@
+<?xml version='1.0' encoding='utf-8'?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:flowable="http://flowable.org/bpmn" id="Definitions_VoltageDiagnosis" targetNamespace="http://diagnosis.local/examples">
+  <bpmn:process id="HumanVoltageDiagnosis" name="人工判断与回退 / Human decisions and rechecks" isExecutable="false">
+    <bpmn:startEvent id="Start" name="开始">
+      <bpmn:outgoing>V_start</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:task id="Voltage" name="读取电压并绘图" flowable:diagnosisKind="investigation" flowable:pythonModule="diagnostic_demo.scenarios" flowable:pythonFunction="voltage" flowable:pythonArguments="{&quot;scenario&quot;: &quot;$scenario&quot;}" flowable:observation="24 V 电源采样值，单位 V" flowable:acquisition="从模拟电源接口取得采样；可替换为实际采集工程。" flowable:assessment="蓝线为电压；红线为 22 V 下限。任一点低于下限判定欠压。" flowable:referenceImage="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAPAAAAB4CAIAAABD1OhwAAABtUlEQVR4nO3XsW3DMABFQS8TL5a1s0GGiAOktkVAskI+3eGXBMHiNbz9QMjtvx8ARxI0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkbAT9db+bTbVdQcNaBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBM0yPj6/f/f6jKCZwl+srzdyj6B5u6NiHSFodjkz1hGC5qnZYh0h6ItaMdYRgg6qxjpC0Iu5cqwjBD0Rse4n6JOI9RyCPoBY5yHoDWJdy6WDFmtPNmixXtOSQYuVZ6YLWqzscWrQYuXdDgtarMxgKGixsoqNoMXKWqb7FMIegiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBk/IAUAlcYCiwr8oAAAAASUVORK5CYII=" flowable:humanDecision="true">
+      <bpmn:incoming>V_start</bpmn:incoming>
+      <bpmn:outgoing>V_conclude</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="VoltageConclusion" name="判断供电是否正常" flowable:diagnosisKind="conclusion" flowable:conclusionText="最低电压低于 22 V 为欠压，正常时确认无需处置。" flowable:humanDecision="true">
+      <bpmn:incoming>V_conclude</bpmn:incoming>
+      <bpmn:outgoing>V_reseat</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Reseat" name="检查并复位供电连接（模拟）" flowable:diagnosisKind="remediation" flowable:pythonModule="diagnostic_demo.scenarios" flowable:pythonFunction="reseat_power" flowable:pythonArguments="{&quot;reading&quot;: &quot;$Voltage&quot;}" flowable:humanDecision="true">
+      <bpmn:documentation>模拟检查连接；低于 20 V 时需要专家处理。</bpmn:documentation>
+      <bpmn:incoming>V_reseat</bpmn:incoming>
+      <bpmn:outgoing>V_solved</bpmn:outgoing>
+      <bpmn:outgoing>V_escalate</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Solved" name="问题解决" flowable:diagnosisKind="problemSolved">
+      <bpmn:incoming>V_solved</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:task id="Escalation" name="上升" flowable:diagnosisKind="escalation">
+      <bpmn:incoming>V_escalate</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="V_start" sourceRef="Start" targetRef="Voltage" name="" />
+    <bpmn:sequenceFlow id="V_conclude" sourceRef="Voltage" targetRef="VoltageConclusion" name="" />
+    <bpmn:sequenceFlow id="V_reseat" sourceRef="VoltageConclusion" targetRef="Reseat" name="" />
+    <bpmn:sequenceFlow id="V_solved" sourceRef="Reseat" targetRef="Solved" name="恢复或正常" />
+    <bpmn:sequenceFlow id="V_escalate" sourceRef="Reseat" targetRef="Escalation" name="无法恢复" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="VoltageDiagnosis_diagram">
+    <bpmndi:BPMNPlane id="VoltageDiagnosis_plane" bpmnElement="HumanVoltageDiagnosis">
+      <bpmndi:BPMNShape id="Start_di" bpmnElement="Start">
+        <dc:Bounds x="80" y="225" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Voltage_di" bpmnElement="Voltage">
+        <dc:Bounds x="190" y="200" width="170" height="86" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="VoltageConclusion_di" bpmnElement="VoltageConclusion">
+        <dc:Bounds x="460" y="200" width="170" height="86" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Reseat_di" bpmnElement="Reseat">
+        <dc:Bounds x="730" y="200" width="170" height="86" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Solved_di" bpmnElement="Solved">
+        <dc:Bounds x="1010" y="100" width="170" height="86" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Escalation_di" bpmnElement="Escalation">
+        <dc:Bounds x="1010" y="340" width="170" height="86" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="V_start_di" bpmnElement="V_start">
+        <di:waypoint x="116" y="243.0" />
+        <di:waypoint x="190" y="243.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="V_conclude_di" bpmnElement="V_conclude">
+        <di:waypoint x="360" y="243.0" />
+        <di:waypoint x="460" y="243.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="V_reseat_di" bpmnElement="V_reseat">
+        <di:waypoint x="630" y="243.0" />
+        <di:waypoint x="730" y="243.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="V_solved_di" bpmnElement="V_solved">
+        <di:waypoint x="900" y="225" />
+        <di:waypoint x="950" y="225" />
+        <di:waypoint x="950" y="143" />
+        <di:waypoint x="1010" y="143" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="885.0" y="201.0" width="80" height="20" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="V_escalate_di" bpmnElement="V_escalate">
+        <di:waypoint x="900" y="260" />
+        <di:waypoint x="970" y="260" />
+        <di:waypoint x="970" y="383" />
+        <di:waypoint x="1010" y="383" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="895.0" y="236.0" width="80" height="20" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

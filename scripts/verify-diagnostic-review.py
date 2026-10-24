@@ -54,7 +54,7 @@ with tempfile.TemporaryDirectory(prefix='diagnostic-review-') as temp:
                 'variables': [{'name': 'scenario', 'type': 'string', 'value': 'severe'}]})['id']
             review = wait_review(run_id)
             candidates = {item['id'] for item in review['candidates']}
-            assert candidates == {'ReadSensors', 'SensorA'}, candidates
+            assert candidates == {'ReadSensors', 'SensorA', 'SensorConclusion', 'Calibrate'}, candidates
             assert variables(run_id)['SensorConclusion']['channel'] == 'A'
             path = '/diagnosis-api/instances/' + run_id + '/review'
             for invalid in [dict(targetNodeId='SensorB', reason='Unvisited target'),

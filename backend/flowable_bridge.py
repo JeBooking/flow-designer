@@ -42,7 +42,7 @@ def compile_workflow(xml):
     if not process_id:
         raise ValueError('Missing process ID / 缺少流程 ID')
     # 工作主题取决于执行定义，移动节点、翻译文字或 XML 重排不应使已启动的 worker 失效。
-    signature = {'formatVersion': 2, 'processId': process_id, 'nodes': [], 'flows': []}
+    signature = {'formatVersion': 3, 'processId': process_id, 'nodes': [], 'flows': []}
     executable_elements = [e for e in process if e.tag in (b('task'), b('startEvent'), b('sequenceFlow'))]
     execution_ids = [e.get('id') for e in executable_elements]
     if any(not value for value in execution_ids) or len(set(execution_ids)) != len(execution_ids):
@@ -59,7 +59,8 @@ def compile_workflow(xml):
             signature['nodes'].append({'id': element.get('id'), 'kind': element.get(f('diagnosisKind')),
                 'module': element.get(f('pythonModule'), '').strip(),
                 'function': element.get(f('pythonFunction'), '').strip(), 'kwargs': kwargs,
-                'topic': element.get(f('pythonTopic'), '').strip()})
+                'topic': element.get(f('pythonTopic'), '').strip(),
+                'humanDecision': element.get(f('humanDecision')) == 'true'})
     signature['nodes'].sort(key=lambda item: item['id'])
     signature['flows'].sort()
     version = hashlib.sha256(json.dumps(signature, sort_keys=True, ensure_ascii=True, allow_nan=False).encode()).hexdigest()[:12]
@@ -111,6 +112,8 @@ def compile_workflow(xml):
     terminals = set()
     successors = {node_id: [edge.get('targetRef') for edge in flows if edge.get('sourceRef') == node_id]
                   for node_id in nodes}
+    option_names = {edge.get('id'): edge.get('name') or nodes[edge.get('targetRef')].get('name') or edge.get('targetRef')
+                    for edge in flows}
     for node_id, node in nodes.items():
         outgoing = [e for e in flows if e.get('sourceRef') == node_id]
         if node.tag == b('startEvent'):
@@ -153,9 +156,11 @@ def compile_workflow(xml):
             raise ValueError('Conclusion requires one successor / 结论必须有且仅有一个后继')
         module, function = node.get(f('pythonModule'), '').strip(), node.get(f('pythonFunction'), '').strip()
         if kind not in ('problemSolved', 'escalation'):
-            if not module or not function:
+            human = node.get(f('humanDecision')) == 'true'
+            has_python = bool(module or function)
+            if not human and not has_python:
                 raise ValueError('Bind Python interface / 请绑定 Python 接口: ' + node_id)
-            if not re.fullmatch(r'[A-Za-z_]\w*(\.[A-Za-z_]\w*)*', module) or not re.fullmatch(r'[A-Za-z_]\w*', function):
+            if has_python and (not re.fullmatch(r'[A-Za-z_]\w*(\.[A-Za-z_]\w*)*', module) or not re.fullmatch(r'[A-Za-z_]\w*', function)):
                 raise ValueError('Invalid Python interface / 无效 Python 接口: ' + node_id)
             kwargs = json.loads(node.get(f('pythonArguments')) or '{}')
             if not isinstance(kwargs, dict):
@@ -164,15 +169,33 @@ def compile_workflow(xml):
             if topic in manifest['bindings']:
                 raise ValueError('Duplicate topic / 重复工作主题: ' + topic)
             manifest['bindings'][topic] = {'nodeId': node_id, 'module': module, 'function': function,
-                'kwargs': kwargs, 'outgoing': sorted(e.get('id') for e in outgoing), 'kind': kind}
-            node.tag = b('serviceTask')
-            node.set(f('type'), 'external-worker')
-            node.set(f('topic'), topic)
+                'kwargs': kwargs, 'outgoing': sorted(e.get('id') for e in outgoing), 'kind': kind,
+                'humanDecision': human}
+            node.tag = b('serviceTask') if has_python else b('userTask')
+            if has_python:
+                node.set(f('type'), 'external-worker')
+                node.set(f('topic'), topic)
+            continuation_id = node_id
+            if human:
+                # 人工选择始终发生在分支网关之前；有 Python 时先采集/绘图，无绑定时直接等待人。
+                review_id = new_id(node_id + '_review') if has_python else node_id
+                if has_python:
+                    ET.SubElement(process, b('userTask'), {'id': review_id,
+                        'name': (node.get('name') or node_id) + ' / 人工判断 / Human decision'})
+                    ET.SubElement(process, b('sequenceFlow'), {'id': new_id(node_id + '_to_review'),
+                        'sourceRef': node_id, 'targetRef': review_id})
+                continuation_id = review_id
+                manifest['reviews'][review_id] = {'nodeId': node_id, 'mode': 'decision',
+                    'name': node.get('name') or node_id,
+                    'instructions': {field: node.get(f(field), '') for field in
+                        ('observation', 'acquisition', 'assessment', 'referenceImage', 'conclusionText', 'actionText')},
+                    'options': [{'id': edge.get('id'), 'name': option_names[edge.get('id')]}
+                                for edge in outgoing]}
             if len(outgoing) > 1:
                 gateway_id = new_id(node_id + '_decision')
                 ET.SubElement(process, b('exclusiveGateway'), {'id': gateway_id})
                 ET.SubElement(process, b('sequenceFlow'), {'id': new_id(node_id + '_to_decision'),
-                    'sourceRef': node_id, 'targetRef': gateway_id})
+                    'sourceRef': continuation_id, 'targetRef': gateway_id})
                 for edge in outgoing:
                     edge.set('sourceRef', gateway_id)
                     for condition in list(edge):
@@ -185,7 +208,9 @@ def compile_workflow(xml):
                 end_id = new_id(node_id + '_handoff')
                 ET.SubElement(process, b('endEvent'), {'id': end_id, 'name': 'Handoff / 跳转交接'})
                 ET.SubElement(process, b('sequenceFlow'), {'id': new_id(node_id + '_to_handoff'),
-                    'sourceRef': node_id, 'targetRef': end_id})
+                    'sourceRef': continuation_id, 'targetRef': end_id})
+            else:
+                outgoing[0].set('sourceRef', continuation_id)
         # 业务元数据只保留在原始图；引擎文件只承载执行语义。
         for key in list(node.attrib):
             if key.startswith('{' + FLOWABLE + '}') and key not in (f('type'), f('topic')):
@@ -203,14 +228,15 @@ def compile_workflow(xml):
     if set(nodes) - can_finish:
         raise ValueError('Chain cannot reach an end / 存在无法到达最终节点的链路')
     process.set('isExecutable', 'true')
-    # 使用标准 documentation 保存本次部署的绑定，复核始终以实际部署版本为准。
-    original_documentation = [item.text or '' for item in process.findall(b('documentation'))]
-    for item in process.findall(b('documentation')):
-        process.remove(item)
-    documentation = ET.Element(b('documentation'))
-    documentation.text = json.dumps({'diagnosticExecution': manifest,
-                                     'sourceDocumentation': original_documentation}, ensure_ascii=False)
-    process.insert(0, documentation)
+    # 流程说明在 Flowable 中限制为 2000 字符；执行元数据及参考图放在扩展元素。
+    extensions = process.find(b('extensionElements'))
+    if extensions is None:
+        extensions = ET.Element(b('extensionElements'))
+        process.insert(len(process.findall(b('documentation'))), extensions)
+    for item in extensions.findall(f('diagnosticExecution')):
+        extensions.remove(item)
+    # Flowable 的通用扩展文本解析可能覆盖分块字符事件，属性值可完整往返长 JSON。
+    ET.SubElement(extensions, f('diagnosticExecution'), {'value': json.dumps(manifest, ensure_ascii=False)})
     for diagram in root.findall('{' + DI + '}BPMNDiagram'):
         root.remove(diagram)
     return {'processId': process_id, 'files': {'source.bpmn': xml,
