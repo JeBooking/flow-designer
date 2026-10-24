@@ -29,5 +29,9 @@ export interface DiagnosisReviewState {
   pending: boolean
   taskId?: string
   nodeId?: string
+  mode?: 'decision' | 'escalation'
+  name?: string
+  options?: { id: string; name: string }[]
+  instructions?: Partial<InvestigationData & { conclusionText: string; actionText: string }>
   candidates?: { id: string; name: string }[]
 }

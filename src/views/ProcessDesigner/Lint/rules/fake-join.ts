@@ -20,6 +20,7 @@ export default function fakeJoin(): RuleDefinition {
           return (
             kind &&
             (['problemSolved', 'escalation'].includes(kind) ||
+              element.get('flowable:humanDecision') ||
               (element.get('flowable:pythonModule') && element.get('flowable:pythonFunction')))
           )
         })

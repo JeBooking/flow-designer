@@ -4,8 +4,20 @@ import voltage from '@/views/ProcessDesigner/examples/voltage-diagnosis.bpmn?raw
 import communication from '@/views/ProcessDesigner/examples/communication-retry.bpmn?raw'
 import sensors from '@/views/ProcessDesigner/examples/sensor-comparison.bpmn?raw'
 import pressure from '@/views/ProcessDesigner/examples/pressure-recovery.bpmn?raw'
+import humanDecision from '@/views/ProcessDesigner/examples/human-decision.bpmn?raw'
 
 export const diagnosticExamples: DiagnosticExample[] = [
+  {
+    id: 'human-decision',
+    title: '人工判断与回退',
+    titleEn: 'Human decisions and rechecks',
+    description:
+      'Python 绘图后等待确认，人工填写的结论无需 Python，处置后由人选择结果。每个等待节点均可回退。',
+    descriptionEn:
+      'Confirm Python charts, review a manual conclusion, and choose the recovery outcome. Every human wait offers a return to earlier nodes.',
+    xml: humanDecision,
+    scenarios: ['recover', 'severe', 'normal'],
+  },
   {
     id: 'temperature',
     title: '温度综合诊断',

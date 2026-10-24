@@ -35,6 +35,13 @@ for (const filename of (await readdir('src/views/ProcessDesigner/examples')).fil
   const serialized = await moddle.toXML(rootElement, { format: true })
   const roundtrip = await moddle.fromXML(serialized.xml)
   assert.equal(roundtrip.warnings.length, 0)
+  if (filename === 'human-decision.bpmn') {
+    assert.equal(roundtrip.elementsById.Voltage.get('flowable:humanDecision'), true)
+    assert.equal(roundtrip.elementsById.VoltageConclusion.get('flowable:humanDecision'), true)
+    assert.equal(roundtrip.elementsById.VoltageConclusion.get('flowable:pythonModule'), undefined)
+    assert.ok(serialized.xml.includes('flowable:humanDecision="true"'))
+    assert.ok(!serialized.xml.includes('camunda:'))
+  }
   console.log(filename + ': all lint rules and XML round-trip passed')
 }
 // 普通 BPMN 并行汇合仍需提示，避免为诊断示例放宽标准流程规则。
