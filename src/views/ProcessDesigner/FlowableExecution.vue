@@ -22,6 +22,12 @@ const reviewReason = ref('')
 const reviewVariables = ref('{}')
 const reviewNext = ref('')
 const decisionPending = computed(() => review.value.mode === 'decision')
+const successPending = computed(() => review.value.mode === 'success')
+const executionVariables = ref<Record<string, unknown>>({})
+const failures = computed(() => {
+  const value = executionVariables.value.diagnosticFailures
+  return Array.isArray(value) ? value : []
+})
 const reviewInstructions = computed(() =>
   [
     {
@@ -139,11 +145,16 @@ async function loadExecution() {
   const result = await flowableRequest<{
     process: { endTime?: string }
     activities: { data: { activityType: string; activityId: string; activityName?: string }[] }
-    variables: { data: { variable?: { value?: { chartSvg?: string } } }[] }
+    variables: { data: { variable?: { name?: string; value?: unknown } }[] }
     review: DiagnosisReviewState
   }>(`history/${encodeURIComponent(runId.value)}`)
   history.value = JSON.stringify(result, null, 2)
   finished.value = Boolean(result.process.endTime)
+  executionVariables.value = Object.fromEntries(
+    result.variables.data.flatMap(({ variable }) =>
+      variable?.name ? [[variable.name, variable.value]] : [],
+    ),
+  )
   const previousTaskId = review.value.taskId
   review.value = result.review
   if (previousTaskId !== result.review.taskId) {
@@ -160,18 +171,21 @@ async function loadExecution() {
     )
     .map((item) => item.activityName || item.activityId)
   charts.value = result.variables.data.flatMap((item) => {
-    const svg = item.variable?.value?.chartSvg
+    const value = item.variable?.value
+    const svg =
+      value && typeof value === 'object' && 'chartSvg' in value ? value.chartSvg : undefined
     return typeof svg === 'string'
       ? [`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`]
       : []
   })
 }
 const refresh = () => perform(loadExecution)
-const submitReview = (action: 'recheck' | 'confirm') =>
+const submitReview = (action: 'recheck' | 'confirm', successAction?: 'continue' | 'finish') =>
   perform(async () => {
+    if (successAction) reviewNext.value = successAction
     if (
       action === 'confirm' &&
-      decisionPending.value &&
+      (decisionPending.value || successPending.value) &&
       review.value.options?.length &&
       !reviewNext.value
     ) {
@@ -192,20 +206,32 @@ const submitReview = (action: 'recheck' | 'confirm') =>
             '将重新执行选中节点及后续逻辑，可能再次执行机台动作。原记录保留，但不会撤销已经执行的动作。',
             'The selected node and downstream logic will run again, including possible machine actions. Previous records are retained; completed actions are not undone.',
           )
-        : decisionPending.value
-          ? translateUi(
-              '确认当前选择并继续执行后续节点。',
-              'Confirm this choice and continue to the next node.',
-            )
-          : translateUi(
-              '确认上升后本轮流程结束。',
-              'Confirming escalation ends this process instance.',
-            ),
+        : successPending.value
+          ? reviewNext.value === 'continue'
+            ? translateUi(
+                '继续执行暂停的其余排查思路。',
+                'Resume the remaining investigation paths.',
+              )
+            : translateUi(
+                '结束本轮排查，保留当前结果和执行记录。',
+                'Finish this investigation and retain its results and history.',
+              )
+          : decisionPending.value
+            ? translateUi(
+                '确认当前选择并继续执行后续节点。',
+                'Confirm this choice and continue to the next node.',
+              )
+            : translateUi(
+                '确认上升后本轮流程结束。',
+                'Confirming escalation ends this process instance.',
+              ),
       action === 'recheck'
         ? translateUi('回退重查', 'Recheck an earlier node')
-        : decisionPending.value
-          ? translateUi('确认并继续', 'Confirm and continue')
-          : translateUi('确认上升', 'Confirm escalation'),
+        : successPending.value
+          ? translateUi('问题已解决', 'Problem solved')
+          : decisionPending.value
+            ? translateUi('确认并继续', 'Confirm and continue')
+            : translateUi('确认上升', 'Confirm escalation'),
       { type: 'warning' },
     )
     await flowableRequest(`review/${encodeURIComponent(runId.value)}`, {
@@ -296,9 +322,14 @@ defineExpose({
       <p v-if="history">
         {{
           review.pending
-            ? decisionPending
-              ? $tu('等待人工判断／确认', 'Awaiting human decision / confirmation')
-              : $tu('已到达上升，等待人工复核', 'Escalation reached; awaiting review')
+            ? successPending
+              ? $tu(
+                  '问题已解决，其余思路已暂停，可选择继续排查',
+                  'Problem solved; remaining paths are paused. You may continue investigating.',
+                )
+              : decisionPending
+                ? $tu('等待人工判断／确认', 'Awaiting human decision / confirmation')
+                : $tu('已到达上升，等待人工复核', 'Escalation reached; awaiting review')
             : finished
               ? $tu('流程已结束', 'Process completed')
               : $tu('正在执行或等待外部任务', 'Running or waiting for an external worker')
@@ -307,6 +338,14 @@ defineExpose({
       <el-card v-if="review.pending" shadow="never">
         <template #header>{{ $tu('诊断复核', 'Diagnostic review') }}</template>
         <p>{{ review.name }} ({{ review.nodeId }})</p>
+        <el-space v-if="successPending" wrap>
+          <el-button type="primary" :disabled="busy" @click="submitReview('confirm', 'finish')">
+            {{ $tu('结束排查', 'Finish investigation') }}
+          </el-button>
+          <el-button :disabled="busy" @click="submitReview('confirm', 'continue')">
+            {{ $tu('继续排查其余思路', 'Continue remaining paths') }}
+          </el-button>
+        </el-space>
         <details v-if="review.evidence != null">
           <summary>{{ $tu('查看判断依据数据', 'View decision evidence') }}</summary>
           <pre class="execution-results">{{ JSON.stringify(review.evidence, null, 2) }}</pre>
@@ -347,54 +386,70 @@ defineExpose({
             $tu('确认并继续', 'Confirm and continue')
           }}</el-button>
         </el-form>
-        <el-divider />
-        <p v-if="!review.candidates?.length">
-          {{
-            $tu('尚无此前已执行的节点可供回退。', 'No earlier executed nodes are available yet.')
-          }}
-        </p>
-        <el-form label-position="top">
-          <el-form-item
-            :label="$tu('回退到此前已执行的节点', 'Return to an earlier executed node')"
-          >
-            <el-select v-model="reviewTarget" style="width: 100%">
-              <el-option
-                v-for="candidate in review.candidates || []"
-                :key="candidate.id"
-                :value="candidate.id"
-                :label="`${candidate.name} (${candidate.id})`"
-              />
-            </el-select>
-          </el-form-item>
-          <el-form-item :label="$tu('回退原因', 'Recheck reason')">
-            <el-input v-model="reviewReason" type="textarea" :rows="2" />
-          </el-form-item>
-          <el-form-item :label="$tu('复查输入变量（可选）', 'Updated input variables (optional)')">
-            <el-input v-model="reviewVariables" type="textarea" :rows="3" />
-          </el-form-item>
-        </el-form>
-        <p>
-          {{
-            $tu(
-              '回退将重新采集和判断，并清理需重算的结果；旧路径与结果保留在复核记录中。',
-              'Rechecking reruns acquisition and diagnosis and clears results that must be recomputed. Previous paths and results remain in review history.',
-            )
-          }}
-        </p>
-        <el-space wrap>
-          <el-button
-            :disabled="busy || !review.candidates?.length"
-            @click="submitReview('recheck')"
-            >{{ $tu('回退重查', 'Recheck') }}</el-button
-          >
-          <el-button v-if="!decisionPending" :disabled="busy" @click="submitReview('confirm')">{{
-            $tu('确认上升并结束', 'Confirm escalation and finish')
-          }}</el-button>
-        </el-space>
+        <template v-if="!successPending">
+          <el-divider />
+          <p v-if="!review.candidates?.length">
+            {{
+              $tu('尚无此前已执行的节点可供回退。', 'No earlier executed nodes are available yet.')
+            }}
+          </p>
+          <el-form label-position="top">
+            <el-form-item
+              :label="$tu('回退到此前已执行的节点', 'Return to an earlier executed node')"
+            >
+              <el-select v-model="reviewTarget" style="width: 100%">
+                <el-option
+                  v-for="candidate in review.candidates || []"
+                  :key="candidate.id"
+                  :value="candidate.id"
+                  :label="`${candidate.name} (${candidate.id})`"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item :label="$tu('回退原因', 'Recheck reason')">
+              <el-input v-model="reviewReason" type="textarea" :rows="2" />
+            </el-form-item>
+            <el-form-item
+              :label="$tu('复查输入变量（可选）', 'Updated input variables (optional)')"
+            >
+              <el-input v-model="reviewVariables" type="textarea" :rows="3" />
+            </el-form-item>
+          </el-form>
+          <p>
+            {{
+              $tu(
+                '回退将重新采集和判断，并清理需重算的结果；旧路径与结果保留在复核记录中。',
+                'Rechecking reruns acquisition and diagnosis and clears results that must be recomputed. Previous paths and results remain in review history.',
+              )
+            }}
+          </p>
+          <el-space wrap>
+            <el-button
+              :disabled="busy || !review.candidates?.length"
+              @click="submitReview('recheck')"
+              >{{ $tu('回退重查', 'Recheck') }}</el-button
+            >
+            <el-button v-if="!decisionPending" :disabled="busy" @click="submitReview('confirm')">{{
+              $tu('确认上升并结束', 'Confirm escalation and finish')
+            }}</el-button>
+          </el-space>
+        </template>
       </el-card>
       <p v-if="visitedNodes.length">
         {{ $tu('已执行节点', 'Executed nodes') }}: {{ visitedNodes.join(' → ') }}
       </p>
+      <el-alert
+        v-if="executionVariables.diagnosticStatus === 'failed'"
+        type="error"
+        :closable="false"
+        :title="$tu('所有排查思路均已失败', 'All investigation paths failed')"
+      />
+      <details v-if="failures.length">
+        <summary>
+          {{ $tu('排查思路失败记录', 'Failed investigation paths') }} ({{ failures.length }})
+        </summary>
+        <pre class="execution-results">{{ JSON.stringify(failures, null, 2) }}</pre>
+      </details>
       <template v-if="!review.pending"
         ><img
           v-for="(chart, index) in charts"

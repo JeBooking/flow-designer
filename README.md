@@ -40,9 +40,9 @@ follow an investigation and have exactly one successor: a handling action or esc
 Investigation Action records a machine action and may only connect from and to an Investigation.
 Remediation and Jump are handling actions; they may continue to another handling action, Deep
 Diagnosis, Problem Solved or Escalation. Jump may end its current diagnostic chain without reaching a final node.
-Problem Solved and Escalation are final nodes with fixed text.
+Problem Solved and Escalation are final nodes with editable names and details.
 Every branch in a diagnostic chain must be able to reach Problem Solved or Escalation; a branch may
-instead end at Jump. Investigation/action loops remain valid when they can still reach one of these
+instead end at Jump or an investigation with no successor (a recorded failed path). Investigation/action loops remain valid when they can still reach one of these
 outcomes.
 
 Investigation accepts a start event, another investigation or an Investigation Action as predecessor.
@@ -53,17 +53,29 @@ imported invalid connections and missing fields are reported by process validati
 be saved with validation errors.
 Use Start → Investigation → Conclusion → Remediation → Problem Solved for an initial example.
 
-Investigations have **Yes and No** groups. Select a connection to assign its group; each group
-can connect to multiple independent successors without priority. Connect dependent checks after
-their prerequisite. Both groups are required before execution. Groups persist as
-`flowable:diagnosisBranch` on sequence flows. Flowable compiles them as inclusive splits;
-the offline Python runner starts matching successors concurrently. A terminal ends its own path.
+Investigations have **Yes and No** groups, each with any number of successors. Edit a connection
+label on the canvas using only `是`, `否`, `yes`, or `no` (English is case insensitive) to change
+its group, or use the properties panel. Neither group is mandatory. An unmatched result ends
+and records that path as failed. Connect dependent checks after their prerequisite.
+Groups persist as `flowable:diagnosisBranch` on sequence flows.
+
+Choose **Parallel** (default) or **Serial** in the process properties. Parallel mode starts all
+matching sibling paths concurrently, without priority; a failed path never restarts its siblings.
+Serial mode tries siblings in ascending connection order (`flowable:diagnosisOrder`, with XML
+order as the fallback). A failed path advances to the next sibling; exhausting all paths without
+success fails the investigation. Success pauses remaining paths and lets the user finish or
+continue them. Both the Flowable runtime and exported Python runner implement these rules.
+A terminal ends its own path.
 Merges continue on each arrival and do not synchronize other paths, so multiple actions may
 connect to Problem Solved without a gateway warning.
 
-Fill either conclusion field: content generates a name of up to 30 characters, while a name
-fills empty content in full. Independently edited fields are preserved. Diagnosis nodes can
-be resized; names wrap and expand the node. Changes participate in command-stack undo/redo.
+New nodes have blank names. Every diagnostic node has a name and detailed content; an omitted
+name is derived from the opening content and fits the node's shape and current size. A manually
+entered name is retained. A conclusion name also fills empty conclusion content in full.
+Nodes can be resized, with automatic names recalculated on resize. Changes support undo/redo.
+Investigation uses a diamond, Investigation Action an upright trapezoid, Conclusion a rectangle,
+Remediation an inverted trapezoid, Jump an ellipse, Problem Solved a triangle, and Escalation a
+five-point star. Deep Diagnosis keeps its existing shape.
 
 Only investigations show human judgment settings. Action nodes retain interface binding with
 automatic signature-based parameters: exact workflow variable names, then unique fields in
