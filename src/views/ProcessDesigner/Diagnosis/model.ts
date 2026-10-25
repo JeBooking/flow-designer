@@ -18,11 +18,7 @@ export const diagnosisKinds: Record<DiagnosisKind, { label: string; icon: string
     escalation: { label: 'Escalation', icon: 'bpmn-icon-send-task', color: '#d97706' },
   }
 
-export const diagnosisNodeName = (kind: DiagnosisKind, translate: (key: string) => string) => {
-  if (kind === 'problemSolved') return '问题解决'
-  if (kind === 'escalation') return '上升'
-  return translate(diagnosisKinds[kind].label)
-}
+export const diagnosisNodeName = () => ''
 
 export function getDiagnosisKind(element?: Element | ModdleElement): DiagnosisKind | undefined {
   if (!element || !is(element, 'bpmn:Task')) return

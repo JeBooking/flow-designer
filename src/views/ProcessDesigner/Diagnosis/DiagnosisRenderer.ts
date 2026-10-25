@@ -12,7 +12,11 @@ import { translateUi } from '@/languages/uiText'
 import type TextRenderer from 'bpmn-js/lib/draw/TextRenderer'
 import type ElementRegistry from 'diagram-js/lib/core/ElementRegistry'
 import { getBusinessObject } from 'bpmn-js/lib/util/ModelUtil'
-import { labelLines } from '@/views/ProcessDesigner/Diagnosis/DiagnosisBehavior'
+import {
+  diagnosisPath,
+  diagnosisTextBox,
+  labelLines,
+} from '@/views/ProcessDesigner/Diagnosis/geometry'
 
 export default class DiagnosisRenderer extends BaseRenderer {
   static $inject = ['eventBus', 'bpmnRenderer', 'textRenderer', 'elementRegistry']
@@ -57,54 +61,58 @@ export default class DiagnosisRenderer extends BaseRenderer {
       append(parent, label)
       return label
     }
-    const shape = this.bpmnRenderer.drawShape(parent, element)
-    parent.querySelector('.djs-label')?.remove()
+    const kind = getDiagnosisKind(element)!
+    const shape =
+      kind === 'deepDiagnosis' ? this.bpmnRenderer.drawShape(parent, element) : create('path')
+    if (kind !== 'deepDiagnosis') {
+      attr(shape, { d: diagnosisPath(element), fill: 'var(--bpmn-fill-color, white)' })
+      append(parent, shape)
+    }
+    parent.querySelectorAll('.djs-label').forEach((label) => label.remove())
+    if (kind === 'deepDiagnosis') {
+      const marker = create('text')
+      attr(marker, {
+        x: 10,
+        y: 19,
+        fill: diagnosisKinds[kind].color,
+        'font-size': 17,
+        'pointer-events': 'none',
+      })
+      marker.textContent = '↻'
+      append(parent, marker)
+    }
+    attr(shape, { stroke: diagnosisKinds[kind].color, 'stroke-width': 2 })
     const text = String(getBusinessObject(element).get('name') || '')
-    const lines = labelLines(text, element.width)
+    const box = diagnosisTextBox(element.width, element.height, kind)
+    const lines = labelLines(text, box.width)
     const label = create('text')
+    // 手填长名称不改变节点大小，按可用内接矩形缩放字号。
+    const lineHeight = Math.min(16, box.height / Math.max(1, lines.length))
     attr(label, {
       class: 'djs-label',
       'font-family': 'Arial, sans-serif',
-      'font-size': 12,
+      'font-size': Math.min(12, lineHeight / 1.3),
       'text-anchor': 'middle',
       fill: 'currentColor',
+      'pointer-events': 'none',
     })
-    // 老图的尺寸可能偏小，渲染时缩小字号保证内容仍位于节点内；编辑后命令栈会扩容。
-    const lineHeight = Math.min(18, Math.max(1, (element.height - 30) / lines.length))
-    attr(label, { 'font-size': Math.min(12, lineHeight / 1.5) })
     lines.forEach((line, index) => {
       const span = create('tspan')
-      attr(span, { x: element.width / 2, y: 25 + lineHeight * (index + 0.8) })
+      attr(span, {
+        x: element.width / 2,
+        y: box.centerY + (index - (lines.length - 1) / 2) * lineHeight,
+        'dominant-baseline': 'middle',
+      })
       span.textContent = line
       append(label, span)
     })
     append(parent, label)
-    const kind = getDiagnosisKind(element)!
-    attr(shape, { stroke: diagnosisKinds[kind].color, 'stroke-width': 2 })
-    const marker = create('text')
-    attr(marker, {
-      x: 10,
-      y: 19,
-      fill: diagnosisKinds[kind].color,
-      'font-size': 17,
-      'font-weight': 'bold',
-      'pointer-events': 'none',
-    })
-    marker.textContent = {
-      investigation: '?',
-      investigationAction: '⚙',
-      conclusion: '=',
-      remediation: '✓',
-      deepDiagnosis: '↻',
-      jump: '↗',
-      problemSolved: '✓',
-      escalation: '↑',
-    }[kind]
-    append(parent, marker)
     return shape
   }
 
   getShapePath(shape: Shape) {
-    return this.bpmnRenderer.getShapePath(shape)
+    return getDiagnosisKind(shape) && getDiagnosisKind(shape) !== 'deepDiagnosis'
+      ? diagnosisPath(shape, true)
+      : this.bpmnRenderer.getShapePath(shape)
   }
 }

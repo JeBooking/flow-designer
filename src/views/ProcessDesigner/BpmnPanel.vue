@@ -1,9 +1,6 @@
 <script setup lang="ts">
 import type { Component, VNode } from 'vue'
 import Investigation from '@/views/ProcessDesigner/Panel/Investigation/index.vue'
-import Conclusion from '@/views/ProcessDesigner/Panel/Conclusion/index.vue'
-import InvestigationAction from '@/views/ProcessDesigner/Panel/InvestigationAction/index.vue'
-import FixedDiagnosis from '@/views/ProcessDesigner/Panel/FixedDiagnosis/index.vue'
 import PythonBinding from '@/views/ProcessDesigner/Panel/PythonBinding/index.vue'
 import { getDiagnosisKind } from '@/views/ProcessDesigner/Diagnosis/model'
 import BpmnModeler from 'bpmn-js/lib/Modeler'
@@ -72,9 +69,6 @@ const renderKey = ref('')
 const renderToken = ref('')
 const PANEL_COMPONENTS = {
   Investigation,
-  Conclusion,
-  InvestigationAction,
-  FixedDiagnosis,
   PythonBinding,
   MessageEvent,
   BusinessRuleTask,
@@ -204,11 +198,7 @@ const setCurrentComponents = (element: Element) => {
   if (diagnosisKind) {
     if (!['problemSolved', 'escalation', 'conclusion'].includes(diagnosisKind))
       slots.basic.push('PythonBinding')
-    if (diagnosisKind === 'conclusion') slots.basic.push('Conclusion')
-    else if (diagnosisKind === 'investigation') slots.basic.push('Investigation')
-    else if (diagnosisKind === 'investigationAction') slots.basic.push('InvestigationAction')
-    else if (diagnosisKind === 'problemSolved' || diagnosisKind === 'escalation')
-      slots.basic.push('FixedDiagnosis')
+    if (diagnosisKind === 'investigation') slots.basic.push('Investigation')
   } else if (
     isEventDefinition(element, 'bpmn:CompensateEventDefinition') &&
     !is(element, 'bpmn:BoundaryEvent')
