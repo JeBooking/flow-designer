@@ -12,6 +12,7 @@ export interface InvestigationData {
   observation: string
   acquisition: string
   referenceImage: string
+  referenceImageName?: string
   assessment: string
 }
 

@@ -8,7 +8,7 @@ import {
   getDiagnosisBranch,
   investigationFields,
   isDiagnosisConnectionAllowed,
-  isReferenceImage,
+  isReferenceFile,
 } from '@/views/ProcessDesigner/Diagnosis/model'
 
 export default function diagnosisRequired(): RuleDefinition {
@@ -26,7 +26,7 @@ export default function diagnosisRequired(): RuleDefinition {
           if (
             typeof value !== 'string' ||
             !value.trim() ||
-            (field === 'referenceImage' && !isReferenceImage(value))
+            (field === 'referenceImage' && !isReferenceFile(value))
           ) {
             reporter.report(node.id, message)
           }

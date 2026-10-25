@@ -30,6 +30,8 @@ const uiText: Record<string, string> = {
     'Specify data names, measurement points, units and observation range',
   '写明工具、操作步骤、采集条件和注意事项':
     'Specify tools, steps, acquisition conditions and precautions',
+  '写明正常范围、异常判据及如何对照参考文件':
+    'Specify normal ranges, fault criteria and how to compare with the reference file',
   '写明正常范围、异常判据及如何对照参考图':
     'Specify normal ranges, fault criteria and how to compare with the reference image',
   此项必填: 'This field is required',
