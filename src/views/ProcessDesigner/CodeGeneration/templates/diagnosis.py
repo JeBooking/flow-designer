@@ -1,4 +1,4 @@
-"""诊断层：返回下一条连线的 ID；None 表示需要人工决定。"""
+"""诊断层：返回是/否结果；未实现时由判断组件请求人工决定。"""
 from diagnostic_components import decision, HumanDecisionRequest
 
 

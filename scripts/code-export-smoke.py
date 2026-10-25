@@ -16,6 +16,13 @@ definition = json.loads((project / 'workflow.json').read_text(encoding='utf-8'))
 assert definition['version'] == 4
 assert (project / definition['nodes']['Inspect']['referenceImage']).read_bytes().startswith(b'\x89PNG')
 assert not (project / 'source.bpmn').exists()
+assert 'Inspect' in (project / 'IMPLEMENTATION.md').read_text(encoding='utf-8')
+for filename in ('acquisition.py', 'parsing.py', 'display.py', 'diagnosis.py'):
+    source = (project / filename).read_text(encoding='utf-8')
+    assert '# 节点 ID: Inspect' in source, filename
+    assert '# 输入:' in source and '# 输出:' in source and '# 调用关系:' in source, filename
+    assert '对照额定电压判断' in source and '使用电压表' in source, filename
+
 assert 'data:image/' not in (project / 'workflow.json').read_text(encoding='utf-8')
 sys.path.insert(0, str(project))
 runner = importlib.import_module('runner')

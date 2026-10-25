@@ -21,6 +21,7 @@ await build({
   outExtension: { '.js': '.mjs' },
   bundle: true,
   platform: 'node',
+  nodePaths: process.env.NODE_PATH?.split(path.delimiter),
   format: 'esm',
   alias: { '@': path.join(root, 'src') },
   plugins: [
@@ -52,7 +53,7 @@ const start = node('StartEvent', 'Start')
 const inspect = node('Task', 'Inspect', {
   name: '检查 "电压"',
   'flowable:diagnosisKind': 'investigation',
-  'flowable:observation': '电压',
+  'flowable:observation': '电压\rraise RuntimeError("must stay a comment")\n"""',
   'flowable:acquisition': '使用电压表',
   'flowable:assessment': '对照额定电压判断',
   'flowable:referenceImage': image,
@@ -98,6 +99,35 @@ const definitions = node('Definitions', 'Definitions', {
 const { xml } = await moddle.toXML(definitions)
 const { rootElement } = await moddle.fromXML(xml)
 const files = generateProject(rootElement)
+// 逐层业务提示应能定位到真实节点，且换行/引号不会破坏 Python 语法。
+for (const name of ['acquisition.py', 'parsing.py', 'display.py', 'diagnosis.py']) {
+  for (const expected of [
+    'Inspect',
+    'investigation',
+    '检查 \"电压\"',
+    '电压',
+    '使用电压表',
+    '对照额定电压判断',
+    'workflow.json',
+    'HANDLERS',
+    'routing.py',
+  ]) {
+    if (expected === 'routing.py' && ['acquisition.py', 'parsing.py', 'display.py'].includes(name))
+      continue
+    assert.ok(files[name].includes(expected), `${name} must describe ${expected}`)
+  }
+}
+assert.ok(files['actions.py'].includes('Repair'))
+assert.ok(files['IMPLEMENTATION.md'].includes('diagnosis.py:node_1'))
+inspect.set('flowable:referenceImage', 'data:application/pdf;base64,JVBERi0=')
+const documentFiles = generateProject(definitions)
+const documentDefinition = JSON.parse(documentFiles['workflow.json'])
+assert.equal(documentDefinition.resources[0].mediaType, 'application/pdf')
+assert.equal(
+  Buffer.from(documentFiles[documentDefinition.nodes.Inspect.referenceImage]).toString(),
+  '%PDF-',
+)
+inspect.set('flowable:referenceImage', image)
 const zip = createArchive(files)
 await writeFile(path.join(temp, 'project.zip'), Buffer.from(await zip.arrayBuffer()))
 assert.equal(JSON.parse(files['workflow.json']).nodes.Inspect.name, '检查 "电压"')

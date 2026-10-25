@@ -8,6 +8,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 import uuid
 import xml.etree.ElementTree as ET
+from reference_files import parse_reference_file
 
 BPMN = 'http://www.omg.org/spec/BPMN/20100524/MODEL'
 FLOWABLE = 'http://flowable.org/bpmn'
@@ -43,7 +44,7 @@ def serial_workflow(xml, manifest):
     originals = {element.get('id'): element for element in process
                  if element.tag in (b('task'), b('startEvent'))}
     instructions = {node_id: {field: node.get(f(field), '') for field in
-        ('observation', 'acquisition', 'assessment', 'referenceImage', 'detailText')}
+        ('observation', 'acquisition', 'assessment', 'referenceImage', 'referenceImageName', 'detailText')}
         for node_id, node in originals.items()}
     for element in list(process):
         if element.tag not in (b('task'), b('startEvent'), b('documentation'), b('extensionElements')):
@@ -255,8 +256,12 @@ def compile_workflow(xml):
                     'conclusion': ('conclusionText',), 'investigationAction': ('actionText',)}
         if any(not node.get(f(field), '').strip() for field in required.get(kind, ())):
             raise ValueError('Missing required diagnostic content / 诊断内容未填写完整: ' + node_id)
-        if kind == 'investigation' and not re.fullmatch(r'data:image/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}', node.get(f('referenceImage'), '')):
-            raise ValueError('Invalid reference image / 无效参考图: ' + node_id)
+        if kind == 'investigation':
+            # 与编辑器保持同一文件协议；严格解码避免把坏附件部署成可用参考资料。
+            try:
+                parse_reference_file(node.get(f('referenceImage'), ''))
+            except ValueError as error:
+                raise ValueError('Invalid reference file (maximum 50 MiB) / 无效参考文件（最大 50 MiB）: ' + node_id) from error
         if kind in ('problemSolved', 'escalation'):
             if outgoing:
                 raise ValueError('Final node has outgoing flow / 最终节点不能有后继')
@@ -342,7 +347,7 @@ def compile_workflow(xml):
                 manifest['reviews'][review_id] = {'nodeId': node_id, 'mode': 'decision',
                     'name': node.get('name') or node_id,
                     'instructions': {field: node.get(f(field), '') for field in
-                        ('observation', 'acquisition', 'assessment', 'referenceImage', 'detailText', 'conclusionText', 'actionText')},
+                        ('observation', 'acquisition', 'assessment', 'referenceImage', 'referenceImageName', 'detailText', 'conclusionText', 'actionText')},
                     'options': [{'id': 'yes', 'name': '是 / Yes'}, {'id': 'no', 'name': '否 / No'}]}
             if len(outgoing) > 1 or kind == 'investigation':
                 gateway_id = new_id(node_id + '_decision')
