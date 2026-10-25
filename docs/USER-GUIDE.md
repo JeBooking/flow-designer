@@ -14,6 +14,7 @@ For engineers integrating an existing Python project with diagnostic workflows. 
 | Export Python skeleton      | Generate an offline project for engineers to complete            | Acquisition/decision/action placeholders default to manual fallback |
 
 The scaffold does not automatically execute external-module bindings saved in the diagram. Flowable workers execute those bindings. Registering a project does not start a worker.
+Structural simulation follows BPMN animation rules; it does not validate diagnostic Yes/No results or serial success/pause scheduling.
 
 ## 2. Start and register an existing project
 
@@ -52,12 +53,14 @@ Debug a function without side effects first: select it, enter a JSON array of po
 Start with **Start → Investigation → Conclusion → Remediation → Problem Solved**, then add a No branch or Escalation. The parallel investigation/dependency example illustrates grouping. Loading examples replaces the canvas; export anything to retain first. Older examples may need migration to current rules.
 
 Select nodes and fill in the name and details. An empty name generates a summary from content and node size; manually entered names remain. Investigations also require data to inspect, acquisition method, assessment method and a reference file. Conclusions require content, investigation actions require action instructions. Investigations decide; actions execute; conclusions record text; Problem Solved/Escalation express outcomes.
+The **Node type** field under General is read-only and identifies the node even when its name is empty.
 
 Classify investigation outlets as Yes/No, or name the flows `yes/no/是/否`, consistent with the assessment. Either group may have multiple outlets or be absent; an unmatched result records a failed idea. Investigations cannot connect directly to remediation; insert a conclusion. Investigation actions lead back to investigations. Validation reports illegal connections and missing content; drafts may still be saved.
 
 Choose parallel or serial in process properties. Parallel starts matching ideas concurrently; failure ends only that idea. Serial tries flows by ascending `diagnosisOrder` (definition order breaks ties), continues after failure and pauses after success when work remains, offering continue/finish. Merges continue on each arrival without automatically waiting for other ideas. Loops need a reachable terminal outlet.
 
 Reference files may be images, PDFs, text, audio, video or other types, up to 50 MiB each. Flowable compile/start requests have a 70 MiB total limit including Base64 and JSON overhead, so keep combined attachments within that request limit. Browser support determines previews. Other types can be opened through the Windows local service in a compatible installed application; support for a MIME type does not install a viewer. Names and content are saved with the workflow. Generic project exports put resources in `assets/` and retain relative paths in the main JSON.
+Without a default association, the system application chooser opens. Scripts and shortcuts always ask for a viewing application. Local applications open a temporary copy; edits do not automatically update the project. Select the modified file again to save it.
 
 ## 4. Bind interfaces and match variables automatically
 
@@ -138,7 +141,7 @@ Alternatively extend `DecisionComponent` and implement `decide`. An unimplemente
 
 Refresh the drawer to view evidence, assessment instructions and choices; confirm Yes/No to continue. Escalation waits for review before ending. Serial success with remaining work offers continue/finish.
 
-At a wait, select an earlier executed node, supply a reason and optional revised input variables, then recheck. This preserves history, old values and reasons, clears results that need recomputing, and executes again. It does not undo equipment actions; actions may run again. The current node, unexecuted nodes and completed instances cannot be arbitrary recheck targets. Running automatic nodes do not offer pause/intervention.
+While waiting for an investigation decision or escalation review, select an earlier executed node, supply a reason and optional revised input variables, then recheck. This preserves history, old values and reasons, clears results that need recomputing, and executes again. It does not undo equipment actions; actions may run again. The current node, unexecuted nodes and completed instances cannot be arbitrary recheck targets. Running automatic nodes do not offer pause/intervention.
 
 ## 7. Save, move and import projects
 

@@ -314,7 +314,7 @@ export function generateProject(definitions: ModelElement): ProjectFiles {
         const details = [
           ['实现位置', `${filename}:node_${i + 1}；HANDLERS[${JSON.stringify(node.id)}]`],
           ['节点 ID', node.id],
-          ['节点类型', `${node.kind}（bpmn:Task）`],
+          ['节点类型', node.kind],
           ['节点名称', node.name],
           ['所属流程/子流程', node.scope],
           ['详细内容', node.detailText],
@@ -355,7 +355,7 @@ workflow.json is the shared definition. Node IDs, rather than function numbers, 
 workflow.json 为唯一主定义。按节点 ID 查找业务实现；node_N 只表示本次导出顺序。
 
 runner.py → acquisition.py → parsing.py → display.py → diagnosis.py → routing.py → next node / 后继节点。
-动作由 runner.py → actions.py → routing.py 调用。每个函数上方均有节点内容、输入输出和出口说明。
+动作由 runner.py → actions.py → routing.py 调用。每个函数开头均有节点内容、输入输出和出口说明。
 Only NotImplementedError requests manual fallback. Parsing/display defaults already work.
 仅采集、判断和动作的未实现占位触发人工兜底；不是已绑定外部模块的真实执行。外部模块绑定由 Flowable worker 执行。
 Offline handlers do not automatically import pythonModule/pythonFunction stored in workflow.json.

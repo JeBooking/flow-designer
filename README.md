@@ -204,7 +204,7 @@ Click **Export Python skeleton** in the modeling toolbar, extract the ZIP, and r
 library and works offline without AI, a workflow server, or additional packages.
 
 The project separates acquisition, parsing, display, diagnosis, routing, machine
-actions and orchestration into Python modules. Each module maps stable BPMN node
+actions and orchestration into Python modules. Each module maps stable node
 IDs to editable functions. `IMPLEMENTATION.md` maps nodes to files/functions; each handler comment identifies the node, full business content, input/output contract, outlets and call relationships. Unimplemented acquisition displays the manual data
 collection instructions and accepts text, JSON or `@path/to/data.json`. You can
 also pass `{node_id: raw_data}` via `run(supplied=...)` or `--data inputs.json`.
