@@ -310,7 +310,11 @@ export async function importWorkflowJson(
           for (const field of fields.filter(
             (field) => !['name', 'start', 'documentation', 'nameMode'].includes(field),
           )) {
-            const value = node[field]
+            // 旧图的新详情为空但旧字段有内容时，同步写入规范字段，避免补上 auto 后再次遮住旧内容。
+            const value =
+              field === 'detailText' && node.detailText === '' && !node.nameMode
+                ? detail
+                : node[field]
             if (field === 'referenceImage' && value && !value.startsWith('data:')) missingImages++
             attributes += attribute('flowable:' + field, value)
           }

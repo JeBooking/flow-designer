@@ -175,6 +175,56 @@ try {
   delete oldEmbedded.resources
   oldEmbedded.nodes.Inspect.referenceImage = 'data:image/png;base64,AAAA'
   assert.equal((await importWorkflowJson(JSON.stringify(oldEmbedded))).missingImages, 0)
+  const legacyAction = structuredClone(workflow)
+  legacyAction.nodes.Action = {
+    id: 'Action',
+    kind: 'investigationAction',
+    scope: 'Process',
+    name: '排查动作',
+    detailText: '',
+    actionText: '执行风扇检查并记录结果',
+    outgoing: [{ id: 'AfterAction', target: 'Failed' }],
+  }
+  legacyAction.nodes.Inspect.outgoing[1].target = 'Action'
+  const actionModel = await moddle.fromXML(
+    (await importWorkflowJson(JSON.stringify(legacyAction))).xml,
+  )
+  const actionNode = actionModel.rootElement.rootElements[0].flowElements.find(
+    (item) => item.id === 'Action',
+  )
+  assert.equal(actionNode.get('flowable:nameMode'), 'auto')
+  assert.equal(actionNode.get('flowable:detailText'), '执行风扇检查并记录结果')
+  assert.notEqual(actionNode.name, '排查动作')
+  legacyAction.nodes.Action.nameMode = 'manual'
+  const manualModel = await moddle.fromXML(
+    (await importWorkflowJson(JSON.stringify(legacyAction))).xml,
+  )
+  assert.equal(
+    manualModel.rootElement.rootElements[0].flowElements.find((item) => item.id === 'Action').name,
+    '排查动作',
+  )
+  const namedFile = structuredClone(complete)
+  namedFile.nodes.Inspect.referenceImage = 'data:application/octet-stream;base64,aGVsbG8='
+  namedFile.nodes.Inspect.referenceImageName = '操作说明.xyz'
+  const namedModel = await moddle.fromXML((await importWorkflowJson(JSON.stringify(namedFile))).xml)
+  const namedProject = generateWorkflowProject(namedModel.rootElement)
+  assert.equal(
+    JSON.parse(namedProject['workflow.json']).nodes.Inspect.referenceImage,
+    'assets/操作说明.xyz',
+  )
+  assert.equal(new TextDecoder().decode(namedProject['assets/操作说明.xyz']), 'hello')
+  const namedEntries = Object.entries(namedProject).map(([path, value]) => ({
+    path: 'project/' + path,
+    read: async () => (typeof value === 'string' ? new TextEncoder().encode(value) : value),
+  }))
+  const namedRestored = await importWorkflowDirectory(namedEntries)
+  const restoredFile = await moddle.fromXML(namedRestored.xml)
+  assert.equal(
+    restoredFile.rootElement.rootElements[0].flowElements
+      .find((item) => item.id === 'Inspect')
+      .get('flowable:referenceImageName'),
+    '操作说明.xyz',
+  )
   assert.throws(
     () => supplyProjectResources(generateWorkflowProject(directoryModel.rootElement), {}),
     /manual.pdf/,

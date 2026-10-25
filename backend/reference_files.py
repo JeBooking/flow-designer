@@ -15,7 +15,9 @@ atexit.register(_STORE.cleanup)
 # 可执行、脚本和快捷方式仅进入系统软件选择器，避免把参考资料当作程序运行。
 CHOOSER_EXTENSIONS = {'.exe', '.com', '.bat', '.cmd', '.ps1', '.psm1', '.vbs', '.vbe', '.js',
     '.jse', '.wsf', '.wsh', '.msi', '.msp', '.scr', '.pif', '.lnk', '.url', '.py', '.pyw',
-    '.reg', '.hta', '.cpl', '.msc', '.application', '.appref-ms', '.jar', '.sh'}
+    '.reg', '.hta', '.cpl', '.msc', '.application', '.appref-ms', '.jar', '.sh',
+    '.mjs', '.cjs', '.jsx', '.tsx', '.ts', '.lua', '.rb', '.pl', '.php', '.psd1',
+    '.wsc', '.sct', '.appx', '.msix', '.appxbundle', '.msixbundle'}
 
 
 def parse_reference_file(value):
