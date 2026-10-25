@@ -24,6 +24,8 @@ watch(name, (value) => {
 })
 const commitName = () => {
   name.value = draftName.value
+  // 非法分支名称会被命令入口拒绝；恢复实际值，避免草稿与画布分类不一致。
+  draftName.value = name.value || ''
 }
 const storedDetail = useCustomRef<string | undefined>('flowable:detailText')
 const legacyConclusion = useCustomRef<string | undefined>('flowable:conclusionText')
