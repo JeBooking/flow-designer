@@ -13,14 +13,21 @@ const temp = await mkdtemp(path.join(tmpdir(), 'workflow-import-'))
 try {
   const entry = path.join(temp, 'import.mjs')
   await build({
-    entryPoints: ['src/views/ProcessDesigner/CodeGeneration/importWorkflow.ts'],
-    outfile: entry,
+    entryPoints: {
+      import: 'src/views/ProcessDesigner/CodeGeneration/importWorkflow.ts',
+      definition: 'src/views/ProcessDesigner/CodeGeneration/workflowDefinition.ts',
+    },
+    outdir: temp,
+    outExtension: { '.js': '.mjs' },
     bundle: true,
     platform: 'node',
     format: 'esm',
     alias: { '@': path.join(process.cwd(), 'src') },
   })
   const { importWorkflowJson } = await import(pathToFileURL(entry))
+  const { generateWorkflowDefinition } = await import(
+    pathToFileURL(path.join(temp, 'definition.mjs'))
+  )
   const descriptor = JSON.parse(await readFile('src/views/ProcessDesigner/flowable.json', 'utf8'))
   const moddle = new BpmnModdle({ flowable: descriptor })
   const workflow = {
@@ -85,6 +92,47 @@ try {
   assert.equal(elements.get('No').get('flowable:diagnosisBranch'), 'no')
   assert.equal(elements.get('Inspect').outgoing.length, 3)
   assert.ok(rootElement.diagrams[0].plane.planeElement.length >= 12)
+  const complete = structuredClone(workflow)
+  complete.nodes.Inspect.referenceImage = 'data:image/png;base64,AAAA'
+  complete.nodes.Inspect.pythonModule = 'device.checks'
+  complete.nodes.Inspect.pythonFunction = 'inspect_voltage'
+  complete.nodes.Inspect.pythonArguments = '{"limit":12}'
+  complete.nodes.Inspect.pythonTopic = 'voltage'
+  complete.nodes.Inspect.humanDecision = true
+  complete.nodes.Inspect.nameMode = 'auto'
+  const fullModel = await moddle.fromXML((await importWorkflowJson(JSON.stringify(complete))).xml)
+  fullModel.rootElement.rootElements[0].name = '诊断定义'
+  const compact = generateWorkflowDefinition(fullModel.rootElement)
+  const definition = JSON.parse(compact)
+  assert.equal(definition.version, 3)
+  assert.equal(definition.process.name, '诊断定义')
+  assert.equal(definition.nodes.Inspect.referenceImage, 'data:image/png;base64,AAAA')
+  assert.equal(definition.nodes.Inspect.pythonFunction, 'inspect_voltage')
+  assert.equal(definition.nodes.Inspect.humanDecision, true)
+  assert.ok(!('name' in definition.nodes.Inspect), 'Do not save size-dependent automatic summaries')
+  assert.ok(!('scope' in definition.nodes.Inspect) && !('id' in definition.nodes.Inspect))
+  assert.ok(!('outgoing' in definition.nodes.Solved))
+  assert.ok(!('actionText' in definition.nodes.Conclusion))
+  assert.ok(!('targetName' in definition.nodes.Inspect.outgoing[0]))
+  const shape = fullModel.rootElement.diagrams[0].plane.planeElement.find((item) => item.bounds)
+  shape.bounds.x += 500
+  shape.bounds.width += 300
+  shape.$attrs['bioc:fill'] = '#ff0000'
+  fullModel.rootElement.rootElements[0].flowElements.find((item) => item.id === 'Inspect').name =
+    '尺寸变化后的摘要'
+  assert.equal(
+    generateWorkflowDefinition(fullModel.rootElement),
+    compact,
+    'Layout and colors do not enter the definition',
+  )
+  const importedDefinition = await importWorkflowJson(compact)
+  assert.equal(importedDefinition.missingImages, 0)
+  assert.equal(importedDefinition.portable, true)
+  const recoveredDefinition = await moddle.fromXML(importedDefinition.xml)
+  assert.deepEqual(
+    JSON.parse(generateWorkflowDefinition(recoveredDefinition.rootElement)),
+    definition,
+  )
   const legacy = structuredClone(workflow)
   delete legacy.version
   delete legacy.mode
@@ -158,7 +206,7 @@ try {
   await assert.rejects(importWorkflowJson('{bad json'))
   await assert.rejects(importWorkflowJson('{"nodes":{},"start":"missing"}'))
   console.log(
-    'PASS: JSON nodes/edges, Yes/No groups, ordering, mode, details, escaping, legacy files, subprocesses, generated layout and invalid-file rejection',
+    'PASS: portable diagnostic definitions, embedded images and bindings, layout/style independence, semantic round trips, legacy JSON, subprocesses and invalid-file rejection',
   )
 } finally {
   await rm(temp, { recursive: true, force: true })

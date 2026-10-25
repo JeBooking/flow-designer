@@ -1,6 +1,8 @@
 import { layoutProcess } from 'bpmn-auto-layout'
 import { translateUi } from '@/languages/uiText'
 import { diagnosisKinds, parseDiagnosisBranch } from '@/views/ProcessDesigner/Diagnosis/model'
+import { automaticNameForText } from '@/views/ProcessDesigner/Diagnosis/geometry'
+import type { DiagnosisKind } from '@/types/diagnosis'
 
 interface WorkflowEdge {
   id: string
@@ -27,6 +29,12 @@ interface WorkflowNode {
   actionText?: string
   conclusionText?: string
   documentation?: string
+  nameMode?: string
+  pythonModule?: string
+  pythonFunction?: string
+  pythonArguments?: string
+  pythonTopic?: string
+  humanDecision?: boolean
 }
 
 const record = (value: unknown): value is Record<string, unknown> =>
@@ -54,6 +62,7 @@ export async function importWorkflowJson(content: string): Promise<{
   xml: string
   missingImages: number
   unclassifiedBranches: number
+  portable: boolean
 }> {
   const fail = (detail: string): never => {
     throw new Error(
@@ -68,10 +77,43 @@ export async function importWorkflowJson(content: string): Promise<{
   }
   if (!record(data) || !record(data.nodes) || typeof data.start !== 'string')
     return fail(translateUi('缺少 nodes 或 start', 'Missing nodes or start'))
-  if (data.version !== undefined && data.version !== 1 && data.version !== 2)
+  if (
+    data.version !== undefined &&
+    (typeof data.version !== 'number' || ![1, 2, 3].includes(data.version))
+  )
     return fail(translateUi('不支持的文件版本', 'Unsupported file version'))
   if (data.mode !== undefined && data.mode !== 'parallel' && data.mode !== 'serial')
     return fail(translateUi('无效排查模式', 'Invalid investigation mode'))
+  let processMetadata: Record<string, unknown> | undefined
+  if (data.version === 3) {
+    if (
+      !record(data.process) ||
+      typeof data.process.id !== 'string' ||
+      (data.process.name !== undefined && typeof data.process.name !== 'string') ||
+      (data.process.documentation !== undefined && typeof data.process.documentation !== 'string')
+    )
+      return fail(translateUi('流程信息无效', 'Invalid process metadata'))
+    processMetadata = data.process
+    data = {
+      ...data,
+      nodes: Object.fromEntries(
+        Object.entries(data.nodes).map(([key, value]) => [
+          key,
+          record(value)
+            ? {
+                ...value,
+                id: value.id ?? key,
+                scope: value.scope ?? processMetadata!.id,
+                outgoing: value.outgoing ?? [],
+              }
+            : value,
+        ]),
+      ),
+    }
+  }
+  // 规范化后的结构继续复用旧格式校验，版本之间不复制恢复逻辑。
+  if (!record(data) || !record(data.nodes) || typeof data.start !== 'string')
+    return fail(translateUi('节点结构无效', 'Invalid nodes'))
   const nodes = new Map<string, WorkflowNode>()
   const ids = new Set<string>()
   const id = (value: unknown) => {
@@ -101,6 +143,11 @@ export async function importWorkflowJson(content: string): Promise<{
     'actionText',
     'conclusionText',
     'documentation',
+    'nameMode',
+    'pythonModule',
+    'pythonFunction',
+    'pythonArguments',
+    'pythonTopic',
   ] as const
   for (const [key, value] of Object.entries(data.nodes)) {
     if (
@@ -117,6 +164,10 @@ export async function importWorkflowJson(content: string): Promise<{
     for (const field of fields)
       if (value[field] !== undefined && typeof value[field] !== 'string')
         return fail(key + ': ' + field)
+    if (value.humanDecision !== undefined && typeof value.humanDecision !== 'boolean')
+      return fail(key + ': humanDecision')
+    if (value.nameMode !== undefined && !['auto', 'manual'].includes(String(value.nameMode)))
+      return fail(key + ': nameMode')
     for (const edge of value.outgoing) {
       if (
         !record(edge) ||
@@ -137,6 +188,8 @@ export async function importWorkflowJson(content: string): Promise<{
   if (!start || start.kind !== 'start')
     return fail(translateUi('开始节点不存在', 'Start node is missing'))
   const processId = id(start.scope)
+  if (processMetadata && processMetadata.id !== processId)
+    return fail(translateUi('开始节点不属于主流程', 'Start node is outside the main process'))
   for (const node of nodes.values()) {
     const scopes = new Set([node.id])
     let scope = node.scope
@@ -169,7 +222,12 @@ export async function importWorkflowJson(content: string): Promise<{
       .map((node) => {
         const tag = builtins[node.kind] || 'task'
         const diagnostic = !hasOwn(builtins, node.kind)
-        let attributes = attribute('id', node.id) + attribute('name', node.name)
+        let attributes = attribute('id', node.id) + attribute('name', node.name || undefined)
+        const detail = node.detailText ?? node.conclusionText ?? node.actionText ?? ''
+        if (diagnostic && !node.name && (detail || node.nameMode === 'auto')) {
+          const name = automaticNameForText(detail, 100, 80, node.kind as DiagnosisKind)
+          attributes += attribute('name', name) + attribute('flowable:nameMode', 'auto')
+        }
         const defaults = node.outgoing.filter((edge) => edge.default)
         if (defaults.length > 1)
           return fail(node.id + ': ' + translateUi('存在多个默认出口', 'Multiple default flows'))
@@ -177,16 +235,17 @@ export async function importWorkflowJson(content: string): Promise<{
         if (node.kind === 'subprocess') attributes += ' triggeredByEvent="false"'
         if (diagnostic) {
           attributes += attribute('flowable:diagnosisKind', node.kind)
-          // JSON 中没有名称来源标记；现有名称作为手填保留，避免详情修改意外覆盖。
-          if (node.name) attributes += attribute('flowable:nameMode', 'manual')
+          // 旧格式没有名称来源标记时保留手填名称；新格式继续遵循自动命名规则。
+          if (node.name) attributes += attribute('flowable:nameMode', node.nameMode || 'manual')
           for (const field of fields.filter(
-            (field) => !['name', 'start', 'documentation'].includes(field),
+            (field) => !['name', 'start', 'documentation', 'nameMode'].includes(field),
           )) {
             const value = node[field]
             if (field === 'referenceImage' && value && !value.startsWith('data:image/'))
               missingImages++
             attributes += attribute('flowable:' + field, value)
           }
+          if (node.humanDecision) attributes += attribute('flowable:humanDecision', 'true')
         }
         const documentation = node.documentation
           ? `<bpmn:documentation>${escapeXml(node.documentation)}</bpmn:documentation>`
@@ -230,6 +289,14 @@ export async function importWorkflowJson(content: string): Promise<{
   }
   let definitionId = 'Restored_Definitions'
   while (ids.has(definitionId)) definitionId += '_'
-  const xml = `<?xml version="1.0" encoding="UTF-8"?><bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:flowable="http://flowable.org/bpmn" id="${definitionId}" targetNamespace="http://bpmn.io/schema/bpmn"><bpmn:process${attribute('id', processId)} isExecutable="true"${attribute('flowable:diagnosisMode', String(data.mode || 'parallel'))}>${scopeXml(processId)}</bpmn:process></bpmn:definitions>`
-  return { xml: await layoutProcess(xml), missingImages, unclassifiedBranches }
+  const documentation = processMetadata?.documentation
+    ? `<bpmn:documentation>${escapeXml(String(processMetadata.documentation))}</bpmn:documentation>`
+    : ''
+  const xml = `<?xml version="1.0" encoding="UTF-8"?><bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:flowable="http://flowable.org/bpmn" id="${definitionId}" targetNamespace="http://bpmn.io/schema/bpmn"><bpmn:process${attribute('id', processId)}${attribute('name', processMetadata?.name as string | undefined)} isExecutable="true"${attribute('flowable:diagnosisMode', String(data.mode || 'parallel'))}>${documentation}${scopeXml(processId)}</bpmn:process></bpmn:definitions>`
+  return {
+    xml: await layoutProcess(xml),
+    missingImages,
+    unclassifiedBranches,
+    portable: data.version === 3,
+  }
 }

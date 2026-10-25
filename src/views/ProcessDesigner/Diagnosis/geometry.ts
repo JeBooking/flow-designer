@@ -97,6 +97,7 @@ export function diagnosisTextBox(width: number, height: number, kind?: Diagnosis
 
 let measuringContext: CanvasRenderingContext2D | null | undefined
 function measure(text: string) {
+  if (typeof document === 'undefined') return Array.from(text).length * 12
   const context = (measuringContext ??= document.createElement('canvas').getContext('2d'))
   if (!context) return Array.from(text).length * 12
   context.font = '12px Arial, sans-serif'
@@ -119,8 +120,17 @@ export function labelLines(text: string, width: number): string[] {
 }
 
 export function automaticDiagnosisName(shape: Shape, detail = getDiagnosisDetail(shape)): string {
+  return automaticNameForText(detail, shape.width, shape.height, getDiagnosisKind(shape))
+}
+
+export function automaticNameForText(
+  detail: string,
+  width: number,
+  height: number,
+  kind?: DiagnosisKind,
+): string {
   const compact = detail.trim().replace(/\s+/g, ' ')
-  const box = diagnosisTextBox(shape.width, shape.height, getDiagnosisKind(shape))
+  const box = diagnosisTextBox(width, height, kind)
   const maxLines = Math.max(1, Math.floor(box.height / 16))
   if (labelLines(compact, box.width).length <= maxLines) return compact
   let result = ''

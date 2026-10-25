@@ -53,6 +53,12 @@ imported invalid connections and missing fields are reported by process validati
 be saved with validation errors.
 Use Start → Investigation → Conclusion → Remediation → Problem Solved for an initial example.
 
+**Export diagnostic JSON** saves a standalone version 3 `workflow.json` with diagnostic content,
+embedded reference images, interface bindings, dependencies, branches, and investigation mode.
+It omits layout, node dimensions, user colors, and fonts. **Export complete BPMN** retains the
+full editing model, including saved layout and user styles. Legacy runtime JSON files in Python
+skeleton bundles remain compatible; use the dedicated JSON export to save a portable definition.
+
 The toolbar's **Import** accepts `.bpmn`, `.xml`, and exported `workflow.json` files. JSON imports
 rebuild the diagram with a new layout and retain node content, connections, Yes/No groups,
 serial order, and investigation mode. Legacy custom branch names keep their connections and

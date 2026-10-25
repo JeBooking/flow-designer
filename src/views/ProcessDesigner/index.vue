@@ -41,6 +41,7 @@ import { createArchive } from '@/views/ProcessDesigner/CodeGeneration/archive'
 import PythonProjects from '@/views/ProcessDesigner/PythonProjects.vue'
 import FlowableExecution from '@/views/ProcessDesigner/FlowableExecution.vue'
 import { importWorkflowJson } from '@/views/ProcessDesigner/CodeGeneration/importWorkflow'
+import { generateWorkflowDefinition } from '@/views/ProcessDesigner/CodeGeneration/workflowDefinition'
 
 defineOptions({
   name: 'ProcessDesigner',
@@ -155,10 +156,15 @@ const importXml = async () => {
                 `已恢复流程图并重新排版。${restored.missingImages} 张参考图需重新上传，${restored.unclassifiedBranches} 条排查连线需设置是／否类别；JSON 未记录的接口绑定需重新配置。`,
                 `Workflow restored with a new layout. Upload ${restored.missingImages} reference images and assign Yes/No to ${restored.unclassifiedBranches} investigation connections. Configure interface bindings not recorded in the JSON.`,
               )
-            : translateUi(
-                '已恢复节点、连线和排查模式并重新排版。JSON 未记录的接口绑定需重新配置。',
-                'Nodes, connections and investigation mode were restored with a new layout. Configure any interface bindings not recorded in the JSON.',
-              ),
+            : restored.portable
+              ? translateUi(
+                  '诊断定义已完整恢复，并自动生成布局。',
+                  'Diagnostic definition restored with an automatically generated layout.',
+                )
+              : translateUi(
+                  '已恢复节点、连线和排查模式并重新排版。JSON 未记录的接口绑定需重新配置。',
+                  'Nodes, connections and investigation mode were restored with a new layout. Configure any interface bindings not recorded in the JSON.',
+                ),
         duration: 0,
       })
     }
@@ -187,6 +193,26 @@ const exportXml = async () => {
   }
 }
 const exportingCode = ref(false)
+const exportDefinition = () => {
+  if (!modeler.value) return
+  try {
+    const json = generateWorkflowDefinition(
+      modeler.value.getDefinitions() as unknown as ModelElement,
+    )
+    const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'workflow.json'
+    link.click()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch (error) {
+    ElNotification.error({
+      title: translateUi('诊断定义导出失败', 'Diagnostic definition export failed'),
+      message: error instanceof Error ? error.message : String(error),
+      duration: 0,
+    })
+  }
+}
 const exportCode = async () => {
   if (!modeler.value || exportingCode.value) return
   exportingCode.value = true
@@ -368,9 +394,30 @@ defineExpose({
                   @click="fileRef?.click()"
                 />
               </el-tooltip>
-              <el-tooltip placement="top" :content="$t('ui.export')">
-                <el-button :icon="Download" size="small" @click="exportXml" />
+              <el-tooltip
+                placement="top"
+                :content="
+                  $tu(
+                    '导出完整 BPMN（含布局与样式）',
+                    'Export complete BPMN with layout and styles',
+                  )
+                "
+              >
+                <el-button
+                  :icon="Download"
+                  size="small"
+                  @click="exportXml"
+                  :aria-label="
+                    $tu(
+                      '导出完整 BPMN（包含布局与样式）',
+                      'Export complete BPMN with layout and styles',
+                    )
+                  "
+                />
               </el-tooltip>
+              <el-button @click="exportDefinition">{{
+                $tu('导出诊断 JSON', 'Export diagnostic JSON')
+              }}</el-button>
               <el-button :loading="exportingCode" @click="exportCode">
                 {{ $tu('导出 Python 骨架', 'Export Python skeleton') }}
               </el-button>
