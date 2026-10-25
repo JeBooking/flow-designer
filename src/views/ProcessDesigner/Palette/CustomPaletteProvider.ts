@@ -54,7 +54,8 @@ export default class CustomPaletteProvider extends PaletteProvider {
       const createDiagnosis = (event: Event) => {
         const businessObject = createElement('bpmn:Task', this.bpmnFactory, {
           'flowable:diagnosisKind': kind,
-          name: diagnosisNodeName(kind, this.translate),
+          name: diagnosisNodeName(),
+          'flowable:nameMode': 'auto',
         })
         this.create.start(
           event,

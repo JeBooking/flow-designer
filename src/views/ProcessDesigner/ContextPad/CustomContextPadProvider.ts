@@ -104,7 +104,8 @@ export default class CustomContextPadProvider extends ContextPadProvider {
             type: 'bpmn:Task',
             businessObject: createElement('bpmn:Task', this.diagnosisBpmnFactory, {
               'flowable:diagnosisKind': successor,
-              name: diagnosisNodeName(successor, this.translate),
+              name: diagnosisNodeName(),
+              'flowable:nameMode': 'auto',
             }),
           })
         actions[`append.diagnosis-${successor}`] = {

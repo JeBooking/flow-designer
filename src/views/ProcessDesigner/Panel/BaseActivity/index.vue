@@ -6,25 +6,42 @@ import { supportsExecutionListener } from '@/views/ProcessDesigner/utils/EventDe
 import { isIdValid } from '@/views/ProcessDesigner/utils/ValidationUtil.ts'
 import { useBpmnContextService } from '@/hooks/useService.ts'
 import { getBusinessObject } from 'bpmn-js/lib/util/ModelUtil'
-import { isFixedDiagnosisNode } from '@/views/ProcessDesigner/Diagnosis/model'
+import { getDiagnosisKind } from '@/views/ProcessDesigner/Diagnosis/model'
 
 defineOptions({
   name: 'BaseActivity',
 })
-const { selectedElement } = useBpmnContextService()
+const { selectedElement, updateProperties } = useBpmnContextService()
 const activeTabName = ref('basic')
 const actives = ref<string[]>(['general', 'arg1', 'arg2', 'arg3', 'arg4', 'pythonBinding'])
 const id = useCustomRef('id')
 const isExecutable = useCustomRef('isExecutable')
 const name = useCustomRef('name')
+// 输入过程中保留草稿，避免严格分支校验拒绝 yes/no 的中间字符。
+const draftName = ref(name.value || '')
+watch(name, (value) => {
+  draftName.value = value || ''
+})
+const commitName = () => {
+  name.value = draftName.value
+}
+const storedDetail = useCustomRef<string | undefined>('flowable:detailText')
+const legacyConclusion = useCustomRef<string | undefined>('flowable:conclusionText')
+const legacyAction = useCustomRef<string | undefined>('flowable:actionText')
 const text = useCustomRef('text')
 const propertiesByName = computed(() => {
   const businessObject = getBusinessObject(selectedElement)
   return businessObject?.$descriptor?.propertiesByName || {}
 })
-const showEditableName = computed(
-  () => propertiesByName.value['name'] && !isFixedDiagnosisNode(selectedElement),
-)
+const showEditableName = computed(() => propertiesByName.value['name'])
+const diagnosisKind = computed(() => getDiagnosisKind(selectedElement))
+const detailText = computed<string>({
+  get: () =>
+    storedDetail.value ??
+    (diagnosisKind.value === 'conclusion' ? legacyConclusion.value : legacyAction.value) ??
+    '',
+  set: (value) => updateProperties({ 'flowable:detailText': value }),
+})
 const updateId = (val: string) => {
   const msg = isIdValid(selectedElement, val)
   if (msg) {
@@ -48,11 +65,31 @@ const updateId = (val: string) => {
               />
             </el-form-item>
             <el-form-item :label="$t('ui.name')" v-if="showEditableName">
-              <el-input v-model="name" :placeholder="$t('ui.enterNodeName')" />
+              <el-input
+                v-model="draftName"
+                @change="commitName"
+                :placeholder="$t('ui.enterNodeName')"
+              />
             </el-form-item>
             <el-form-item :label="$t('ui.name')" v-else-if="propertiesByName['text']">
               <el-input v-model="text" :placeholder="$t('ui.enterNodeName')" />
             </el-form-item>
+            <el-form-item v-if="diagnosisKind" :label="$tu('详细内容', 'Details')">
+              <el-input
+                v-model="detailText"
+                type="textarea"
+                :rows="5"
+                :placeholder="$tu('请输入详细内容', 'Enter details')"
+              />
+            </el-form-item>
+            <p v-if="diagnosisKind" class="diagnosis-help">
+              {{
+                $tu(
+                  '名称留空时从详细内容自动生成；手动填写的名称会保留。',
+                  'An empty name is generated from details; a manually entered name is preserved.',
+                )
+              }}
+            </p>
             <el-form-item :label="$t('ui.executable')" v-if="propertiesByName['isExecutable']">
               <el-switch v-model="isExecutable" />
             </el-form-item>
@@ -76,6 +113,11 @@ const updateId = (val: string) => {
 </template>
 
 <style scoped lang="scss">
+.diagnosis-help {
+  color: var(--el-text-color-secondary);
+  line-height: 1.6;
+}
+
 .other-configurations {
   padding: 10px;
   display: flex;

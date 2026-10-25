@@ -4,12 +4,9 @@ import { is } from 'bpmn-js/lib/util/ModelUtil'
 import {
   connectionError,
   conclusionSuccessorRequired,
-  conclusionTextRequired,
-  fixedDiagnosisNameRequired,
   getDiagnosisKind,
   getDiagnosisBranch,
   investigationFields,
-  investigationActionTextRequired,
   isDiagnosisConnectionAllowed,
   isReferenceImage,
 } from '@/views/ProcessDesigner/Diagnosis/model'
@@ -18,10 +15,6 @@ export default function diagnosisRequired(): RuleDefinition {
   return {
     check(node, reporter) {
       const diagnosisKind = getDiagnosisKind(node)
-      if (diagnosisKind === 'problemSolved' || diagnosisKind === 'escalation') {
-        const expectedName = diagnosisKind === 'problemSolved' ? '问题解决' : '上升'
-        if (node.get('name') !== expectedName) reporter.report(node.id, fixedDiagnosisNameRequired)
-      }
       if (diagnosisKind === 'investigation') {
         const flows: ModdleElement[] = node.get('outgoing') || []
         if (
@@ -45,17 +38,7 @@ export default function diagnosisRequired(): RuleDefinition {
           }
         }
       }
-      if (diagnosisKind === 'investigationAction') {
-        const text: unknown = node.get('flowable:actionText')
-        if (typeof text !== 'string' || !text.trim()) {
-          reporter.report(node.id, investigationActionTextRequired)
-        }
-      }
       if (diagnosisKind === 'conclusion') {
-        const text: unknown = node.get('flowable:conclusionText')
-        if (typeof text !== 'string' || !text.trim()) {
-          reporter.report(node.id, conclusionTextRequired)
-        }
         const outgoing: { targetRef?: ModdleElement }[] = node.get('outgoing') || []
         if (
           outgoing.length !== 1 ||
