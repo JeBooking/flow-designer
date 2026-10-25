@@ -3,10 +3,11 @@ import type EventBus from 'diagram-js/lib/core/EventBus'
 import type Modeling from 'bpmn-js/lib/features/modeling/Modeling'
 import type { Shape } from 'bpmn-js/lib/model/Types'
 import { getBusinessObject } from 'bpmn-js/lib/util/ModelUtil'
-import { getDiagnosisKind, summarizeConclusion } from '@/views/ProcessDesigner/Diagnosis/model'
+import { getDiagnosisKind } from '@/views/ProcessDesigner/Diagnosis/model'
 import {
   automaticDiagnosisName,
   getDiagnosisDetail,
+  isLegacyAutomaticName,
 } from '@/views/ProcessDesigner/Diagnosis/geometry'
 
 export default class DiagnosisBehavior extends CommandInterceptor {
@@ -42,12 +43,9 @@ export default class DiagnosisBehavior extends CommandInterceptor {
           if (legacyKey) properties[legacyKey] = detail
           const oldName = String(bo.get('name') || '')
           const mode = bo.get('flowable:nameMode')
-          // 无模式的旧图保留手填名称；旧版自动结论摘要仍可继续自动更新。
+          // 无模式旧图的类型占位名应继续自动生成，显式手填名称不能被详情覆盖。
           const automatic =
-            mode === 'auto' ||
-            (!mode &&
-              (!oldName.trim() ||
-                (kind === 'conclusion' && oldName === summarizeConclusion(oldDetail))))
+            mode === 'auto' || (!mode && isLegacyAutomaticName(kind, oldName, oldDetail))
           if (!('name' in properties) && automatic) {
             properties.name = automaticDiagnosisName(element, detail)
             properties['flowable:nameMode'] = 'auto'
@@ -70,7 +68,9 @@ export default class DiagnosisBehavior extends CommandInterceptor {
     )
     this.postExecuted(
       ['element.updateProperties', 'element.updateModdleProperties'],
-      ({ context }) => propertyUpdates.delete(context),
+      ({ context }) => {
+        propertyUpdates.delete(context)
+      },
     )
     // 属性更新的 LabelBehavior 会嵌套调用 updateLabel；只处理真正的画布名称编辑。
     // 否则自动摘要会被误标为手填，并再次触发属性更新造成递归。
