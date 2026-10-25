@@ -5,6 +5,7 @@ import { flowableRequest } from '@/services/flowable'
 import { createArchive } from '@/views/ProcessDesigner/CodeGeneration/archive'
 import { diagnosticExamples } from '@/views/ProcessDesigner/examples/catalog'
 import type { DiagnosisReviewState } from '@/types/diagnosis'
+import ReferenceFile from '@/views/ProcessDesigner/Panel/Investigation/ReferenceFile.vue'
 
 const props = defineProps<{ modeler: BpmnModeler }>()
 const visible = ref(false)
@@ -366,11 +367,11 @@ defineExpose({
           </p>
           <p class="execution-results">{{ instruction.value }}</p>
         </template>
-        <img
+        <ReferenceFile
           v-if="review.instructions?.referenceImage"
-          :src="review.instructions.referenceImage"
-          :alt="$tu('诊断参考图', 'Diagnostic reference image')"
-          style="max-width: 100%"
+          :value="review.instructions.referenceImage"
+          :name="review.instructions.referenceImageName"
+          readonly
         />
         <el-form v-if="decisionPending" label-position="top">
           <el-form-item v-if="review.options?.length" :label="$tu('下一步', 'Next step')">

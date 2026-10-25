@@ -5,6 +5,7 @@ import {
 } from '@/views/ProcessDesigner/Diagnosis/model'
 import { openReferenceFile } from '@/services/referenceFiles'
 import { translateUi } from '@/languages/uiText'
+import { resourceExtension } from '@/views/ProcessDesigner/CodeGeneration/resources'
 
 const props = defineProps<{ value: string; name?: string; readonly?: boolean }>()
 const emit = defineEmits<{ change: [value: string, name: string] }>()
@@ -13,21 +14,7 @@ const error = ref('')
 const preview = ref(false)
 const resource = computed(() => parseReferenceFile(props.value))
 const filename = computed(
-  () =>
-    props.name ||
-    `reference.${
-      (
-        {
-          'image/png': 'png',
-          'image/jpeg': 'jpg',
-          'image/webp': 'webp',
-          'image/gif': 'gif',
-          'application/pdf': 'pdf',
-          'text/plain': 'txt',
-          'application/json': 'json',
-        } as Record<string, string>
-      )[resource.value?.mediaType || ''] || 'bin'
-    }`,
+  () => props.name || `reference.${resourceExtension(resource.value?.mediaType)}`,
 )
 // 只嵌入浏览器可安全处理的静态类型；HTML/SVG/XML 等活动文档交给本机软件。
 const previewKind = computed(() => {

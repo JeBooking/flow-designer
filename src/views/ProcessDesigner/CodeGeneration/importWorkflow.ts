@@ -1,7 +1,10 @@
 import { layoutProcess } from 'bpmn-auto-layout'
 import { translateUi } from '@/languages/uiText'
 import { diagnosisKinds, parseDiagnosisBranch } from '@/views/ProcessDesigner/Diagnosis/model'
-import { automaticNameForText } from '@/views/ProcessDesigner/Diagnosis/geometry'
+import {
+  automaticNameForText,
+  isLegacyAutomaticName,
+} from '@/views/ProcessDesigner/Diagnosis/geometry'
 import type { DiagnosisKind } from '@/types/diagnosis'
 import { resourcePath, resourceDataUrl } from '@/views/ProcessDesigner/CodeGeneration/resources'
 import type {
@@ -32,6 +35,7 @@ interface WorkflowNode {
   assessment?: string
   referenceImage?: string
   referenceImagePath?: string
+  referenceImageName?: string
   detailText?: string
   actionText?: string
   conclusionText?: string
@@ -178,6 +182,7 @@ export async function importWorkflowJson(
     'assessment',
     'referenceImage',
     'referenceImagePath',
+    'referenceImageName',
     'detailText',
     'actionText',
     'conclusionText',
@@ -211,6 +216,7 @@ export async function importWorkflowJson(
       const path = resourcePath(value.referenceImage)
       const resource = await readResource(path)
       value.referenceImagePath = path
+      if (!value.referenceImageName) value.referenceImageName = path.split('/').slice(-1)[0]
       if (resource)
         value.referenceImage = resourceDataUrl({
           ...resource,
@@ -275,12 +281,23 @@ export async function importWorkflowJson(
       .map((node) => {
         const tag = builtins[node.kind] || 'task'
         const diagnostic = !hasOwn(builtins, node.kind)
-        let attributes = attribute('id', node.id) + attribute('name', node.name || undefined)
-        const detail = node.detailText ?? node.conclusionText ?? node.actionText ?? ''
-        if (diagnostic && !node.name && (detail || node.nameMode === 'auto')) {
-          const name = automaticNameForText(detail, 100, 80, node.kind as DiagnosisKind)
-          attributes += attribute('name', name) + attribute('flowable:nameMode', 'auto')
-        }
+        const legacy = node.kind === 'conclusion' ? node.conclusionText : node.actionText
+        const detail =
+          node.detailText === '' && !node.nameMode
+            ? legacy || ''
+            : (node.detailText ?? legacy ?? '')
+        let name = node.name || ''
+        let nameMode = node.nameMode
+        if (
+          diagnostic &&
+          !nameMode &&
+          (name || detail) &&
+          isLegacyAutomaticName(node.kind as DiagnosisKind, name, detail)
+        )
+          nameMode = 'auto'
+        if (diagnostic && nameMode === 'auto')
+          name = automaticNameForText(detail, 100, 80, node.kind as DiagnosisKind)
+        let attributes = attribute('id', node.id) + attribute('name', name || undefined)
         const defaults = node.outgoing.filter((edge) => edge.default)
         if (defaults.length > 1)
           return fail(node.id + ': ' + translateUi('存在多个默认出口', 'Multiple default flows'))
@@ -289,13 +306,12 @@ export async function importWorkflowJson(
         if (diagnostic) {
           attributes += attribute('flowable:diagnosisKind', node.kind)
           // 旧格式没有名称来源标记时保留手填名称；新格式继续遵循自动命名规则。
-          if (node.name) attributes += attribute('flowable:nameMode', node.nameMode || 'manual')
+          if (nameMode || name) attributes += attribute('flowable:nameMode', nameMode || 'manual')
           for (const field of fields.filter(
             (field) => !['name', 'start', 'documentation', 'nameMode'].includes(field),
           )) {
             const value = node[field]
-            if (field === 'referenceImage' && value && !value.startsWith('data:image/'))
-              missingImages++
+            if (field === 'referenceImage' && value && !value.startsWith('data:')) missingImages++
             attributes += attribute('flowable:' + field, value)
           }
           if (node.humanDecision) attributes += attribute('flowable:humanDecision', 'true')

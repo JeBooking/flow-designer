@@ -1,4 +1,5 @@
 import { translateUi } from '@/languages/uiText'
+import { parseReferenceFile } from '@/views/ProcessDesigner/Diagnosis/model'
 
 export interface WorkflowResource {
   path: string
@@ -27,11 +28,11 @@ export function resourcePath(value: string): string {
 }
 
 export function decodeResource(value: string): ResourceData | undefined {
-  const match = /^data:([\w.+/-]+);base64,([A-Za-z0-9+/]*={0,2})$/.exec(value)
-  if (!match) return
+  const parsed = parseReferenceFile(value)
+  if (!parsed) return
   return {
-    mediaType: match[1],
-    data: Uint8Array.from(atob(match[2]!), (character) => character.charCodeAt(0)),
+    mediaType: parsed.mediaType,
+    data: Uint8Array.from(atob(parsed.base64), (character) => character.charCodeAt(0)),
   }
 }
 
@@ -48,10 +49,21 @@ export function resourceExtension(mediaType?: string): string {
     'image/png': 'png',
     'image/jpeg': 'jpg',
     'image/webp': 'webp',
+    'image/gif': 'gif',
+    'image/bmp': 'bmp',
+    'image/svg+xml': 'svg',
+    'image/tiff': 'tiff',
     'application/pdf': 'pdf',
     'text/plain': 'txt',
+    'text/csv': 'csv',
+    'text/markdown': 'md',
     'video/mp4': 'mp4',
     'audio/mpeg': 'mp3',
+    'audio/wav': 'wav',
+    'audio/ogg': 'ogg',
+    'video/webm': 'webm',
+    'video/quicktime': 'mov',
+    'application/zip': 'zip',
     'application/json': 'json',
   }
   return extensions[mediaType || ''] || 'bin'

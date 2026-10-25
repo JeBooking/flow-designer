@@ -23,14 +23,20 @@ def rebuild(source, output):
         subprocess.run(['javac', '-parameters', '-encoding', 'UTF-8', '-cp', str(libraries / '*'),
                         '-d', str(classes), *map(str, sources)], check=True)
         packaged = directory / 'diagnostic-flowable.jar'
+        resources = {
+            'BOOT-INF/classes/' + file.relative_to(ROOT / 'flowable-runtime/src/main/resources').as_posix(): file
+            for file in (ROOT / 'flowable-runtime/src/main/resources').rglob('*') if file.is_file()
+        }
         with zipfile.ZipFile(source) as archive, zipfile.ZipFile(packaged, 'w') as rebuilt:
             for info in archive.infolist():
-                if not (info.filename.startswith('BOOT-INF/classes/local/diagnosis/') and info.filename.endswith('.class')):
+                if info.filename not in resources and not (info.filename.startswith('BOOT-INF/classes/local/diagnosis/') and info.filename.endswith('.class')):
                     rebuilt.writestr(info, archive.read(info.filename))
             if 'BOOT-INF/classes/local/diagnosis/' not in archive.namelist():
                 rebuilt.writestr('BOOT-INF/classes/local/diagnosis/', b'')
             for file in classes.rglob('*.class'):
                 rebuilt.write(file, 'BOOT-INF/classes/' + file.relative_to(classes).as_posix())
+            for name, file in resources.items():
+                rebuilt.write(file, name)
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_bytes(packaged.read_bytes())
     print('Compiled Java sources and rebuilt local executable:', output)

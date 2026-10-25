@@ -9,6 +9,11 @@ import {
   resourcePath,
 } from '@/views/ProcessDesigner/CodeGeneration/resources'
 import type { WorkflowResource } from '@/views/ProcessDesigner/CodeGeneration/resources'
+import {
+  getDiagnosisDetail,
+  isLegacyAutomaticName,
+} from '@/views/ProcessDesigner/Diagnosis/geometry'
+import type { DiagnosisKind } from '@/types/diagnosis'
 
 interface DefinitionNode {
   kind: string
@@ -24,19 +29,26 @@ export function generateWorkflowProject(definitions: ModelElement): ProjectFiles
   const files: ProjectFiles = {}
   const resources: WorkflowResource[] = []
   const saved = new Map<string, string>()
-  const saveResource = (value: string, originalPath?: string) => {
+  const saveResource = (value: string, originalPath?: string, filename?: string) => {
     const existing = saved.get(value)
     if (existing) return existing
     const decoded = decodeResource(value)
+    const safeName = filename?.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').replace(/[. ]+$/, '')
+    const suggested = safeName ? `assets/${safeName}` : undefined
     let path = decoded
       ? originalPath
         ? resourcePath(originalPath)
-        : `assets/resource_${resources.length + 1}.${resourceExtension(decoded.mediaType)}`
+        : suggested ||
+          `assets/resource_${resources.length + 1}.${resourceExtension(decoded.mediaType)}`
       : resourcePath(value)
     if (decoded && !originalPath) {
       let index = resources.length + 1
-      while (resources.some((entry) => entry.path === path))
-        path = `assets/resource_${++index}.${resourceExtension(decoded.mediaType)}`
+      while (resources.some((entry) => entry.path === path)) {
+        const suffix = ++index
+        path = suggested
+          ? suggested.replace(/(\.[^./]+)?$/, `_${suffix}$1`)
+          : `assets/resource_${suffix}.${resourceExtension(decoded.mediaType)}`
+      }
     }
     if (decoded) files[path] = decoded.data
     const entry = resources.find((resource) => resource.path === path)
@@ -96,6 +108,7 @@ export function generateWorkflowProject(definitions: ModelElement): ProjectFiles
     'acquisition',
     'assessment',
     'referenceImage',
+    'referenceImageName',
     'pythonModule',
     'pythonFunction',
     'pythonArguments',
@@ -131,7 +144,15 @@ export function generateWorkflowProject(definitions: ModelElement): ProjectFiles
         )
       const node: DefinitionNode = { kind: diagnostic ? kind : builtin! }
       if (scope !== process) node.scope = scope.id
-      const nameMode = diagnostic ? element.get('flowable:nameMode') : undefined
+      const storedMode = diagnostic ? element.get('flowable:nameMode') : undefined
+      const detail = diagnostic ? getDiagnosisDetail(element as ModdleElement) : ''
+      const nameMode =
+        storedMode ||
+        (diagnostic &&
+        isLegacyAutomaticName(kind as DiagnosisKind, String(element.get('name') || ''), detail) &&
+        (element.get('name') || detail)
+          ? 'auto'
+          : undefined)
       // 自动摘要随节点尺寸变化，属于显示结果，精简定义只保留原始详情与自动命名策略。
       if (element.get('name') && nameMode !== 'auto') node.name = element.get('name')
       const documentation = list(element, 'documentation')
@@ -141,18 +162,24 @@ export function generateWorkflowProject(definitions: ModelElement): ProjectFiles
       if (diagnostic) {
         for (const field of fields) {
           const value = element.get('flowable:' + field)
+          if (
+            field === 'referenceImageName' &&
+            value ===
+              String(node.referenceImage || '')
+                .split('/')
+                .slice(-1)[0]
+          )
+            continue
           if (value !== undefined && value !== '')
             node[field] =
               field === 'referenceImage'
                 ? saveResource(
                     String(value),
                     element.get('flowable:referenceImagePath') as string | undefined,
+                    element.get('flowable:referenceImageName') as string | undefined,
                   )
                 : value
         }
-        const detail =
-          element.get('flowable:detailText') ??
-          element.get(kind === 'conclusion' ? 'flowable:conclusionText' : 'flowable:actionText')
         if (detail) node.detailText = detail
         if (nameMode === 'auto') node.nameMode = 'auto'
         if (element.get('flowable:humanDecision')) node.humanDecision = true
