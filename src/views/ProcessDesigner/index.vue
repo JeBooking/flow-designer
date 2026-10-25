@@ -69,6 +69,13 @@ const mockVisible = customRef<boolean>((track, trigger) => {
     set() {
       const toggleMode = modeler.value?.get<ToggleMode>('toggleMode')
       toggleMode?.toggleMode()
+      if (toggleMode?._active)
+        ElMessage.info(
+          translateUi(
+            '结构模拟仅演示令牌沿连线移动，不调用 Python 或机台动作。运行绑定模块请使用“Flowable 执行”。',
+            'Structural simulation only animates tokens along connections; it does not call Python or machine actions. Use Flowable execution to run bound modules.',
+          ),
+        )
       trigger()
     },
   }
@@ -529,7 +536,11 @@ defineExpose({
                   :icon="mockVisible ? VideoPause : VideoPlay"
                   @click="mockVisible = !mockVisible"
                 >
-                  {{ $t(mockVisible ? 'ui.exitSimulation' : 'ui.startSimulation') }}
+                  {{
+                    mockVisible
+                      ? $tu('关闭结构模拟', 'Stop structural simulation')
+                      : $tu('开启结构模拟', 'Start structural simulation')
+                  }}
                 </el-button>
               </el-tooltip>
               <el-tooltip placement="top" :content="$t('ui.validation')">
