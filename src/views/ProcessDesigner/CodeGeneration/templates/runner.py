@@ -30,6 +30,21 @@ def run(workflow=None, supplied=None, context=None, max_steps=1000, resume=None,
     """串行成功后返回可保存的 state，调用方显式选择 continue/finish 后恢复。"""
     if workflow is None:
         workflow = json.loads(Path(__file__).with_name('workflow.json').read_text(encoding='utf-8'))
+    if workflow.get('version') in (3, 4):
+        # 通用定义不重复保存节点 ID、空字段和目标名称；仅在运行内存中补齐旧执行层需要的视图。
+        expanded = {}
+        for node_id, source in workflow['nodes'].items():
+            node = dict(source, id=node_id, scope=source.get('scope', workflow['process']['id']))
+            for key in ('name', 'observation', 'acquisition', 'assessment', 'referenceImage',
+                        'detailText', 'actionText', 'conclusionText', 'documentation'):
+                node.setdefault(key, '')
+            node['name'] = node['name'] or node_id
+            node['actionText'] = node['actionText'] or node['detailText']
+            node['conclusionText'] = node['conclusionText'] or node['detailText']
+            node['outgoing'] = [dict({'name': '', 'branch': '', 'order': 0, 'condition': '',
+                'default': False, 'targetName': ''}, **edge) for edge in source.get('outgoing', [])]
+            expanded[node_id] = node
+        workflow = dict(workflow, nodes=expanded)
     supplied = {} if supplied is None else supplied
     if not isinstance(supplied, dict):
         raise ValueError('supplied must be a dictionary keyed by node ID')

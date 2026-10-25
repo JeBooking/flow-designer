@@ -14,6 +14,7 @@ import {
   getDiagnosisBranch,
 } from '@/views/ProcessDesigner/Diagnosis/model'
 import { translateUi } from '@/languages/uiText'
+import { generateWorkflowProject } from '@/views/ProcessDesigner/CodeGeneration/workflowDefinition'
 
 // Moddle 是外部边界；只读取导出所需属性，不修改流程模型。
 export interface ModelElement {
@@ -52,7 +53,7 @@ const text = (element: ModelElement, key: string): string => String(element.get(
 const list = (element: ModelElement, key: string): ModelElement[] =>
   (element.get(key) as ModelElement[] | undefined) ?? []
 
-export function generateProject(definitions: ModelElement, xml: string): ProjectFiles {
+export function generateProject(definitions: ModelElement): ProjectFiles {
   const errors: string[] = []
   const fail = (id: string, zh: string, en: string) => errors.push(`${id}: ${translateUi(zh, en)}`)
   const processes = list(definitions, 'rootElements').filter((e) => e.$type === 'bpmn:Process')
@@ -65,8 +66,7 @@ export function generateProject(definitions: ModelElement, xml: string): Project
     throw new Error(translateUi('导出要求恰好一个流程。', 'Export requires exactly one process.'))
   }
   const nodes: Record<string, Node> = Object.create(null)
-  const files: ProjectFiles = { 'source.bpmn': xml }
-  let imageIndex = 0
+  const files: ProjectFiles = {}
   const readScope = (scope: ModelElement): string => {
     const elements = list(scope, 'flowElements')
     const starts = elements.filter((e) => e.$type === 'bpmn:StartEvent')
@@ -136,12 +136,7 @@ export function generateProject(definitions: ModelElement, xml: string): Project
         if (!isReferenceImage(image)) {
           fail(node.id, '缺少有效参考图', 'A valid reference image is required')
         } else {
-          const extension = image.slice(11, image.indexOf(';'))
-          const path = `images/reference_${++imageIndex}.${extension}`
-          files[path] = Uint8Array.from(atob(image.slice(image.indexOf(',') + 1)), (c) =>
-            c.charCodeAt(0),
-          )
-          node.referenceImage = path
+          node.referenceImage = image
         }
       }
       if (node.kind === 'conclusion' && !node.conclusionText.trim())
@@ -262,7 +257,7 @@ export function generateProject(definitions: ModelElement, xml: string): Project
   const mode = text(processes[0]!, 'flowable:diagnosisMode') || 'parallel'
   if (!['parallel', 'serial'].includes(mode))
     throw new Error(translateUi('无效排查模式', 'Invalid diagnosis mode'))
-  files['workflow.json'] = JSON.stringify({ version: 2, mode, start, nodes }, null, 2)
+  Object.assign(files, generateWorkflowProject(definitions))
   files['runner.py'] = runner
   files['routing.py'] = routing
   files['diagnostic_components.py'] = diagnosticComponents
@@ -330,7 +325,7 @@ Copy inputs.example.json to inputs.json, replace sample values, and remove unkno
 - routing.py: 校验是/否结果或人工选择，同分支按流程模式调度；条件文本仅展示，不执行、不推断。
 - actions.py: 机台/处理动作；未实现时必须输入 yes 确认完成，否则停止。
 - runner.py: 依赖调度、串行/并行排查、失败记录、成功暂停与恢复、子流程进入/返回、执行历史和循环步数限制。
-- workflow.json / source.bpmn / images/: 原始说明、完整源图和参考图，独立于代码保存。
+- workflow.json / assets/: 通用诊断定义与实际资源，使用相对路径引用；没有重复的 BPMN 源图。
 
 每个模块底部 HANDLERS 映射节点 ID 到 node_N 函数，在对应函数内填充逻辑。
 Fill the node_N functions linked by each module's HANDLERS mapping.

@@ -41,7 +41,12 @@ import { createArchive } from '@/views/ProcessDesigner/CodeGeneration/archive'
 import PythonProjects from '@/views/ProcessDesigner/PythonProjects.vue'
 import FlowableExecution from '@/views/ProcessDesigner/FlowableExecution.vue'
 import { importWorkflowJson } from '@/views/ProcessDesigner/CodeGeneration/importWorkflow'
-import { generateWorkflowDefinition } from '@/views/ProcessDesigner/CodeGeneration/workflowDefinition'
+import { generateWorkflowProject } from '@/views/ProcessDesigner/CodeGeneration/workflowDefinition'
+import {
+  importWorkflowDirectory,
+  supplyProjectResources,
+} from '@/views/ProcessDesigner/CodeGeneration/projectDirectory'
+import type { ResourceData } from '@/views/ProcessDesigner/CodeGeneration/resources'
 
 defineOptions({
   name: 'ProcessDesigner',
@@ -131,6 +136,8 @@ const issuesList = ref<ElementIssue[]>([])
 const modeler = ref<BpmnModeler>()
 const injector = ref<Injector>()
 const fileRef = ref<HTMLInputElement>()
+const directoryRef = ref<HTMLInputElement>()
+const projectResources = shallowRef<Record<string, ResourceData>>({})
 const pythonProjectsRef = ref<InstanceType<typeof PythonProjects>>()
 const flowableRef = ref<InstanceType<typeof FlowableExecution>>()
 const labelPosition = ref('left')
@@ -145,16 +152,18 @@ const importXml = async () => {
     const json = file.name.toLowerCase().endsWith('.json')
     const restored = json ? await importWorkflowJson(content) : undefined
     await modeler.value.importXML(restored?.xml ?? content)
+    projectResources.value = {}
     modeler.value.get<Canvas>('canvas').zoom('fit-viewport')
     if (restored) {
       ElNotification({
-        type: restored.missingImages || restored.unclassifiedBranches ? 'warning' : 'success',
+        type:
+          restored.missingResources.length || restored.unclassifiedBranches ? 'warning' : 'success',
         title: translateUi('流程图已恢复', 'Workflow restored'),
         message:
-          restored.missingImages || restored.unclassifiedBranches
+          restored.missingResources.length || restored.unclassifiedBranches
             ? translateUi(
-                `已恢复流程图并重新排版。${restored.missingImages} 张参考图需重新上传，${restored.unclassifiedBranches} 条排查连线需设置是／否类别；JSON 未记录的接口绑定需重新配置。`,
-                `Workflow restored with a new layout. Upload ${restored.missingImages} reference images and assign Yes/No to ${restored.unclassifiedBranches} investigation connections. Configure interface bindings not recorded in the JSON.`,
+                `已恢复流程图。${restored.missingResources.length} 个资源未加载，请选择“导入项目目录”读取资源；${restored.unclassifiedBranches} 条排查连线需设置是／否类别。`,
+                `Workflow restored. ${restored.missingResources.length} resources are not loaded; use Import project directory to load resources. Assign Yes/No to ${restored.unclassifiedBranches} investigation connections.`,
               )
             : restored.portable
               ? translateUi(
@@ -179,6 +188,47 @@ const importXml = async () => {
     if (fileRef.value) fileRef.value.value = ''
   }
 }
+const importDirectory = async () => {
+  const files = directoryRef.value?.files
+  if (!files?.length || !modeler.value || importing.value) return
+  importing.value = true
+  try {
+    const result = await importWorkflowDirectory(
+      Array.from(files, (file) => ({
+        path: file.webkitRelativePath || file.name,
+        mediaType: file.type,
+        read: async () => new Uint8Array(await file.arrayBuffer()),
+      })),
+    )
+    await modeler.value.importXML(result.xml)
+    projectResources.value = result.resources
+    modeler.value.get<Canvas>('canvas').zoom('fit-viewport')
+    ElNotification({
+      type: result.missingResources.length || result.unclassifiedBranches ? 'warning' : 'success',
+      title: translateUi('项目已导入', 'Project imported'),
+      message:
+        result.missingResources.length || result.unclassifiedBranches
+          ? translateUi(
+              `缺少 ${result.missingResources.length} 个资源文件，${result.unclassifiedBranches} 条连线需设置分支类别。`,
+              `Missing ${result.missingResources.length} resource files; ${result.unclassifiedBranches} connections require branch categories.`,
+            )
+          : translateUi(
+              '诊断定义与资源已加载，流程图已重新排版。',
+              'Diagnostic definition and resources loaded; the diagram was automatically laid out.',
+            ),
+      duration: 0,
+    })
+  } catch (error) {
+    ElNotification.error({
+      title: translateUi('项目导入失败', 'Project import failed'),
+      message: error instanceof Error ? error.message : String(error),
+      duration: 0,
+    })
+  } finally {
+    importing.value = false
+    if (directoryRef.value) directoryRef.value.value = ''
+  }
+}
 const exportXml = async () => {
   const xml = await getXml()
   if (xml) {
@@ -196,13 +246,14 @@ const exportingCode = ref(false)
 const exportDefinition = () => {
   if (!modeler.value) return
   try {
-    const json = generateWorkflowDefinition(
-      modeler.value.getDefinitions() as unknown as ModelElement,
+    const files = supplyProjectResources(
+      generateWorkflowProject(modeler.value.getDefinitions() as unknown as ModelElement),
+      projectResources.value,
     )
-    const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }))
+    const url = URL.createObjectURL(createArchive(files))
     const link = document.createElement('a')
     link.href = url
-    link.download = 'workflow.json'
+    link.download = 'diagnostic-workflow.zip'
     link.click()
     window.setTimeout(() => URL.revokeObjectURL(url), 1000)
   } catch (error) {
@@ -219,7 +270,10 @@ const exportCode = async () => {
   try {
     const xml = await getXml()
     if (!xml) throw new Error(translateUi('无法读取流程', 'Unable to read the process'))
-    const files = generateProject(modeler.value.getDefinitions() as unknown as ModelElement, xml)
+    const files = supplyProjectResources(
+      generateProject(modeler.value.getDefinitions() as unknown as ModelElement),
+      projectResources.value,
+    )
     const url = URL.createObjectURL(createArchive(files))
     const link = document.createElement('a')
     link.href = url
@@ -330,6 +384,14 @@ defineExpose({
       style="display: none"
       type="file"
     />
+    <input
+      ref="directoryRef"
+      type="file"
+      multiple
+      webkitdirectory
+      style="display: none"
+      @change="importDirectory"
+    />
     <el-header class="design-header">
       <el-text tag="b" :size="'large'">{{ $t('ui.title') }}</el-text>
       <el-space>
@@ -394,6 +456,9 @@ defineExpose({
                   @click="fileRef?.click()"
                 />
               </el-tooltip>
+              <el-button :disabled="importing" @click="directoryRef?.click()">{{
+                $tu('导入项目目录', 'Import project directory')
+              }}</el-button>
               <el-tooltip
                 placement="top"
                 :content="
@@ -416,7 +481,7 @@ defineExpose({
                 />
               </el-tooltip>
               <el-button @click="exportDefinition">{{
-                $tu('导出诊断 JSON', 'Export diagnostic JSON')
+                $tu('导出诊断项目', 'Export diagnostic project')
               }}</el-button>
               <el-button :loading="exportingCode" @click="exportCode">
                 {{ $tu('导出 Python 骨架', 'Export Python skeleton') }}

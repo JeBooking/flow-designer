@@ -2,6 +2,13 @@ import type { ModelElement } from '@/views/ProcessDesigner/CodeGeneration/genera
 import { diagnosisKinds, getDiagnosisBranch } from '@/views/ProcessDesigner/Diagnosis/model'
 import type { ModdleElement } from 'bpmn-js/lib/model/Types'
 import { translateUi } from '@/languages/uiText'
+import type { ProjectFiles } from '@/views/ProcessDesigner/CodeGeneration/generate'
+import {
+  decodeResource,
+  resourceExtension,
+  resourcePath,
+} from '@/views/ProcessDesigner/CodeGeneration/resources'
+import type { WorkflowResource } from '@/views/ProcessDesigner/CodeGeneration/resources'
 
 interface DefinitionNode {
   kind: string
@@ -10,6 +17,35 @@ interface DefinitionNode {
 
 /** 诊断定义只保存业务内容与执行语义；完整编辑状态仍由 BPMN 文件保存。 */
 export function generateWorkflowDefinition(definitions: ModelElement): string {
+  return generateWorkflowProject(definitions)['workflow.json'] as string
+}
+
+export function generateWorkflowProject(definitions: ModelElement): ProjectFiles {
+  const files: ProjectFiles = {}
+  const resources: WorkflowResource[] = []
+  const saved = new Map<string, string>()
+  const saveResource = (value: string, originalPath?: string) => {
+    const existing = saved.get(value)
+    if (existing) return existing
+    const decoded = decodeResource(value)
+    let path = decoded
+      ? originalPath
+        ? resourcePath(originalPath)
+        : `assets/resource_${resources.length + 1}.${resourceExtension(decoded.mediaType)}`
+      : resourcePath(value)
+    if (decoded && !originalPath) {
+      let index = resources.length + 1
+      while (resources.some((entry) => entry.path === path))
+        path = `assets/resource_${++index}.${resourceExtension(decoded.mediaType)}`
+    }
+    if (decoded) files[path] = decoded.data
+    const entry = resources.find((resource) => resource.path === path)
+    if (entry && decoded?.mediaType) entry.mediaType = decoded.mediaType
+    else if (!entry)
+      resources.push({ path, ...(decoded?.mediaType ? { mediaType: decoded.mediaType } : {}) })
+    saved.set(value, path)
+    return path
+  }
   const list = (element: ModelElement, key: string) =>
     (element.get(key) as ModelElement[] | undefined) ?? []
   const processes = list(definitions, 'rootElements').filter(
@@ -18,6 +54,25 @@ export function generateWorkflowDefinition(definitions: ModelElement): string {
   if (processes.length !== 1)
     throw new Error(translateUi('导出要求恰好一个流程。', 'Export requires exactly one process.'))
   const process = processes[0]!
+  const storedResources = process.get('flowable:resourceManifest')
+  if (typeof storedResources === 'string' && storedResources) {
+    const entries: unknown = JSON.parse(storedResources)
+    if (!Array.isArray(entries))
+      throw new Error(translateUi('资源清单无效', 'Invalid resource manifest'))
+    for (const entry of entries) {
+      if (
+        !entry ||
+        typeof entry.path !== 'string' ||
+        (entry.mediaType !== undefined && typeof entry.mediaType !== 'string')
+      )
+        throw new Error(translateUi('资源清单无效', 'Invalid resource manifest'))
+      const path = resourcePath(entry.path)
+      if (!saved.has(path)) {
+        resources.push({ path, ...(entry.mediaType ? { mediaType: entry.mediaType } : {}) })
+        saved.set(path, path)
+      }
+    }
+  }
   if (
     list(definitions, 'rootElements').some(
       (root) => root.$type === 'bpmn:Collaboration' && list(root, 'messageFlows').length,
@@ -86,7 +141,14 @@ export function generateWorkflowDefinition(definitions: ModelElement): string {
       if (diagnostic) {
         for (const field of fields) {
           const value = element.get('flowable:' + field)
-          if (value !== undefined && value !== '') node[field] = value
+          if (value !== undefined && value !== '')
+            node[field] =
+              field === 'referenceImage'
+                ? saveResource(
+                    String(value),
+                    element.get('flowable:referenceImagePath') as string | undefined,
+                  )
+                : value
         }
         const detail =
           element.get('flowable:detailText') ??
@@ -133,15 +195,17 @@ export function generateWorkflowDefinition(definitions: ModelElement): string {
     .map((item) => String(item.get('text') || ''))
     .join('\n')
   if (documentation) metadata.documentation = documentation
-  return JSON.stringify(
+  files['workflow.json'] = JSON.stringify(
     {
-      version: 3,
+      version: 4,
       process: metadata,
       mode: process.get('flowable:diagnosisMode') || 'parallel',
       start,
       nodes,
+      ...(resources.length ? { resources } : {}),
     },
     null,
     2,
   )
+  return files
 }

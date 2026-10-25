@@ -12,7 +12,11 @@ with zipfile.ZipFile(root / 'project.zip') as archive:
     archive.extractall(root / 'project')
 project = root / 'project'
 assert compileall.compile_dir(str(project), quiet=1)
-assert (project / 'images/reference_1.png').read_bytes().startswith(b'\x89PNG')
+definition = json.loads((project / 'workflow.json').read_text(encoding='utf-8'))
+assert definition['version'] == 4
+assert (project / definition['nodes']['Inspect']['referenceImage']).read_bytes().startswith(b'\x89PNG')
+assert not (project / 'source.bpmn').exists()
+assert 'data:image/' not in (project / 'workflow.json').read_text(encoding='utf-8')
 sys.path.insert(0, str(project))
 runner = importlib.import_module('runner')
 acquisition = importlib.import_module('acquisition')
@@ -49,6 +53,10 @@ data_file.write_text('{"voltage": 25}', encoding='utf-8')
 assert execute(['@' + str(data_file), 'no'])[1].data['Inspect']['raw']['voltage'] == 25
 nested = json.loads((root / 'nested.json').read_text(encoding='utf-8'))
 assert execute([], workflow=nested)[0]['history'] == ['Start', 'Sub', 'InnerStart', 'InnerEnd', 'Solved']
+legacy = {'version': 2, 'start': 'Start', 'nodes': {
+    'Start': {'id': 'Start', 'kind': 'start', 'outgoing': [{'target': 'Solved', 'condition': ''}]},
+    'Solved': {'id': 'Solved', 'kind': 'problemSolved', 'outgoing': []}}}
+assert execute([], workflow=legacy)[0]['history'] == ['Start', 'Solved']
 acquisition.HANDLERS['Inspect'] = lambda node, ctx: 26
 diagnosis.HANDLERS['Inspect'] = lambda data, node, ctx: False
 assert execute([])[0]['status'] == 'escalation'

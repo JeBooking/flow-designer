@@ -3,6 +3,12 @@ import { translateUi } from '@/languages/uiText'
 import { diagnosisKinds, parseDiagnosisBranch } from '@/views/ProcessDesigner/Diagnosis/model'
 import { automaticNameForText } from '@/views/ProcessDesigner/Diagnosis/geometry'
 import type { DiagnosisKind } from '@/types/diagnosis'
+import { resourcePath, resourceDataUrl } from '@/views/ProcessDesigner/CodeGeneration/resources'
+import type {
+  ResourceResolver,
+  WorkflowResource,
+  ResourceData,
+} from '@/views/ProcessDesigner/CodeGeneration/resources'
 
 interface WorkflowEdge {
   id: string
@@ -25,6 +31,7 @@ interface WorkflowNode {
   acquisition?: string
   assessment?: string
   referenceImage?: string
+  referenceImagePath?: string
   detailText?: string
   actionText?: string
   conclusionText?: string
@@ -58,11 +65,15 @@ const attribute = (key: string, value?: string | number) =>
   value === undefined ? '' : ` ${key}="${escapeXml(String(value))}"`
 
 /** 先完整校验、生成和布局，成功后调用方才替换画布，损坏文件不会清空原图。 */
-export async function importWorkflowJson(content: string): Promise<{
+export async function importWorkflowJson(
+  content: string,
+  resolveResource?: ResourceResolver,
+): Promise<{
   xml: string
   missingImages: number
   unclassifiedBranches: number
   portable: boolean
+  missingResources: string[]
 }> {
   const fail = (detail: string): never => {
     throw new Error(
@@ -79,13 +90,13 @@ export async function importWorkflowJson(content: string): Promise<{
     return fail(translateUi('缺少 nodes 或 start', 'Missing nodes or start'))
   if (
     data.version !== undefined &&
-    (typeof data.version !== 'number' || ![1, 2, 3].includes(data.version))
+    (typeof data.version !== 'number' || ![1, 2, 3, 4].includes(data.version))
   )
     return fail(translateUi('不支持的文件版本', 'Unsupported file version'))
   if (data.mode !== undefined && data.mode !== 'parallel' && data.mode !== 'serial')
     return fail(translateUi('无效排查模式', 'Invalid investigation mode'))
   let processMetadata: Record<string, unknown> | undefined
-  if (data.version === 3) {
+  if (data.version === 3 || data.version === 4) {
     if (
       !record(data.process) ||
       typeof data.process.id !== 'string' ||
@@ -114,6 +125,33 @@ export async function importWorkflowJson(content: string): Promise<{
   // 规范化后的结构继续复用旧格式校验，版本之间不复制恢复逻辑。
   if (!record(data) || !record(data.nodes) || typeof data.start !== 'string')
     return fail(translateUi('节点结构无效', 'Invalid nodes'))
+  const resources = new Map<string, WorkflowResource>()
+  const loadedResources = new Map<string, ResourceData>()
+  const missingResources = new Set<string>()
+  const readResource = async (path: string) => {
+    const existing = loadedResources.get(path)
+    if (existing) return existing
+    const value = await resolveResource?.(path)
+    if (value) loadedResources.set(path, value)
+    else missingResources.add(path)
+    return value
+  }
+  if (data.resources !== undefined) {
+    if (!Array.isArray(data.resources)) return fail('resources')
+    for (const entry of data.resources) {
+      if (
+        !record(entry) ||
+        typeof entry.path !== 'string' ||
+        (entry.mediaType !== undefined && typeof entry.mediaType !== 'string')
+      )
+        return fail(translateUi('资源清单无效', 'Invalid resource manifest'))
+      const path = resourcePath(entry.path)
+      if (resources.has(path))
+        return fail(translateUi('资源路径重复：', 'Duplicate resource path: ') + path)
+      resources.set(path, { path, mediaType: entry.mediaType as string | undefined })
+    }
+  }
+  for (const path of resources.keys()) await readResource(path)
   const nodes = new Map<string, WorkflowNode>()
   const ids = new Set<string>()
   const id = (value: unknown) => {
@@ -139,6 +177,7 @@ export async function importWorkflowJson(content: string): Promise<{
     'acquisition',
     'assessment',
     'referenceImage',
+    'referenceImagePath',
     'detailText',
     'actionText',
     'conclusionText',
@@ -164,6 +203,20 @@ export async function importWorkflowJson(content: string): Promise<{
     for (const field of fields)
       if (value[field] !== undefined && typeof value[field] !== 'string')
         return fail(key + ': ' + field)
+    if (
+      typeof value.referenceImage === 'string' &&
+      value.referenceImage &&
+      !value.referenceImage.startsWith('data:')
+    ) {
+      const path = resourcePath(value.referenceImage)
+      const resource = await readResource(path)
+      value.referenceImagePath = path
+      if (resource)
+        value.referenceImage = resourceDataUrl({
+          ...resource,
+          mediaType: resources.get(path)?.mediaType || resource.mediaType,
+        })
+    }
     if (value.humanDecision !== undefined && typeof value.humanDecision !== 'boolean')
       return fail(key + ': humanDecision')
     if (value.nameMode !== undefined && !['auto', 'manual'].includes(String(value.nameMode)))
@@ -292,11 +345,13 @@ export async function importWorkflowJson(content: string): Promise<{
   const documentation = processMetadata?.documentation
     ? `<bpmn:documentation>${escapeXml(String(processMetadata.documentation))}</bpmn:documentation>`
     : ''
-  const xml = `<?xml version="1.0" encoding="UTF-8"?><bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:flowable="http://flowable.org/bpmn" id="${definitionId}" targetNamespace="http://bpmn.io/schema/bpmn"><bpmn:process${attribute('id', processId)}${attribute('name', processMetadata?.name as string | undefined)} isExecutable="true"${attribute('flowable:diagnosisMode', String(data.mode || 'parallel'))}>${documentation}${scopeXml(processId)}</bpmn:process></bpmn:definitions>`
+  const manifest = resources.size ? JSON.stringify([...resources.values()]) : undefined
+  const xml = `<?xml version="1.0" encoding="UTF-8"?><bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:flowable="http://flowable.org/bpmn" id="${definitionId}" targetNamespace="http://bpmn.io/schema/bpmn"><bpmn:process${attribute('id', processId)}${attribute('name', processMetadata?.name as string | undefined)} isExecutable="true"${attribute('flowable:diagnosisMode', String(data.mode || 'parallel'))}${attribute('flowable:resourceManifest', manifest)}>${documentation}${scopeXml(processId)}</bpmn:process></bpmn:definitions>`
   return {
     xml: await layoutProcess(xml),
     missingImages,
     unclassifiedBranches,
-    portable: data.version === 3,
+    portable: data.version === 3 || data.version === 4,
+    missingResources: [...missingResources],
   }
 }

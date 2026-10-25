@@ -16,6 +16,7 @@ try {
     entryPoints: {
       import: 'src/views/ProcessDesigner/CodeGeneration/importWorkflow.ts',
       definition: 'src/views/ProcessDesigner/CodeGeneration/workflowDefinition.ts',
+      directory: 'src/views/ProcessDesigner/CodeGeneration/projectDirectory.ts',
     },
     outdir: temp,
     outExtension: { '.js': '.mjs' },
@@ -25,8 +26,11 @@ try {
     alias: { '@': path.join(process.cwd(), 'src') },
   })
   const { importWorkflowJson } = await import(pathToFileURL(entry))
-  const { generateWorkflowDefinition } = await import(
+  const { generateWorkflowDefinition, generateWorkflowProject } = await import(
     pathToFileURL(path.join(temp, 'definition.mjs'))
+  )
+  const { importWorkflowDirectory, supplyProjectResources } = await import(
+    pathToFileURL(path.join(temp, 'directory.mjs'))
   )
   const descriptor = JSON.parse(await readFile('src/views/ProcessDesigner/flowable.json', 'utf8'))
   const moddle = new BpmnModdle({ flowable: descriptor })
@@ -102,11 +106,14 @@ try {
   complete.nodes.Inspect.nameMode = 'auto'
   const fullModel = await moddle.fromXML((await importWorkflowJson(JSON.stringify(complete))).xml)
   fullModel.rootElement.rootElements[0].name = '诊断定义'
-  const compact = generateWorkflowDefinition(fullModel.rootElement)
+  const projectFiles = generateWorkflowProject(fullModel.rootElement)
+  const compact = projectFiles['workflow.json']
   const definition = JSON.parse(compact)
-  assert.equal(definition.version, 3)
+  assert.equal(definition.version, 4)
   assert.equal(definition.process.name, '诊断定义')
-  assert.equal(definition.nodes.Inspect.referenceImage, 'data:image/png;base64,AAAA')
+  assert.equal(definition.nodes.Inspect.referenceImage, 'assets/resource_1.png')
+  assert.deepEqual([...projectFiles['assets/resource_1.png']], [0, 0, 0])
+  assert.ok(!compact.includes('base64') && !('source.bpmn' in projectFiles))
   assert.equal(definition.nodes.Inspect.pythonFunction, 'inspect_voltage')
   assert.equal(definition.nodes.Inspect.humanDecision, true)
   assert.ok(!('name' in definition.nodes.Inspect), 'Do not save size-dependent automatic summaries')
@@ -125,13 +132,52 @@ try {
     compact,
     'Layout and colors do not enter the definition',
   )
-  const importedDefinition = await importWorkflowJson(compact)
+  const importedDefinition = await importWorkflowJson(compact, async (path) =>
+    projectFiles[path] ? { data: projectFiles[path] } : undefined,
+  )
   assert.equal(importedDefinition.missingImages, 0)
   assert.equal(importedDefinition.portable, true)
   const recoveredDefinition = await moddle.fromXML(importedDefinition.xml)
   assert.deepEqual(
     JSON.parse(generateWorkflowDefinition(recoveredDefinition.rootElement)),
     definition,
+  )
+  const extended = structuredClone(definition)
+  extended.resources.push({ path: 'assets/manual.pdf', mediaType: 'application/pdf' })
+  const directoryFiles = {
+    ...projectFiles,
+    'workflow.json': JSON.stringify(extended),
+    'assets/manual.pdf': new TextEncoder().encode('%PDF-generic-resource'),
+  }
+  const entries = Object.entries(directoryFiles).map(([path, value]) => ({
+    path: 'project/' + path,
+    read: async () => (typeof value === 'string' ? new TextEncoder().encode(value) : value),
+  }))
+  const directory = await importWorkflowDirectory(entries)
+  assert.equal(directory.missingResources.length, 0)
+  const directoryModel = await moddle.fromXML(directory.xml)
+  const again = supplyProjectResources(
+    generateWorkflowProject(directoryModel.rootElement),
+    directory.resources,
+  )
+  assert.deepEqual(JSON.parse(again['workflow.json']), extended)
+  assert.deepEqual(again['assets/manual.pdf'], directoryFiles['assets/manual.pdf'])
+  assert.deepEqual(again['assets/resource_1.png'], projectFiles['assets/resource_1.png'])
+  assert.ok(!again['assets/resource_3.png'], 'Directory re-export does not duplicate image assets')
+  const missing = await importWorkflowDirectory(
+    entries.filter((entry) => !entry.path.endsWith('.pdf')),
+  )
+  assert.deepEqual(missing.missingResources, ['assets/manual.pdf'])
+  const onlyDefinition = await importWorkflowJson(JSON.stringify(extended))
+  assert.deepEqual(onlyDefinition.missingResources, ['assets/resource_1.png', 'assets/manual.pdf'])
+  const oldEmbedded = structuredClone(definition)
+  oldEmbedded.version = 3
+  delete oldEmbedded.resources
+  oldEmbedded.nodes.Inspect.referenceImage = 'data:image/png;base64,AAAA'
+  assert.equal((await importWorkflowJson(JSON.stringify(oldEmbedded))).missingImages, 0)
+  assert.throws(
+    () => supplyProjectResources(generateWorkflowProject(directoryModel.rootElement), {}),
+    /manual.pdf/,
   )
   const legacy = structuredClone(workflow)
   delete legacy.version
@@ -198,6 +244,9 @@ try {
     (data) => {
       data.version = 999
     },
+    (data) => {
+      data.nodes.Inspect.referenceImage = '../outside.png'
+    },
   ]) {
     const invalid = structuredClone(workflow)
     mutate(invalid)
@@ -206,7 +255,7 @@ try {
   await assert.rejects(importWorkflowJson('{bad json'))
   await assert.rejects(importWorkflowJson('{"nodes":{},"start":"missing"}'))
   console.log(
-    'PASS: portable diagnostic definitions, embedded images and bindings, layout/style independence, semantic round trips, legacy JSON, subprocesses and invalid-file rejection',
+    'PASS: path-based project resources, image/document byte preservation, folder round trips without duplicate BPMN or Base64, Python bindings, layout independence and legacy JSON',
   )
 } finally {
   await rm(temp, { recursive: true, force: true })

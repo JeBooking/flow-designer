@@ -97,18 +97,18 @@ const definitions = node('Definitions', 'Definitions', {
 })
 const { xml } = await moddle.toXML(definitions)
 const { rootElement } = await moddle.fromXML(xml)
-const files = generateProject(rootElement, xml)
+const files = generateProject(rootElement)
 const zip = createArchive(files)
 await writeFile(path.join(temp, 'project.zip'), Buffer.from(await zip.arrayBuffer()))
 assert.equal(JSON.parse(files['workflow.json']).nodes.Inspect.name, '检查 "电压"')
 const invalid = node('ParallelGateway', 'Unsupported')
 processModel.flowElements = [...elements, invalid]
-assert.throws(() => generateProject(definitions, xml), /Unsupported/)
+assert.throws(() => generateProject(definitions), /Unsupported/)
 processModel.flowElements = elements.filter((e) => e.id !== 'begin')
-assert.throws(() => generateProject(definitions, xml), /Start/)
+assert.throws(() => generateProject(definitions), /Start/)
 processModel.flowElements = elements
 inspect.set('flowable:assessment', '')
-assert.throws(() => generateProject(definitions, xml), /Inspect/)
+assert.throws(() => generateProject(definitions), /Inspect/)
 inspect.set('flowable:assessment', '对照额定电压判断')
 const innerStart = node('StartEvent', 'InnerStart')
 const innerEnd = node('EndEvent', 'InnerEnd')
@@ -122,7 +122,7 @@ processModel.flowElements = [
   flow('enter', start, sub),
   flow('exit', sub, solved),
 ]
-const nested = generateProject(definitions, xml)
+const nested = generateProject(definitions)
 await writeFile(path.join(temp, 'nested.json'), nested['workflow.json'])
 const result = spawnSync(process.env.PYTHON || 'python', ['scripts/code-export-smoke.py', temp], {
   stdio: 'inherit',

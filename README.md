@@ -53,18 +53,19 @@ imported invalid connections and missing fields are reported by process validati
 be saved with validation errors.
 Use Start → Investigation → Conclusion → Remediation → Problem Solved for an initial example.
 
-**Export diagnostic JSON** saves a standalone version 3 `workflow.json` with diagnostic content,
-embedded reference images, interface bindings, dependencies, branches, and investigation mode.
-It omits layout, node dimensions, user colors, and fonts. **Export complete BPMN** retains the
-full editing model, including saved layout and user styles. Legacy runtime JSON files in Python
-skeleton bundles remain compatible; use the dedicated JSON export to save a portable definition.
+**Export diagnostic project** downloads a ZIP containing the primary `workflow.json` definition
+and actual files under `assets/`. JSON contains relative resource paths, not Base64. Its generic
+resource manifest can also carry documents, data, and other file types. The project omits layout,
+node dimensions, user colors, and fonts. Extract it and use **Import project directory** to load
+the definition and resources together. Python skeletons use the same version 4 definition and
+resource paths; neither export duplicates the workflow in a `source.bpmn` file.
+**Export complete BPMN** remains an optional editor snapshot with saved layout and user styles.
 
 The toolbar's **Import** accepts `.bpmn`, `.xml`, and exported `workflow.json` files. JSON imports
 rebuild the diagram with a new layout and retain node content, connections, Yes/No groups,
 serial order, and investigation mode. Legacy custom branch names keep their connections and
-require a Yes/No assignment. Upload reference images stored as paths again, and configure
-interface bindings absent from the JSON. Import `source.bpmn` from the export bundle to retain
-the original layout and complete model configuration.
+require a Yes/No assignment. Import a project directory to resolve local resource paths; importing
+only JSON restores the diagram and reports unloaded resources. Legacy JSON files remain readable.
 
 Investigations have **Yes and No** groups, each with any number of successors. Edit a connection
 label on the canvas using only `是`, `否`, `yes`, or `no` (English is case insensitive) to change
@@ -206,7 +207,7 @@ the operator to choose Yes or No. Automatic diagnosis returns `True`/`False`, `y
 or a dictionary with `next`. A legacy outgoing flow ID selects its whole group.
 Machine actions require explicit completion confirmation when unimplemented in the offline skeleton.
 
-The ZIP includes the original BPMN XML, extracted reference images, workflow JSON,
+The Python ZIP includes the shared workflow JSON, resource files, code skeleton,
 sample inputs and a bilingual README. Nested plain subprocesses and exclusive
 branches are supported; conditions are displayed, never evaluated as code.
 Unsupported BPMN constructs, incomplete required fields, unreachable nodes and
