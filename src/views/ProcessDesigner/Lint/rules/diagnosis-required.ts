@@ -24,12 +24,6 @@ export default function diagnosisRequired(): RuleDefinition {
       }
       if (diagnosisKind === 'investigation') {
         const flows: ModdleElement[] = node.get('outgoing') || []
-        if (
-          !['yes', 'no'].every((branch) =>
-            flows.some((flow) => getDiagnosisBranch(flow) === branch),
-          )
-        )
-          reporter.report(node.id, 'Investigation requires both Yes and No branches')
         for (const flow of flows) {
           if (!getDiagnosisBranch(flow))
             reporter.report(flow.id, 'Select Yes or No for this branch')

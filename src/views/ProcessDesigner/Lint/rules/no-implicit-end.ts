@@ -9,7 +9,11 @@ export default function noImplicitEnd(): RuleDefinition {
   return {
     ...rule,
     check(node, reporter) {
-      if (isFixedDiagnosisNode(node) || getDiagnosisKind(node) === 'jump') return
+      if (
+        isFixedDiagnosisNode(node) ||
+        ['jump', 'investigation'].includes(getDiagnosisKind(node) || '')
+      )
+        return
       check(node, reporter)
     },
   }

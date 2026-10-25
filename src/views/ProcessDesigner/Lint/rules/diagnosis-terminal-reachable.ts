@@ -44,7 +44,12 @@ export default function diagnosisTerminalReachable(): RuleDefinition {
 
       const terminalKinds = new Set(['problemSolved', 'escalation', 'jump'])
       const reachesTerminal = new Set(
-        [...component].filter((element) => terminalKinds.has(getDiagnosisKind(element) || '')),
+        [...component].filter(
+          (element) =>
+            terminalKinds.has(getDiagnosisKind(element) || '') ||
+            // 无出口的排查允许在运行时以业务失败终止，闭环仍然必须具有可达的终止点。
+            (getDiagnosisKind(element) === 'investigation' && !successors.get(element)?.size),
+        ),
       )
       const terminalQueue = [...reachesTerminal]
       while (terminalQueue.length) {
