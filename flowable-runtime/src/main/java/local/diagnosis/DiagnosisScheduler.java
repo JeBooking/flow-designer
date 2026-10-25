@@ -12,7 +12,7 @@ import org.flowable.common.engine.api.delegate.Expression;
 
 /** 原业务节点仍由引擎执行，持久队列仅控制串行思路的领取顺序。 */
 public class DiagnosisScheduler implements JavaDelegate, ExecutionListener {
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = DiagnosticJson.configure(new ObjectMapper());
     private Expression source;
     private Expression operation;
 

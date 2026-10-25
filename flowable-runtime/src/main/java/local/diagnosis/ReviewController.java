@@ -37,7 +37,7 @@ public class ReviewController {
         this.tasks = tasks;
         this.history = history;
         this.repository = repository;
-        this.json = json;
+        this.json = DiagnosticJson.configure(json);
     }
 
     public record ReviewRequest(String action, String taskId, String targetNodeId, String reason,

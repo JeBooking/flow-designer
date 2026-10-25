@@ -1,5 +1,6 @@
 """在随机端口/内存库验证真实引擎的串行恢复与并行失败隔离。"""
 import json
+import base64
 import os
 from pathlib import Path
 import socket
@@ -27,7 +28,7 @@ def wait_for(callback):
     raise AssertionError('Timed out waiting for engine state')
 
 
-def workflow(mode, all_failed=False, manual=False, unmatched=False):
+def workflow(mode, all_failed=False, manual=False, unmatched=False, reference=None):
     root = ET.Element(b('definitions'), {'targetNamespace': 'diagnosis-execution-check'})
     process = ET.SubElement(root, b('process'), {'id': 'ExecutionModes', f('diagnosisMode'): mode})
     ET.SubElement(process, b('startEvent'), {'id': 'Start'})
@@ -71,6 +72,10 @@ def workflow(mode, all_failed=False, manual=False, unmatched=False):
         root_node.set(f('humanDecision'), 'true')
         root_node.attrib.pop(f('pythonModule'))
         root_node.attrib.pop(f('pythonFunction'))
+    if reference:
+        root_node = next(element for element in process if element.get('id') == 'Root')
+        root_node.set(f('referenceImage'), reference)
+        root_node.set(f('referenceImageName'), 'manual.pdf')
     return ET.tostring(root, encoding='unicode')
 
 
@@ -92,8 +97,8 @@ with tempfile.TemporaryDirectory(prefix='diagnosis-modes-') as directory:
                 try: return engine_request('/process-api/management/engine')
                 except RuntimeError: return False
             wait_for(ready)
-            def launch(mode, all_failed=False, manual=False, unmatched=False):
-                bundle = compile_workflow(workflow(mode, all_failed, manual, unmatched))
+            def launch(mode, all_failed=False, manual=False, unmatched=False, reference=None):
+                bundle = compile_workflow(workflow(mode, all_failed, manual, unmatched, reference))
                 metadata = json.loads(bundle['files']['bindings.json'])
                 filename = directory / (metadata['version'] + '.json')
                 filename.write_text(bundle['files']['bindings.json'], encoding='utf-8')
@@ -156,8 +161,19 @@ with tempfile.TemporaryDirectory(prefix='diagnosis-modes-') as directory:
             assert pending['mode'] == 'success', pending
             post('/diagnosis-api/instances/' + manual + '/review', {'action': 'confirm', 'taskId': pending['taskId'], 'next': 'finish'})
             wait_for(lambda: finished(manual))
+            # 超过旧 multipart 和 JSON 字符串默认上限的参考文件仍应能部署并进入人工复核。
+            reference = 'data:application/pdf;base64,' + base64.b64encode(b'%PDF-1.4\n' + b'x' * (17 * 1024 * 1024)).decode()
+            large = launch('serial', manual=True, reference=reference)
+            pending = wait_for(lambda: review(large))
+            assert pending['instructions']['referenceImageName'] == 'manual.pdf'
+            assert pending['instructions']['referenceImage'] == reference
+            post('/diagnosis-api/instances/' + large + '/review', {'action': 'confirm', 'taskId': pending['taskId'], 'next': 'yes'})
+            pending = wait_for(lambda: review(large))
+            assert pending['mode'] == 'success'
+            post('/diagnosis-api/instances/' + large + '/review', {'action': 'confirm', 'taskId': pending['taskId'], 'next': 'finish'})
+            wait_for(lambda: finished(large))
             assert json.loads(compile_workflow(workflow('serial'))['files']['bindings.json'])['version'] != json.loads(compile_workflow(workflow('parallel'))['files']['bindings.json'])['version']
-            print('PASS: real Flowable serial ordered/stable queue, failure continuation, success pause/continue/finish, no duplicate sibling execution, parallel failure isolation and all-failed outcomes')
+            print('PASS: real Flowable serial ordered/stable queue, failure continuation, success pause/continue/finish, no duplicate sibling execution, parallel failure isolation, all-failed outcomes and large PDF review metadata')
         except Exception:
             print((directory / 'engine.log').read_text(encoding='utf-8', errors='replace')[-18000:])
             raise
