@@ -25,6 +25,7 @@ interface Edge {
   id: string
   name: string
   branch: string
+  order: number
   condition: string
   target: string
   targetName: string
@@ -40,6 +41,7 @@ interface Node {
   acquisition: string
   assessment: string
   referenceImage: string
+  detailText: string
   actionText: string
   conclusionText: string
   documentation: string
@@ -106,8 +108,13 @@ export function generateProject(definitions: ModelElement, xml: string): Project
         acquisition: text(element, 'flowable:acquisition'),
         assessment: text(element, 'flowable:assessment'),
         referenceImage: '',
-        actionText: text(element, 'flowable:actionText'),
+        detailText:
+          text(element, 'flowable:detailText') ||
+          text(element, 'flowable:actionText') ||
+          text(element, 'flowable:conclusionText'),
+        actionText: text(element, 'flowable:detailText') || text(element, 'flowable:actionText'),
         conclusionText:
+          text(element, 'flowable:detailText') ||
           text(element, 'flowable:conclusionText') ||
           (kind === 'conclusion' ? text(element, 'name') : ''),
         documentation: list(element, 'documentation')
@@ -162,6 +169,7 @@ export function generateProject(definitions: ModelElement, xml: string): Project
         id: flow.id,
         name: text(flow, 'name'),
         branch: getDiagnosisBranch(flow as ModdleElement) || '',
+        order: Number(flow.get('flowable:diagnosisOrder') ?? 0),
         condition: condition ? text(condition, 'body') : '',
         target: target.id,
         targetName: target.name,
@@ -177,13 +185,12 @@ export function generateProject(definitions: ModelElement, xml: string): Project
   for (const node of Object.values(nodes)) {
     if (
       node.kind === 'investigation' &&
-      (node.outgoing.some((edge) => !['yes', 'no'].includes(edge.branch)) ||
-        !['yes', 'no'].every((branch) => node.outgoing.some((edge) => edge.branch === branch)))
+      node.outgoing.some((edge) => !['yes', 'no'].includes(edge.branch))
     )
       fail(
         node.id,
-        '排查连线必须设置是和否两种分支',
-        'Investigation requires Yes and No branches on all outgoing flows',
+        '排查连线必须设置是或否分支',
+        'Investigation outgoing flows require a Yes or No branch',
       )
     if (node.kind === 'end' && node.scope === processes[0]!.id)
       fail(
@@ -198,7 +205,10 @@ export function generateProject(definitions: ModelElement, xml: string): Project
           '终止或跳转节点不能带后续连线',
           'Terminal/handoff nodes cannot have outgoing flows',
         )
-    } else if (!node.outgoing.length) fail(node.id, '缺少后续连线', 'Missing outgoing flow')
+    } else if (!node.outgoing.length && node.kind !== 'investigation')
+      fail(node.id, '缺少后续连线', 'Missing outgoing flow')
+    if (node.outgoing.some((edge) => !Number.isInteger(edge.order)))
+      fail(node.id, '排查顺序必须为整数', 'Diagnosis order must be an integer')
     if (
       node.kind === 'conclusion' &&
       (node.outgoing.length !== 1 ||
@@ -224,7 +234,12 @@ export function generateProject(definitions: ModelElement, xml: string): Project
   visit(start)
   const canFinish = new Set(
     Object.values(nodes)
-      .filter((n) => terminals.has(n.kind) || (n.kind === 'end' && n.scope !== processes[0]!.id))
+      .filter(
+        (n) =>
+          terminals.has(n.kind) ||
+          (n.kind === 'investigation' && !n.outgoing.length) ||
+          (n.kind === 'end' && n.scope !== processes[0]!.id),
+      )
       .map((n) => n.id),
   )
   let changed = true
@@ -244,7 +259,10 @@ export function generateProject(definitions: ModelElement, xml: string): Project
       fail(node.id, '链路没有可达的终止节点', 'No reachable terminal for this path')
   }
   if (errors.length) throw new Error(errors.join('\n'))
-  files['workflow.json'] = JSON.stringify({ version: 1, start, nodes }, null, 2)
+  const mode = text(processes[0]!, 'flowable:diagnosisMode') || 'parallel'
+  if (!['parallel', 'serial'].includes(mode))
+    throw new Error(translateUi('无效排查模式', 'Invalid diagnosis mode'))
+  files['workflow.json'] = JSON.stringify({ version: 2, mode, start, nodes }, null, 2)
   files['runner.py'] = runner
   files['routing.py'] = routing
   files['diagnostic_components.py'] = diagnosticComponents
@@ -309,9 +327,9 @@ Copy inputs.example.json to inputs.json, replace sample values, and remove unkno
 - parsing.py: 解析与校验原始数据，默认原样返回。
 - display.py: 展示解析数据，默认打印并通过本地浏览器打开参考图（--no-images 关闭）。
 - diagnosis.py: 自动诊断返回 True/False 或 yes/no；未实现时显示 assessment，人工决定下一步。
-- routing.py: 校验是/否结果或人工选择，同分支全部触发；条件文本仅展示，不执行、不推断。
+- routing.py: 校验是/否结果或人工选择，同分支按流程模式调度；条件文本仅展示，不执行、不推断。
 - actions.py: 机台/处理动作；未实现时必须输入 yes 确认完成，否则停止。
-- runner.py: 依赖调度、同分支并行、子流程进入/返回、执行历史和循环步数限制。
+- runner.py: 依赖调度、串行/并行排查、失败记录、成功暂停与恢复、子流程进入/返回、执行历史和循环步数限制。
 - workflow.json / source.bpmn / images/: 原始说明、完整源图和参考图，独立于代码保存。
 
 每个模块底部 HANDLERS 映射节点 ID 到 node_N 函数，在对应函数内填充逻辑。
@@ -327,14 +345,17 @@ Only NotImplementedError triggers manual fallback; other exceptions stop executi
 
 Context.ask / Context.show 可替换以连接自己的界面；Context.data 保存原始数据、解析结果和诊断结果。
 Provide ask/show callbacks for another UI; context.data keeps raw/parsed data and results.
+run 返回 status: problemSolved / escalation / jump / failed / paused。串行成功且有剩余思路时返回 state；
+用 run(..., resume=result['state'], success_action='continue' 或 'finish') 继续或结束。
+run returns diagnosticFailures and a resumable state on serial success; resume with an explicit continue/finish choice.
 run 返回 status: problemSolved / escalation / jump，jump 表示需要转交其他链路，不表示问题已解决。
 Jump is a handoff: no destination is currently stored in the editor; integrate external routing explicitly.
 
 ## 支持范围 / Scope
 
 支持本项目诊断节点、普通开始事件、排他选择及嵌套普通子流程；子流程普通结束事件返回父流程。
-问题解决/上升结束当前路径，其他并行路径继续执行。同一是/否结果下的所有出口无优先级并行执行；汇合按到达继续，不等待其他路径。
-Yes/No selects a group of concurrent successors. Terminals end their own path; merges continue on each arrival without synchronization.
+并行模式下问题解决/上升结束当前路径，其他路径继续；串行按 diagnosisOrder 稳定升序执行，某思路失败后继续队列，成功后暂停等待继续/结束选择。没有匹配出口会记录失败，全部思路失败时返回 failed。
+Parallel mode starts matching successors concurrently. Serial mode uses a persistent ordered queue and pauses on success while work remains. No matching outlet records a failed idea without restarting siblings.
 条件表达式只供人工阅读；自动判断须在 diagnosis.py 返回 True/False 或 yes/no。默认流不自动猜测。
 并行/包容网关、事件定义、多实例、普通任务、消息/跨流程连接等不支持时拒绝导出。
 循环允许，但默认最多 1000 步（--max-steps）；自动函数自身的超时由实现者负责。

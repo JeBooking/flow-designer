@@ -144,6 +144,9 @@ public class ReviewController {
         record.put("time", Instant.now().toString());
         record.put("from", task.getTaskDefinitionKey());
         record.put("reason", request.reason() == null ? "" : request.reason().trim());
+        if ("recheck".equals(request.action()) && "success".equals(review.path("mode").asText())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Success review supports continue or finish / 成功后请选择继续或结束排查");
+        }
         if ("recheck".equals(request.action())) {
             JsonNode target = bindings.get(request.targetNodeId());
             int targetVisit = -1;
@@ -186,6 +189,13 @@ public class ReviewController {
             // 清理、记录与状态变更在同一事务中完成，worker 无法领取到半更新的重查任务。
             runtime.removeVariables(instanceId, cleared);
             changes.forEach((key, value) -> runtime.setVariable(instanceId, key, json.valueToTree(value)));
+        } else if ("success".equals(review.path("mode").asText())) {
+            if (!Set.of("continue", "finish").contains(request.next() == null ? "" : request.next())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Choose continue or finish / 请选择继续或结束排查");
+            }
+            record.put("next", request.next());
+            record.put("remainingQueue", variables.get("diagnosticQueue"));
+            runtime.setVariable(instanceId, "diagnosticContinue", "continue".equals(request.next()));
         } else if ("decision".equals(review.path("mode").asText())) {
             List<String> options = new ArrayList<>();
             review.path("options").forEach(option -> options.add(option.path("id").asText()));
