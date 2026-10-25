@@ -6,7 +6,10 @@ import { supportsExecutionListener } from '@/views/ProcessDesigner/utils/EventDe
 import { isIdValid } from '@/views/ProcessDesigner/utils/ValidationUtil.ts'
 import { useBpmnContextService } from '@/hooks/useService.ts'
 import { getBusinessObject } from 'bpmn-js/lib/util/ModelUtil'
-import { getDiagnosisKind } from '@/views/ProcessDesigner/Diagnosis/model'
+import { diagnosisKinds, getDiagnosisKind } from '@/views/ProcessDesigner/Diagnosis/model'
+import { customTranslate } from '@/views/ProcessDesigner/Translate'
+import { translateUi } from '@/languages/uiText'
+import { getDiagnosisDetail } from '@/views/ProcessDesigner/Diagnosis/geometry'
 
 defineOptions({
   name: 'BaseActivity',
@@ -37,11 +40,24 @@ const propertiesByName = computed(() => {
 })
 const showEditableName = computed(() => propertiesByName.value['name'])
 const diagnosisKind = computed(() => getDiagnosisKind(selectedElement))
+const nodeType = computed(() => {
+  if (diagnosisKind.value) return customTranslate(diagnosisKinds[diagnosisKind.value].label)
+  const type = getBusinessObject(selectedElement).$type.replace(/^bpmn:/, '')
+  if (type === 'Process') return translateUi('流程', 'Process')
+  if (type === 'Participant') return translateUi('参与者', 'Participant')
+  if (type === 'Lane') return translateUi('泳道', 'Lane')
+  if (type === 'SubProcess') return customTranslate('Sub-process')
+  const words = type.replace(/([a-z])([A-Z])/g, '$1 $2')
+  return customTranslate(words.charAt(0) + words.slice(1).toLowerCase())
+})
 const detailText = computed<string>({
-  get: () =>
-    storedDetail.value ??
-    (diagnosisKind.value === 'conclusion' ? legacyConclusion.value : legacyAction.value) ??
-    '',
+  get: () => {
+    // 详情和旧字段的命令事件都应刷新；读取策略与自动摘要共用，避免表单和画布分歧。
+    void storedDetail.value
+    void legacyConclusion.value
+    void legacyAction.value
+    return getDiagnosisDetail(selectedElement)
+  },
   set: (value) => updateProperties({ 'flowable:detailText': value }),
 })
 const updateId = (val: string) => {
@@ -59,6 +75,9 @@ const updateId = (val: string) => {
       <el-scrollbar>
         <el-collapse v-model="actives">
           <el-collapse-item name="general" :title="$t('ui.general')">
+            <el-form-item :label="$tu('节点类型', 'Node type')">
+              <el-input :model-value="nodeType" readonly />
+            </el-form-item>
             <el-form-item :label="$t('ui.id')">
               <el-input
                 :model-value="id"

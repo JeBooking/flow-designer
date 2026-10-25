@@ -1,16 +1,27 @@
 import type { Shape, Element, ModdleElement } from 'bpmn-js/lib/model/Types'
 import type { DiagnosisKind } from '@/types/diagnosis'
 import { getBusinessObject } from 'bpmn-js/lib/util/ModelUtil'
-import { getDiagnosisKind } from '@/views/ProcessDesigner/Diagnosis/model'
+import { getDiagnosisKind, summarizeConclusion } from '@/views/ProcessDesigner/Diagnosis/model'
 
 export function getDiagnosisDetail(element: Element | ModdleElement): string {
   const bo = getBusinessObject(element)
+  const detail = bo.get('flowable:detailText')
+  const legacy =
+    getDiagnosisKind(element) === 'conclusion'
+      ? bo.get('flowable:conclusionText')
+      : bo.get('flowable:actionText')
+  // 旧图可能写有空的新字段；仅无名称来源标记时回退，现代图的主动清空仍然有效。
   return String(
-    bo.get('flowable:detailText') ??
-      (getDiagnosisKind(element) === 'conclusion'
-        ? bo.get('flowable:conclusionText')
-        : bo.get('flowable:actionText')) ??
-      '',
+    detail === '' && !bo.get('flowable:nameMode') ? legacy || '' : (detail ?? legacy ?? ''),
+  )
+}
+
+// 早期排查动作使用类型作为默认名称，且没有记录名称来源；显式手填模式始终优先。
+export function isLegacyAutomaticName(kind: DiagnosisKind, name: string, detail: string): boolean {
+  return (
+    !name.trim() ||
+    (kind === 'investigationAction' && ['排查动作', 'Investigation Action'].includes(name)) ||
+    (kind === 'conclusion' && name === summarizeConclusion(detail))
   )
 }
 
