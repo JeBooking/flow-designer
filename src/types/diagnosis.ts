@@ -30,10 +30,20 @@ export interface DiagnosisReviewState {
   evidence?: unknown
   taskId?: string
   nodeId?: string
-  mode?: 'decision' | 'escalation'
+  mode?: 'decision' | 'escalation' | 'success'
   name?: string
   options?: { id: string; name: string }[]
   instructions?: Partial<InvestigationData & { conclusionText: string; actionText: string }>
   candidates?: { id: string; name: string }[]
 }
 export type DiagnosisBranch = 'yes' | 'no'
+export type DiagnosisExecutionMode = 'parallel' | 'serial'
+export type DiagnosisNameMode = 'auto' | 'manual'
+
+export interface DiagnosisFailure {
+  nodeId: string
+  reason: string
+  branch?: DiagnosisBranch
+  path?: string[]
+  time?: string
+}
