@@ -33,7 +33,9 @@ export interface DiagnosisReviewState {
   mode?: 'decision' | 'escalation' | 'success'
   name?: string
   options?: { id: string; name: string }[]
-  instructions?: Partial<InvestigationData & { conclusionText: string; actionText: string }>
+  instructions?: Partial<
+    InvestigationData & { conclusionText: string; actionText: string; detailText: string }
+  >
   candidates?: { id: string; name: string }[]
 }
 export type DiagnosisBranch = 'yes' | 'no'

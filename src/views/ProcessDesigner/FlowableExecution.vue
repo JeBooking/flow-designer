@@ -30,6 +30,7 @@ const failures = computed(() => {
 })
 const reviewInstructions = computed(() =>
   [
+    { label: translateUi('详细内容', 'Details'), value: review.value.instructions?.detailText },
     {
       label: translateUi('查看什么数据', 'Data to inspect'),
       value: review.value.instructions?.observation,
