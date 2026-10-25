@@ -2,9 +2,16 @@
 
 ## 当前是/否执行约定
 
-排查必须有是和否两组出口，使用连线的 `flowable:diagnosisBranch` 保存。同组通过包容网关全部触发，
-无优先级；动作多出口按并行处理，有条件的判断应移到排查节点。汇合按每次到达继续，问题解决结束当前路径。
-只有排查创建人工判断任务；结论只记录文本时无需绑定 Python。
+排查支持是和否两组出口，每组可有任意条连线，也可以缺省，使用 `flowable:diagnosisBranch` 保存。
+没有匹配后续节点时，在 `diagnosticFailures` 中记录该思路失败。
+流程属性 `flowable:diagnosisMode` 选择 `parallel`（默认）或 `serial`。
+并行模式同步触发同组思路，无优先级；失败只结束当前思路，不重新触发兄弟思路。汇合按每次到达继续，无需强制聚合网关。
+串行模式使用持久化队列，按 `flowable:diagnosisOrder` 升序、未指定时按 XML 顺序依次排查。
+失败后尝试下一个待执行思路，全部耗尽且未成功时 `diagnosticStatus=failed`。
+成功后暂停剩余思路（`diagnosticStatus=paused`）；界面可选择结束或继续，复核接口
+使用 `mode=success`，提交 `action=confirm` 和 `next=finish` 或 `continue`。
+继续操作恢复保留的队列，不重放已经完成的路径。有条件的判断应放在排查节点；结论只记录文本时无需绑定 Python。
+导出的离线 Python 遵循相同规则，通过 `run(..., resume=state, success_action='continue'|'finish')` 恢复暂停状态。
 
 worker 使用 `inspect.signature` 识别参数：兼容旧映射、匹配同名流程变量、上游结果中唯一的同名字段、
 再使用默认值；缺失或歧义会提示具体参数。支持位置专用参数、异步接口、无输入及无返回值动作。

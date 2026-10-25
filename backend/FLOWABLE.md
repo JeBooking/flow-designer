@@ -2,11 +2,19 @@
 
 ## Current Yes/No execution contract
 
-Investigations require both Yes and No groups (`flowable:diagnosisBranch` on sequence flows).
-All matching edges activate through an inclusive gateway without priority. Other action fan-outs
-are parallel; move conditional decisions into investigations. Merges continue per arrival, and
-Problem Solved ends each incoming path without waiting for other paths. Only investigations create
-human decision tasks. Conclusions may contain text without a Python binding.
+Investigations support optional Yes and No groups (`flowable:diagnosisBranch` on sequence flows),
+each with unlimited edges. No matching successor records a failed path in `diagnosticFailures`.
+The process property `flowable:diagnosisMode` chooses `parallel` (default) or `serial`.
+Parallel mode activates matching siblings concurrently without priority; a failure ends only that
+path and never restarts siblings. Merges continue per arrival without a mandatory join gateway.
+Serial mode uses a persisted queue, trying siblings by ascending `flowable:diagnosisOrder` with
+XML order as fallback. Failure advances to the next pending path; exhaustion without success sets
+`diagnosticStatus=failed`. Success pauses remaining paths (`diagnosticStatus=paused`). The review
+UI offers finish or continue; review requests use `action=confirm`, `next=finish` or `continue`,
+and `mode=success`. Continue resumes the retained queue without replaying completed paths.
+Move conditional decisions into investigations. Conclusions may contain text without a Python binding.
+Exported Python runners follow the same mode and failure rules and expose paused state through
+`run(..., resume=state, success_action='continue'|'finish')`.
 
 The worker discovers parameters with `inspect.signature`: explicit legacy mappings, exact workflow
 variable names, unique fields in upstream result dictionaries, then defaults. Missing/ambiguous
