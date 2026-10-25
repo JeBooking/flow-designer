@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { getDiagnosisKind, getDiagnosisBranch } from '@/views/ProcessDesigner/Diagnosis/model'
-import type { Element } from 'bpmn-js/lib/model/Types'
-import { getBusinessObject } from 'bpmn-js/lib/util/ModelUtil'
+import type EventBus from 'diagram-js/lib/core/EventBus'
+import type { Element, ModdleElement } from 'bpmn-js/lib/model/Types'
+import { getBusinessObject, is } from 'bpmn-js/lib/util/ModelUtil'
 import { useBpmnContextService } from '@/hooks/useService.ts'
 import type Modeling from 'bpmn-js/lib/features/modeling/Modeling'
 import type BpmnFactory from 'bpmn-js/lib/features/modeling/BpmnFactory'
@@ -13,17 +14,37 @@ defineOptions({
   name: 'SequenceFlow',
 })
 const { updateProperties, selectedElement, getService } = useBpmnContextService()
-const isInvestigationBranch = computed(
-  () => getDiagnosisKind(selectedElement?.source) === 'investigation',
-)
+const eventBus = getService<EventBus>('eventBus')!
+const revision = ref(0)
+const refresh = () => revision.value++
+eventBus.on('elements.changed', refresh)
+onBeforeUnmount(() => eventBus.off('elements.changed', refresh))
+const isInvestigationBranch = computed(() => {
+  void revision.value
+  return getDiagnosisKind(selectedElement?.source) === 'investigation'
+})
 const branch = computed({
-  get: () => (selectedElement ? getDiagnosisBranch(selectedElement) : undefined),
-  set: (value) =>
-    updateProperties({
-      'flowable:diagnosisBranch': value,
-      name: value,
-      conditionExpression: undefined,
-    }),
+  get: () => {
+    void revision.value
+    return selectedElement ? getDiagnosisBranch(selectedElement) : undefined
+  },
+  set: (value) => updateProperties({ 'flowable:diagnosisBranch': value }),
+})
+const isSerial = computed(() => {
+  void revision.value
+  let scope: ModdleElement | undefined = getBusinessObject(selectedElement)
+  while (scope && !is(scope, 'bpmn:Process')) scope = scope.$parent
+  return scope?.get('flowable:diagnosisMode') === 'serial'
+})
+const executionOrder = computed<number | null>({
+  get: () => {
+    void revision.value
+    return getBusinessObject(selectedElement).get('flowable:diagnosisOrder') ?? null
+  },
+  set: (value) => {
+    if (value !== null && !Number.isSafeInteger(value)) return
+    updateProperties({ 'flowable:diagnosisOrder': value ?? undefined })
+  },
 })
 const modeling = getService<Modeling>('modeling')
 const bpmnFactory = getService<BpmnFactory>('bpmnFactory')
@@ -114,11 +135,37 @@ const updateCondition = (condition?: Element) => {
         <el-radio-button value="no" :label="$tu('否', 'No')" />
       </el-radio-group>
     </el-form-item>
-    <p>
+    <el-form-item v-if="isSerial" :label="$tu('执行顺序', 'Execution order')">
+      <el-input-number
+        v-model="executionOrder"
+        :precision="0"
+        :step="1"
+        :min="0"
+        :max="2147483647"
+        :value-on-clear="null"
+        :aria-label="$tu('执行顺序', 'Execution order')"
+        :placeholder="$tu('按连线顺序', 'Connection order')"
+        controls-position="right"
+      />
+    </el-form-item>
+    <p class="branch-help">
+      {{
+        isSerial
+          ? $tu(
+              '同一结果可以连接多个节点，也可以只配置一种结果。串行模式按执行顺序从小到大运行；未填写时按连线顺序，相同序号保持原顺序。',
+              'Either result can have any number of connections, and one result may be omitted. Serial mode runs in ascending order; unset values use connection order, and ties keep the original order.',
+            )
+          : $tu(
+              '同一结果可以连接多个节点，也可以只配置一种结果。并行模式下，所有匹配连线同时生效，没有优先级。',
+              'Either result can have any number of connections, and one result may be omitted. Parallel mode runs all matching branches without priority.',
+            )
+      }}
+    </p>
+    <p class="branch-help">
       {{
         $tu(
-          '同一结果可以连接多个节点，所有连线同时生效，没有优先级。存在依赖时，请将后续节点连接在依赖节点之后。',
-          'Connect multiple nodes to either result. All matching branches run without priority. Connect dependent nodes after their prerequisite.',
+          '画布连线名称仅支持是、否、yes、no，英文不区分大小写。',
+          'Canvas connection names accept only 是, 否, yes, or no, case-insensitively.',
         )
       }}
     </p>
@@ -151,4 +198,10 @@ const updateCondition = (condition?: Element) => {
   </el-collapse-item>
 </template>
 
-<style scoped lang="scss"></style>
+<style scoped lang="scss">
+.branch-help {
+  color: var(--el-text-color-secondary);
+  line-height: 1.6;
+  margin: 0 0 12px;
+}
+</style>

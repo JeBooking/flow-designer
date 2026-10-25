@@ -82,15 +82,20 @@ export const conclusionSuccessorRequired =
   'Conclusion must have exactly one successor: a handling action or escalation'
 export const fixedDiagnosisNameRequired = 'Final diagnosis node text is fixed'
 
+export function parseDiagnosisBranch(value: unknown): DiagnosisBranch | undefined {
+  if (typeof value !== 'string') return
+  const normalized = value.trim().toLowerCase()
+  if (normalized === 'yes' || normalized === '是') return 'yes'
+  if (normalized === 'no' || normalized === '否') return 'no'
+}
+
 export function getDiagnosisBranch(element: Element | ModdleElement): DiagnosisBranch | undefined {
   const bo = getBusinessObject(element)
-  const branch = bo.get('flowable:diagnosisBranch')
-  if (branch === 'yes' || branch === 'no') return branch
-  const name = String(bo.get('name') || '')
-    .trim()
-    .toLowerCase()
-  if (['yes', '是'].includes(name)) return 'yes'
-  if (['no', '否'].includes(name)) return 'no'
+  if (!is(bo, 'bpmn:SequenceFlow') || getDiagnosisKind(bo.get('sourceRef')) !== 'investigation')
+    return
+  return (
+    parseDiagnosisBranch(bo.get('flowable:diagnosisBranch')) || parseDiagnosisBranch(bo.get('name'))
+  )
 }
 
 export const summarizeConclusion = (text: string) => {
