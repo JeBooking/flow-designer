@@ -40,6 +40,7 @@ import type { ModelElement } from '@/views/ProcessDesigner/CodeGeneration/genera
 import { createArchive } from '@/views/ProcessDesigner/CodeGeneration/archive'
 import PythonProjects from '@/views/ProcessDesigner/PythonProjects.vue'
 import FlowableExecution from '@/views/ProcessDesigner/FlowableExecution.vue'
+import { importWorkflowJson } from '@/views/ProcessDesigner/CodeGeneration/importWorkflow'
 
 defineOptions({
   name: 'ProcessDesigner',
@@ -133,24 +134,43 @@ const pythonProjectsRef = ref<InstanceType<typeof PythonProjects>>()
 const flowableRef = ref<InstanceType<typeof FlowableExecution>>()
 const labelPosition = ref('left')
 const formSize = ref('small')
-const importXml = () => {
+const importing = ref(false)
+const importXml = async () => {
   const file = fileRef.value?.files?.[0]
-  if (file) {
-    const reader = new FileReader()
-    reader.readAsText(file)
-    reader.onload = async () => {
-      const result = reader.result
-      if (result && typeof result === 'string') {
-        const xmlResult = await modeler.value?.importXML(result)
-        if (xmlResult) {
-          const { warnings } = xmlResult
-          console.log(translateUi('警告：'), warnings)
-        }
-        if (fileRef.value) {
-          fileRef.value.value = ''
-        }
-      }
+  if (!file || !modeler.value || importing.value) return
+  importing.value = true
+  try {
+    const content = await file.text()
+    const json = file.name.toLowerCase().endsWith('.json')
+    const restored = json ? await importWorkflowJson(content) : undefined
+    await modeler.value.importXML(restored?.xml ?? content)
+    modeler.value.get<Canvas>('canvas').zoom('fit-viewport')
+    if (restored) {
+      ElNotification({
+        type: restored.missingImages || restored.unclassifiedBranches ? 'warning' : 'success',
+        title: translateUi('流程图已恢复', 'Workflow restored'),
+        message:
+          restored.missingImages || restored.unclassifiedBranches
+            ? translateUi(
+                `已恢复流程图并重新排版。${restored.missingImages} 张参考图需重新上传，${restored.unclassifiedBranches} 条排查连线需设置是／否类别；JSON 未记录的接口绑定需重新配置。`,
+                `Workflow restored with a new layout. Upload ${restored.missingImages} reference images and assign Yes/No to ${restored.unclassifiedBranches} investigation connections. Configure interface bindings not recorded in the JSON.`,
+              )
+            : translateUi(
+                '已恢复节点、连线和排查模式并重新排版。JSON 未记录的接口绑定需重新配置。',
+                'Nodes, connections and investigation mode were restored with a new layout. Configure any interface bindings not recorded in the JSON.',
+              ),
+        duration: 0,
+      })
     }
+  } catch (error) {
+    ElNotification.error({
+      title: translateUi('流程导入失败', 'Workflow import failed'),
+      message: error instanceof Error ? error.message : String(error),
+      duration: 0,
+    })
+  } finally {
+    importing.value = false
+    if (fileRef.value) fileRef.value.value = ''
   }
 }
 const exportXml = async () => {
@@ -279,7 +299,7 @@ defineExpose({
     <FlowableExecution v-if="modeler" ref="flowableRef" :modeler="modeler" />
     <input
       ref="fileRef"
-      accept=".xml,.bpmn"
+      accept=".xml,.bpmn,.json"
       @change="importXml"
       style="display: none"
       type="file"
@@ -341,7 +361,12 @@ defineExpose({
           <el-space :size="10">
             <el-button-group size="small">
               <el-tooltip placement="top" :content="$t('ui.import')">
-                <el-button :icon="FolderOpened" @click="fileRef?.click()" />
+                <el-button
+                  :icon="FolderOpened"
+                  :loading="importing"
+                  :aria-label="$tu('导入 BPMN 或 workflow.json', 'Import BPMN or workflow.json')"
+                  @click="fileRef?.click()"
+                />
               </el-tooltip>
               <el-tooltip placement="top" :content="$t('ui.export')">
                 <el-button :icon="Download" size="small" @click="exportXml" />

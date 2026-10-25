@@ -53,6 +53,13 @@ imported invalid connections and missing fields are reported by process validati
 be saved with validation errors.
 Use Start → Investigation → Conclusion → Remediation → Problem Solved for an initial example.
 
+The toolbar's **Import** accepts `.bpmn`, `.xml`, and exported `workflow.json` files. JSON imports
+rebuild the diagram with a new layout and retain node content, connections, Yes/No groups,
+serial order, and investigation mode. Legacy custom branch names keep their connections and
+require a Yes/No assignment. Upload reference images stored as paths again, and configure
+interface bindings absent from the JSON. Import `source.bpmn` from the export bundle to retain
+the original layout and complete model configuration.
+
 Investigations have **Yes and No** groups, each with any number of successors. Edit a connection
 label on the canvas using only `是`, `否`, `yes`, or `no` (English is case insensitive) to change
 its group, or use the properties panel. Neither group is mandatory. An unmatched result ends
