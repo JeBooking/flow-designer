@@ -88,7 +88,7 @@ export default {
       '结论节点后序必须且只能连接一项：处理动作或上升',
     'Specify the data to inspect': '请填写需要查看的数据',
     'Specify how to obtain the data': '请填写数据获取方法',
-    'Add a reference image': '请上传有效排查参考图',
+    'Add a reference file': '请添加有效参考文件',
     'Specify how to judge whether there is a problem': '请填写问题判断方法',
     Connectors: '连接器',
     'A REST API invocation task.': 'REST API调用任务。',

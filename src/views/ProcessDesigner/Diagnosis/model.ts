@@ -64,15 +64,40 @@ export function isDiagnosisConnectionAllowed(
   return true
 }
 
-export const investigationFields: Record<keyof InvestigationData, string> = {
+export const investigationFields: Record<
+  Exclude<keyof InvestigationData, 'referenceImageName'>,
+  string
+> = {
   observation: 'Specify the data to inspect',
   acquisition: 'Specify how to obtain the data',
-  referenceImage: 'Add a reference image',
+  referenceImage: 'Add a reference file',
   assessment: 'Specify how to judge whether there is a problem',
 }
 
-export const isReferenceImage = (value: string) =>
-  /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value)
+export const MAX_REFERENCE_FILE_BYTES = 50 * 1024 * 1024
+
+// 内部画布允许临时 data URI；导出器必须把内容拆成独立资源文件。
+export const parseReferenceFile = (value: string) => {
+  const match =
+    /^data:([A-Za-z0-9!#$&^_.+-]+\/[A-Za-z0-9!#$&^_.+-]+);base64,([A-Za-z0-9+/]*={0,2})$/.exec(
+      value,
+    )
+  if (!match) return
+  const base64 = match[2]!
+  if (base64.length % 4 !== 0) return
+  const size = (base64.length / 4) * 3 - (base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0)
+  if (size > MAX_REFERENCE_FILE_BYTES) return
+  try {
+    if (btoa(atob(base64)) !== base64) return
+  } catch {
+    return
+  }
+  return { mediaType: match[1]!.toLowerCase(), base64 }
+}
+
+export const isReferenceFile = (value: string) => Boolean(parseReferenceFile(value))
+// 保留旧调用方名称，避免已有流程和编译入口失效。
+export const isReferenceImage = isReferenceFile
 
 export const connectionError = 'Diagnostic connection violates diagnostic rules'
 

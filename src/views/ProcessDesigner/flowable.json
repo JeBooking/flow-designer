@@ -34,6 +34,7 @@
         { "name": "actionText", "isAttr": true, "type": "String" },
         { "name": "observation", "isAttr": true, "type": "String" },
         { "name": "acquisition", "isAttr": true, "type": "String" },
+        { "name": "referenceImageName", "isAttr": true, "type": "String" },
         { "name": "referenceImage", "isAttr": true, "type": "String" },
         { "name": "referenceImagePath", "isAttr": true, "type": "String" },
         { "name": "assessment", "isAttr": true, "type": "String" },

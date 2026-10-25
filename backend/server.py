@@ -12,6 +12,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, unquote
 import uuid
 from flowable_bridge import compile_workflow, deploy, engine_request
+from reference_files import open_reference_file
 
 ROOT = Path(__file__).resolve().parent.parent
 WORKER = Path(__file__).with_name('worker.py')
@@ -146,13 +147,17 @@ def make_handler(registry):
                 return
             try:
                 size = int(self.headers.get('Content-Length', '0'))
-                if not 0 < size <= 8 * 1024 * 1024:
-                    raise ValueError('Request must be between 1 byte and 8 MB')
+                large_routes = {'/api/reference-files/open', '/api/flowable/compile', '/api/flowable/start'}
+                limit = 70 * 1024 * 1024 if urlparse(self.path).path in large_routes else 8 * 1024 * 1024
+                if not 0 < size <= limit:
+                    raise ValueError(f'Total request must be between 1 byte and {limit // (1024 * 1024)} MB; reduce the combined reference file size')
                 data = json.loads(self.rfile.read(size))
                 if not isinstance(data, dict):
                     raise ValueError('Request must be a JSON object')
                 parts = urlparse(self.path).path.strip('/').split('/')
-                if parts == ['api', 'flowable', 'compile']:
+                if parts == ['api', 'reference-files', 'open']:
+                    result = open_reference_file(data)
+                elif parts == ['api', 'flowable', 'compile']:
                     result = {'ok': True, **compile_workflow(data['xml'])}
                 elif len(parts) == 4 and parts[:2] == ['api', 'flowable'] and parts[2] == 'review':
                     if not re.fullmatch(r'[A-Za-z0-9_-]+', parts[3]):
