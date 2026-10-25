@@ -3,7 +3,7 @@
 
 def decide(node, result, context):
     edges = node['outgoing']
-    if not edges:
+    if not edges and node['kind'] != 'investigation':
         raise RuntimeError('非终止节点没有后续连线 / Missing successor: ' + node['id'])
     if node['kind'] == 'investigation':
         value = result.get('next', result.get('result')) if isinstance(result, dict) else result
@@ -19,12 +19,12 @@ def decide(node, result, context):
             branch = 'no'
         else:
             branch = next((edge.get('branch') for edge in edges if edge['id'] == value), None)
-        matches = {edge['target'] for edge in edges if edge.get('branch') == branch}
-        if not branch or not matches:
+        matches = [edge['target'] for edge in edges if edge.get('branch') == branch]
+        if not branch:
             raise ValueError('Invalid Yes/No result / 无效的是或否结果: ' + repr(value))
-        return list(matches)
+        return matches
     if node['kind'] != 'gateway':
-        return list({edge['target'] for edge in edges})
+        return [edge['target'] for edge in edges]
     if result is not None:
         for edge in edges:
             if edge['id'] == result:

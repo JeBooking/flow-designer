@@ -50,6 +50,31 @@ else:
     raise AssertionError('Investigation-to-remediation accepted')
 process.remove(invalid)
 
+# 单一结果分组仍是有效定义；串行顺序和模式会更新执行版本。
+for edge in process.findall(b('sequenceFlow')):
+    if edge.get('sourceRef') == 'Inspect':
+        edge.set(f('diagnosisBranch'), 'yes')
+one_sided = compile_workflow(ET.tostring(root, encoding='unicode'))
+parallel_version = json.loads(one_sided['files']['bindings.json'])['version']
+process.set(f('diagnosisMode'), 'serial')
+serial = json.loads(compile_workflow(ET.tostring(root, encoding='unicode'))['files']['bindings.json'])
+assert serial['mode'] == 'serial' and serial['version'] != parallel_version
+assert any(review.get('mode') == 'success' for review in serial['reviews'].values())
+assert all(binding['mode'] == 'serial' for binding in serial['bindings'].values())
+process.find(b('sequenceFlow') + '[@id="ToB"]').set(f('diagnosisOrder'), '-1')
+ordered = json.loads(compile_workflow(ET.tostring(root, encoding='unicode'))['files']['bindings.json'])
+assert ordered['version'] != serial['version']
+assert [edge['id'] for edge in ordered['nodes']['Inspect']['outgoing']] == ['ToB', 'ToA', 'ToC', 'ToD']
+# 零出口排查是可记录的失败终点，不能被最终节点可达性校验全面拒绝。
+minimal = ET.Element(b('definitions'), {'targetNamespace': 'failed-end'})
+minimal_process = ET.SubElement(minimal, b('process'), {'id': 'FailedEnd'})
+ET.SubElement(minimal_process, b('startEvent'), {'id': 'Begin'})
+minimal_process.append(ET.fromstring(ET.tostring(process.find(b('task') + '[@id="Inspect"]'))))
+ET.SubElement(minimal_process, b('sequenceFlow'), {'id': 'BeginInspect', 'sourceRef': 'Begin', 'targetRef': 'Inspect'})
+for mode in ('parallel', 'serial'):
+    minimal_process.set(f('diagnosisMode'), mode)
+    assert compile_workflow(ET.tostring(minimal, encoding='unicode'))
+
 module = types.ModuleType('parameter_regression')
 exec('''
 def no_io(): pass

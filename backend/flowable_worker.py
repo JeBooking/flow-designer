@@ -85,7 +85,7 @@ def execute(binding, variables):
         return result
     json.dumps(result, allow_nan=False)
     outgoing = binding['outgoing']
-    if binding.get('branches') and not binding.get('humanDecision'):
+    if (binding.get('kind') == 'investigation' or binding.get('branches')) and not binding.get('humanDecision'):
         decision_branch(result, binding)
     elif not binding.get('kind') and len(outgoing) > 1 and not binding.get('humanDecision'):
         if not isinstance(result, dict) or result.get('next') not in outgoing:
@@ -105,7 +105,7 @@ def make_callback(binding):
         success.variable_boolean('human_' + binding['nodeId'], manual)
         success.variable_json('request_' + binding['nodeId'],
             {'instructions': result.instructions} if requested else {})
-        if binding.get('branches') and not manual:
+        if (binding.get('kind') == 'investigation' or binding.get('branches')) and not manual:
             success.variable_string('route_' + binding['nodeId'], decision_branch(result, binding))
         elif not binding.get('kind') and len(binding['outgoing']) > 1 and not manual:
             success.variable_string('route_' + binding['nodeId'], result['next'])
