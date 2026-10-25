@@ -14,6 +14,7 @@ export default class DiagnosisBehavior extends CommandInterceptor {
 
   constructor(eventBus: EventBus, modeling: Modeling) {
     super(eventBus)
+    const propertyUpdates = new Set<{ element: Shape }>()
     // 补齐原命令的字段，名称、旧字段和新详情只占用一次撤销记录。
     this.preExecute(
       ['element.updateProperties', 'element.updateModdleProperties'],
@@ -23,6 +24,7 @@ export default class DiagnosisBehavior extends CommandInterceptor {
         if (!kind) return
         const bo = getBusinessObject(element)
         if (context.moddleElement && context.moddleElement !== bo) return
+        propertyUpdates.add(context)
         const oldDetail = getDiagnosisDetail(element)
         const legacyKey =
           kind === 'conclusion'
@@ -66,11 +68,17 @@ export default class DiagnosisBehavior extends CommandInterceptor {
         }
       },
     )
+    this.postExecuted(
+      ['element.updateProperties', 'element.updateModdleProperties'],
+      ({ context }) => propertyUpdates.delete(context),
+    )
+    // 属性更新的 LabelBehavior 会嵌套调用 updateLabel；只处理真正的画布名称编辑。
+    // 否则自动摘要会被误标为手填，并再次触发属性更新造成递归。
     // 画布内双击编辑直接执行 updateLabel，不经过属性更新命令。
     this.postExecuted('element.updateLabel', ({ context }) => {
       const shape = (context.element.labelTarget || context.element) as Shape
       const kind = getDiagnosisKind(shape)
-      if (!kind) return
+      if (!kind || [...propertyUpdates].some((update) => update.element === shape)) return
       const name = String(getBusinessObject(shape).get('name') || '')
       const detail = getDiagnosisDetail(shape)
       const properties: Record<string, string> = {
