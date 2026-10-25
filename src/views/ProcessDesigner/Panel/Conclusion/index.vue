@@ -5,7 +5,15 @@ const conclusionText = useCustomRef<string>('flowable:conclusionText')
 </script>
 
 <template>
-  <el-collapse-item name="arg1" :title="$tu('结论内容（必填）')">
+  <el-collapse-item name="arg1" :title="$tu('结论内容')">
+    <p class="conclusion-help">
+      {{
+        $tu(
+          '名称和内容可只填一项：内容自动生成简短名称，名称自动补全内容。',
+          'Fill either field: content generates a short name; a name fills empty content.',
+        )
+      }}
+    </p>
     <p class="conclusion-help">
       {{ $tu('结论节点用于记录诊断过程中的判断，不代表最终结论。') }}
     </p>

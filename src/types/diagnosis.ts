@@ -36,3 +36,4 @@ export interface DiagnosisReviewState {
   instructions?: Partial<InvestigationData & { conclusionText: string; actionText: string }>
   candidates?: { id: string; name: string }[]
 }
+export type DiagnosisBranch = 'yes' | 'no'

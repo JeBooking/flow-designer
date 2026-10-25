@@ -145,7 +145,8 @@ const uploadImage = async (event: Event) => {
       <p class="diagnosis-help">
         {{
           $tu(
-            '前序仅允许开始事件、排查节点或排查动作；后序仅允许排查节点、排查动作、结论、处理动作或上升。',
+            '前序仅允许开始事件、排查节点或排查动作；后序仅允许排查节点、排查动作、结论或上升。',
+            'Predecessors: start, investigation or investigation action. Successors: investigation, investigation action, conclusion or escalation.',
           )
         }}
       </p>

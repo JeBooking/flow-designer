@@ -87,14 +87,7 @@ export default class CustomContextPadProvider extends ContextPadProvider {
       }
       const successors: DiagnosisKind[] =
         kind === 'investigation'
-          ? [
-              'investigation',
-              'investigationAction',
-              'conclusion',
-              'remediation',
-              'jump',
-              'escalation',
-            ]
+          ? ['investigation', 'investigationAction', 'conclusion', 'jump', 'escalation']
           : kind === 'investigationAction'
             ? ['investigation']
             : kind === 'conclusion'

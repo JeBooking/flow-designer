@@ -8,13 +8,8 @@ export default function noImplicitSplit(): RuleDefinition {
   return {
     ...rule,
     check(node, reporter) {
-      // 自动和人工分支都由导出器插入排他网关，避免误报隐式并行。
-      if (
-        getDiagnosisKind(node) &&
-        (node.get('flowable:humanDecision') ||
-          (node.get('flowable:pythonModule') && node.get('flowable:pythonFunction')))
-      )
-        return
+      // 诊断分支由导出器显式转换为条件并行或普通并行。
+      if (getDiagnosisKind(node)) return
       check(node, reporter)
     },
   }

@@ -28,23 +28,66 @@ def resolve(value, variables):
     return value
 
 
+def automatic_arguments(function, explicit, variables):
+    """仅匹配可证明唯一的数据来源；保留默认值，不猜测设备参数。"""
+    parameters = inspect.signature(function).parameters
+    values = dict(explicit)
+    for name, parameter in parameters.items():
+        if name in values or parameter.kind in (parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD):
+            continue
+        if name in variables:
+            values[name] = variables[name]
+            continue
+        candidates = [value[name] for key, value in variables.items()
+                      if not key.startswith(('request_', 'review_', 'route_', 'human_'))
+                      and isinstance(value, dict) and name in value]
+        if len(candidates) > 1:
+            raise ValueError('Ambiguous interface parameter / 接口参数来源不唯一: ' + name)
+        if candidates:
+            values[name] = candidates[0]
+        elif parameter.default is parameter.empty:
+            raise ValueError('Missing interface parameter / 缺少接口参数数据: ' + name)
+    args = []
+    for name, parameter in parameters.items():
+        if parameter.kind == parameter.POSITIONAL_ONLY:
+            args.append(values.pop(name, parameter.default))
+    return args, values
+
+
+def decision_branch(result, binding):
+    value = result.get('next', result.get('result')) if isinstance(result, dict) else result
+    if value is True or value in ('yes', '是'):
+        return 'yes'
+    if value is False or value in ('no', '否'):
+        return 'no'
+    branch = binding.get('branches', {}).get(value) if isinstance(value, str) else None
+    if branch in ('yes', 'no'):
+        return branch
+    raise ValueError('Investigation must return yes/no / 排查接口必须返回是或否')
+
+
 def execute(binding, variables):
     module = importlib.import_module(binding['module'])
     function = getattr(module, binding['function'])
-    result = function(**resolve(binding['kwargs'], variables))
+    args, kwargs = automatic_arguments(function, resolve(binding.get('kwargs', {}), variables), variables)
+    result = function(*args, **kwargs)
     if inspect.isawaitable(result):
         result = asyncio.run(result)
     # 约定只限制执行器需要的路由信息，业务结果仍可采用各工程自己的结构。
     if isinstance(result, HumanDecisionRequest):
         if not isinstance(result.instructions, str):
             raise ValueError('Human decision instructions must be text')
-        if result.options and set(result.options) != set(binding['outgoing']):
+        if binding.get('kind') and binding['kind'] != 'investigation':
+            raise ValueError('Only investigations can request judgment / 只有排查节点可请求判断')
+        if result.options and set(result.options) not in (set(binding['outgoing']), {'yes', 'no'}):
             raise ValueError('Human decision options must match outgoing flow IDs')
         json.dumps(result.data, allow_nan=False)
         return result
     json.dumps(result, allow_nan=False)
     outgoing = binding['outgoing']
-    if len(outgoing) > 1 and not binding.get('humanDecision'):
+    if binding.get('branches') and not binding.get('humanDecision'):
+        decision_branch(result, binding)
+    elif not binding.get('kind') and len(outgoing) > 1 and not binding.get('humanDecision'):
         if not isinstance(result, dict) or result.get('next') not in outgoing:
             raise ValueError('Branch function must return {"next": "outgoing flow ID", ...}')
     return result
@@ -62,7 +105,9 @@ def make_callback(binding):
         success.variable_boolean('human_' + binding['nodeId'], manual)
         success.variable_json('request_' + binding['nodeId'],
             {'instructions': result.instructions} if requested else {})
-        if len(binding['outgoing']) > 1 and not manual:
+        if binding.get('branches') and not manual:
+            success.variable_string('route_' + binding['nodeId'], decision_branch(result, binding))
+        elif not binding.get('kind') and len(binding['outgoing']) > 1 and not manual:
             success.variable_string('route_' + binding['nodeId'], result['next'])
         print(json.dumps({'node': binding['nodeId'], 'result': payload, 'human': manual}, ensure_ascii=False), flush=True)
         return success

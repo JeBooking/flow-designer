@@ -1,5 +1,25 @@
 # Flowable external Python execution
 
+## Current Yes/No execution contract
+
+Investigations require both Yes and No groups (`flowable:diagnosisBranch` on sequence flows).
+All matching edges activate through an inclusive gateway without priority. Other action fan-outs
+are parallel; move conditional decisions into investigations. Merges continue per arrival, and
+Problem Solved ends each incoming path without waiting for other paths. Only investigations create
+human decision tasks. Conclusions may contain text without a Python binding.
+
+The worker discovers parameters with `inspect.signature`: explicit legacy mappings, exact workflow
+variable names, unique fields in upstream result dictionaries, then defaults. Missing/ambiguous
+values fail with the parameter name; positional-only, async, zero-input and void actions work.
+Return `True`/`False`, `yes`/`no`, or `{"next": "yes"}` from an investigation. A legacy flow ID
+selects its entire group. No parameter language is required in the node panel.
+
+Use the new **Parallel investigations and dependencies** example. Older examples and their legacy
+engine scenario scripts below require topology migration; their former exclusive semantics do not
+apply to the current compiler. Unmarked investigation edges are rejected instead of guessed.
+Current offline checks: `python scripts/verify-diagnosis-design.py`,
+`python scripts/verify-python-bindings.py`, and `pnpm exec node scripts/verify-code-export.mjs`.
+
 The editor keeps the diagnostic nodes and their descriptions. The exporter maps them to
 Flowable external service tasks, exclusive gateways and end events. Flowable 7.1.0 schedules
 the process; the official Python client 1.0.2 acquires jobs and reports completion.
@@ -54,14 +74,14 @@ The gallery contains six independent diagrams, all using the same `diagnostic_de
 Select a scenario after loading a diagram to fill initial variables, and use that diagram's
 exported bindings with the worker:
 
-| Diagram | Scenarios | Focus |
-| --- | --- | --- |
-| Human decisions | recover, severe, normal | Confirmation, branch choices and rechecks before escalation |
-| Temperature | recover, normal, action, escalate, severe, jump | All eight node types |
-| Power supply | recover, normal, severe | Lower-limit analysis and recovery results |
-| Communication | recover, normal, offline | Async checks and reset/recheck loop, at most three attempts |
-| Dual sensors | sensor-a, sensor-b, normal, severe | Exclusive branches and a shared conclusion |
-| Pressure | stable, leak, unknown | Ordered actions, deep analysis and handoff |
+| Diagram         | Scenarios                                       | Focus                                                       |
+| --------------- | ----------------------------------------------- | ----------------------------------------------------------- |
+| Human decisions | recover, severe, normal                         | Confirmation, branch choices and rechecks before escalation |
+| Temperature     | recover, normal, action, escalate, severe, jump | All eight node types                                        |
+| Power supply    | recover, normal, severe                         | Lower-limit analysis and recovery results                   |
+| Communication   | recover, normal, offline                        | Async checks and reset/recheck loop, at most three attempts |
+| Dual sensors    | sensor-a, sensor-b, normal, severe              | Exclusive branches and a shared conclusion                  |
+| Pressure        | stable, leak, unknown                           | Ordered actions, deep analysis and handoff                  |
 
 All machine samples and actions are simulated, while plots, numerical analysis and process
 execution are real. Revisited nodes update their result variable; activity history retains each

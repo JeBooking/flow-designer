@@ -27,6 +27,9 @@ export default class DiagnosisRules extends RuleProvider {
   }
 
   init() {
+    this.addRule('shape.resize', 2000, (context: { shape: Shape }) => {
+      if (getDiagnosisKind(context.shape)) return true
+    })
     this.addRule(
       ['connection.create', 'connection.reconnect'],
       2000,

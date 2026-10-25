@@ -1,4 +1,5 @@
 import type { DiagnosticExample } from '@/types/diagnosis'
+import dependencies from '@/views/ProcessDesigner/examples/parallel-dependencies.bpmn?raw'
 import temperature from '@/views/ProcessDesigner/examples/diagnostic-demo.bpmn?raw'
 import voltage from '@/views/ProcessDesigner/examples/voltage-diagnosis.bpmn?raw'
 import communication from '@/views/ProcessDesigner/examples/communication-retry.bpmn?raw'
@@ -6,7 +7,7 @@ import sensors from '@/views/ProcessDesigner/examples/sensor-comparison.bpmn?raw
 import pressure from '@/views/ProcessDesigner/examples/pressure-recovery.bpmn?raw'
 import humanDecision from '@/views/ProcessDesigner/examples/human-decision.bpmn?raw'
 
-export const diagnosticExamples: DiagnosticExample[] = [
+const legacyExamples: DiagnosticExample[] = [
   {
     id: 'human-decision',
     title: '人工判断与回退',
@@ -67,4 +68,29 @@ export const diagnosticExamples: DiagnosticExample[] = [
     xml: pressure,
     scenarios: ['stable', 'leak', 'unknown'],
   },
+]
+
+export const diagnosticExamples: DiagnosticExample[] = [
+  {
+    id: 'parallel-dependencies',
+    title: '并行排查与依赖',
+    titleEn: 'Parallel investigations and dependencies',
+    description:
+      '是与否各有两条并行连线；A 路径依赖供电检查，B 路径独立执行。多项处置可到达问题解决。自动匹配参数，支持无参数、无返回值的动作。',
+    descriptionEn:
+      'Yes and No each have two parallel connections. Path A depends on a power check; B runs independently. Multiple actions reach Problem Solved. Parameters are automatic; void actions are supported.',
+    xml: dependencies,
+    scenarios: ['normal', 'unavailable'],
+  },
+  ...legacyExamples.map((example) => ({
+    ...example,
+    title: example.title + '（旧版）',
+    titleEn: example.titleEn + ' (legacy)',
+    description:
+      '旧版互斥连线示例：运行前须将排查出口改为是/否，并将动作上的条件判断移到排查节点。' +
+      example.description,
+    descriptionEn:
+      'Legacy exclusive routing: assign Yes/No investigation branches and move action decisions into investigations before running. ' +
+      example.descriptionEn,
+  })),
 ]

@@ -6,7 +6,13 @@ import diagnosticComponents from '/backend/diagnostic_components.py?raw'
 import actions from './templates/actions.py?raw'
 import routing from './templates/routing.py?raw'
 import runner from './templates/runner.py?raw'
-import { diagnosisKinds, isReferenceImage } from '@/views/ProcessDesigner/Diagnosis/model'
+import type { ModdleElement } from 'bpmn-js/lib/model/Types'
+import {
+  diagnosisKinds,
+  isReferenceImage,
+  isDiagnosisConnectionAllowed,
+  getDiagnosisBranch,
+} from '@/views/ProcessDesigner/Diagnosis/model'
 import { translateUi } from '@/languages/uiText'
 
 // Moddle 是外部边界；只读取导出所需属性，不修改流程模型。
@@ -18,6 +24,7 @@ export interface ModelElement {
 interface Edge {
   id: string
   name: string
+  branch: string
   condition: string
   target: string
   targetName: string
@@ -100,7 +107,9 @@ export function generateProject(definitions: ModelElement, xml: string): Project
         assessment: text(element, 'flowable:assessment'),
         referenceImage: '',
         actionText: text(element, 'flowable:actionText'),
-        conclusionText: text(element, 'flowable:conclusionText'),
+        conclusionText:
+          text(element, 'flowable:conclusionText') ||
+          (kind === 'conclusion' ? text(element, 'name') : ''),
         documentation: list(element, 'documentation')
           .map((d) => text(d, 'text'))
           .join('\n'),
@@ -141,10 +150,18 @@ export function generateProject(definitions: ModelElement, xml: string): Project
         fail(flow.id, '连线端点无效或跨越子流程边界', 'Invalid endpoints or cross-scope flow')
         continue
       }
+      if (
+        !isDiagnosisConnectionAllowed(
+          flow.get('sourceRef') as ModdleElement,
+          flow.get('targetRef') as ModdleElement,
+        )
+      )
+        fail(flow.id, '诊断连接违反规则', 'Diagnostic connection violates rules')
       const condition = flow.get('conditionExpression') as ModelElement | undefined
       source.outgoing.push({
         id: flow.id,
         name: text(flow, 'name'),
+        branch: getDiagnosisBranch(flow as ModdleElement) || '',
         condition: condition ? text(condition, 'body') : '',
         target: target.id,
         targetName: target.name,
@@ -158,6 +175,16 @@ export function generateProject(definitions: ModelElement, xml: string): Project
   const start = readScope(processes[0]!)
   const terminals = new Set(['problemSolved', 'escalation', 'jump'])
   for (const node of Object.values(nodes)) {
+    if (
+      node.kind === 'investigation' &&
+      (node.outgoing.some((edge) => !['yes', 'no'].includes(edge.branch)) ||
+        !['yes', 'no'].every((branch) => node.outgoing.some((edge) => edge.branch === branch)))
+    )
+      fail(
+        node.id,
+        '排查连线必须设置是和否两种分支',
+        'Investigation requires Yes and No branches on all outgoing flows',
+      )
     if (node.kind === 'end' && node.scope === processes[0]!.id)
       fail(
         node.id,
@@ -249,7 +276,7 @@ export function generateProject(definitions: ModelElement, xml: string): Project
     diagnosis,
     investigations,
     'data, node, context',
-    'raise NotImplementedError("Return an outgoing flow ID")',
+    'raise NotImplementedError("Return True (yes) or False (no)")',
   )
   files['actions.py'] = scaffold(
     actions,
@@ -281,10 +308,10 @@ Copy inputs.example.json to inputs.json, replace sample values, and remove unkno
 - acquisition.py: 拉取数据；未实现时显示 observation/acquisition 并接受 JSON、文本或 @JSON文件路径。
 - parsing.py: 解析与校验原始数据，默认原样返回。
 - display.py: 展示解析数据，默认打印并通过本地浏览器打开参考图（--no-images 关闭）。
-- diagnosis.py: 自动诊断返回当前节点的后续连线 ID；未实现时显示 assessment，人工决定下一步。
-- routing.py: 校验返回的连线 ID 或人工选择；条件文本仅展示，不执行、不推断。
+- diagnosis.py: 自动诊断返回 True/False 或 yes/no；未实现时显示 assessment，人工决定下一步。
+- routing.py: 校验是/否结果或人工选择，同分支全部触发；条件文本仅展示，不执行、不推断。
 - actions.py: 机台/处理动作；未实现时必须输入 yes 确认完成，否则停止。
-- runner.py: 顺序调度、子流程进入/返回、执行历史和循环步数限制。
+- runner.py: 依赖调度、同分支并行、子流程进入/返回、执行历史和循环步数限制。
 - workflow.json / source.bpmn / images/: 原始说明、完整源图和参考图，独立于代码保存。
 
 每个模块底部 HANDLERS 映射节点 ID 到 node_N 函数，在对应函数内填充逻辑。
@@ -306,8 +333,9 @@ Jump is a handoff: no destination is currently stored in the editor; integrate e
 ## 支持范围 / Scope
 
 支持本项目诊断节点、普通开始事件、排他选择及嵌套普通子流程；子流程普通结束事件返回父流程。
-问题解决/上升会终止整个诊断。多个出口按互斥分支处理；不会并行执行。
-条件表达式只供人工阅读；自动判断须在 diagnosis.py 返回连线 ID。默认流不自动猜测。
+问题解决/上升结束当前路径，其他并行路径继续执行。同一是/否结果下的所有出口无优先级并行执行；汇合按到达继续，不等待其他路径。
+Yes/No selects a group of concurrent successors. Terminals end their own path; merges continue on each arrival without synchronization.
+条件表达式只供人工阅读；自动判断须在 diagnosis.py 返回 True/False 或 yes/no。默认流不自动猜测。
 并行/包容网关、事件定义、多实例、普通任务、消息/跨流程连接等不支持时拒绝导出。
 循环允许，但默认最多 1000 步（--max-steps）；自动函数自身的超时由实现者负责。
 Supported: diagnostic nodes, plain starts, exclusive branches and nested plain subprocesses.

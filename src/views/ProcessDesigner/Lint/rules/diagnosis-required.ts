@@ -7,6 +7,7 @@ import {
   conclusionTextRequired,
   fixedDiagnosisNameRequired,
   getDiagnosisKind,
+  getDiagnosisBranch,
   investigationFields,
   investigationActionTextRequired,
   isDiagnosisConnectionAllowed,
@@ -22,6 +23,17 @@ export default function diagnosisRequired(): RuleDefinition {
         if (node.get('name') !== expectedName) reporter.report(node.id, fixedDiagnosisNameRequired)
       }
       if (diagnosisKind === 'investigation') {
+        const flows: ModdleElement[] = node.get('outgoing') || []
+        if (
+          !['yes', 'no'].every((branch) =>
+            flows.some((flow) => getDiagnosisBranch(flow) === branch),
+          )
+        )
+          reporter.report(node.id, 'Investigation requires both Yes and No branches')
+        for (const flow of flows) {
+          if (!getDiagnosisBranch(flow))
+            reporter.report(flow.id, 'Select Yes or No for this branch')
+        }
         for (const [field, message] of Object.entries(investigationFields)) {
           const value: unknown = node.get(`flowable:${field}`)
           if (

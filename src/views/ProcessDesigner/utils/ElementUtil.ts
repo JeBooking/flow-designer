@@ -1,7 +1,7 @@
 import { useBpmnContextService } from '@/hooks/useService.ts'
 import { getBusinessObject, getDi, is, isAny } from 'bpmn-js/lib/util/ModelUtil'
 import type { Element, ModdleElement } from 'bpmn-js/lib/model/Types'
-import { customRef } from 'vue'
+import type EventBus from 'diagram-js/lib/core/EventBus'
 import Ids from 'ids'
 import type BpmnFactory from 'bpmn-js/lib/features/modeling/BpmnFactory'
 import type Canvas from 'diagram-js/lib/core/Canvas'
@@ -113,8 +113,15 @@ export const findRootElementById = (businessObject: ModdleElement, type: string,
 }
 
 export const useCustomRef = <T = string>(key: string) => {
-  const { selectedElement, updateProperties } = useBpmnContextService()
+  const { selectedElement, updateProperties, getService } = useBpmnContextService()
   return customRef<T>((track, trigger) => {
+    const eventBus = getService<EventBus>('eventBus')
+    const changed = (event: unknown) => {
+      if ((event as { elements: Element[] }).elements.includes(selectedElement)) trigger()
+    }
+    // 命令栈回退以及关联字段补全也必须使表单重新读取模型。
+    eventBus?.on('elements.changed', changed)
+    onScopeDispose(() => eventBus?.off('elements.changed', changed))
     return {
       get() {
         track()

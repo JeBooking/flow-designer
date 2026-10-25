@@ -1,6 +1,6 @@
 import { getBusinessObject, is } from 'bpmn-js/lib/util/ModelUtil'
 import type { Element, ModdleElement } from 'bpmn-js/lib/model/Types'
-import type { DiagnosisKind, InvestigationData } from '@/types/diagnosis'
+import type { DiagnosisKind, DiagnosisBranch, InvestigationData } from '@/types/diagnosis'
 
 export const diagnosisKinds: Record<DiagnosisKind, { label: string; icon: string; color: string }> =
   {
@@ -55,14 +55,7 @@ export function isDiagnosisConnectionAllowed(
   if (to === 'conclusion' && from !== 'investigation') return false
   if (
     from === 'investigation' &&
-    ![
-      'investigation',
-      'investigationAction',
-      'conclusion',
-      'remediation',
-      'jump',
-      'escalation',
-    ].includes(to || '')
+    !['investigation', 'investigationAction', 'conclusion', 'jump', 'escalation'].includes(to || '')
   )
     return false
   if (from === 'conclusion' && !['remediation', 'jump', 'escalation'].includes(to || ''))
@@ -92,3 +85,20 @@ export const investigationActionTextRequired = 'Investigation action requires a 
 export const conclusionSuccessorRequired =
   'Conclusion must have exactly one successor: a handling action or escalation'
 export const fixedDiagnosisNameRequired = 'Final diagnosis node text is fixed'
+
+export function getDiagnosisBranch(element: Element | ModdleElement): DiagnosisBranch | undefined {
+  const bo = getBusinessObject(element)
+  const branch = bo.get('flowable:diagnosisBranch')
+  if (branch === 'yes' || branch === 'no') return branch
+  const name = String(bo.get('name') || '')
+    .trim()
+    .toLowerCase()
+  if (['yes', '是'].includes(name)) return 'yes'
+  if (['no', '否'].includes(name)) return 'no'
+}
+
+export const summarizeConclusion = (text: string) => {
+  const compact = text.trim().replace(/\s+/g, ' ')
+  const characters = Array.from(compact)
+  return characters.length > 30 ? characters.slice(0, 30).join('') + '…' : compact
+}

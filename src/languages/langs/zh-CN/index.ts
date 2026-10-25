@@ -51,6 +51,8 @@ export default {
   },
   bpmn: {
     Investigation: '排查节点',
+    'Investigation requires both Yes and No branches': '排查节点必须同时设置是和否两种分支',
+    'Select Yes or No for this branch': '请为此连线选择是或否分支',
     'Investigation Action': '排查动作',
     Conclusion: '结论节点',
     Remediation: '处置措施',

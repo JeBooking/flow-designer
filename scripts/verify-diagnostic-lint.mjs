@@ -31,7 +31,22 @@ for (const filename of (await readdir('src/views/ProcessDesigner/examples')).fil
   )
   assert.equal(warnings.length, 0, JSON.stringify(warnings))
   const issues = await new Linter(configuration).lint(rootElement)
-  assert.deepEqual(issues, {}, filename + ': ' + JSON.stringify(issues))
+  if (filename === 'parallel-dependencies.bpmn') {
+    assert.deepEqual(issues, {}, filename + ': ' + JSON.stringify(issues))
+  } else {
+    // 旧图必须明确提示迁移，不可按连线顺序猜测是/否。
+    const migration = issues['diagnosis-required'] || []
+    assert.ok(migration.length > 0, filename + ': missing migration warning')
+    assert.ok(
+      migration.every((issue) =>
+        [
+          'Investigation requires both Yes and No branches',
+          'Select Yes or No for this branch',
+        ].includes(issue.message),
+      ),
+    )
+    assert.deepEqual(Object.keys(issues), ['diagnosis-required'])
+  }
   const serialized = await moddle.toXML(rootElement, { format: true })
   const roundtrip = await moddle.fromXML(serialized.xml)
   assert.equal(roundtrip.warnings.length, 0)
@@ -42,7 +57,7 @@ for (const filename of (await readdir('src/views/ProcessDesigner/examples')).fil
     assert.ok(serialized.xml.includes('flowable:humanDecision="true"'))
     assert.ok(!serialized.xml.includes('camunda:'))
   }
-  console.log(filename + ': all lint rules and XML round-trip passed')
+  console.log(filename + ': lint contract / legacy migration and XML round-trip passed')
 }
 // 普通 BPMN 并行汇合仍需提示，避免为诊断示例放宽标准流程规则。
 const process = moddle.create('bpmn:Process', { id: 'Plain' })

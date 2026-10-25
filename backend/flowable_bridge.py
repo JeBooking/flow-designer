@@ -42,7 +42,7 @@ def compile_workflow(xml):
     if not process_id:
         raise ValueError('Missing process ID / 缺少流程 ID')
     # 工作主题取决于执行定义，移动节点、翻译文字或 XML 重排不应使已启动的 worker 失效。
-    signature = {'formatVersion': 4, 'processId': process_id, 'nodes': [], 'flows': []}
+    signature = {'formatVersion': 5, 'processId': process_id, 'nodes': [], 'flows': []}
     executable_elements = [e for e in process if e.tag in (b('task'), b('startEvent'), b('sequenceFlow'))]
     execution_ids = [e.get('id') for e in executable_elements]
     if any(not value for value in execution_ids) or len(set(execution_ids)) != len(execution_ids):
@@ -51,7 +51,7 @@ def compile_workflow(xml):
         if element.get('default') or element.find(b('conditionExpression')) is not None:
             raise ValueError('Use the Python next result instead of flow conditions / 请使用 Python 的 next 返回值选择分支，并移除条件表达式和默认分支: ' + element.get('id'))
         if element.tag == b('sequenceFlow'):
-            signature['flows'].append([element.get('id'), element.get('sourceRef'), element.get('targetRef')])
+            signature['flows'].append([element.get('id'), element.get('sourceRef'), element.get('targetRef'), element.get(f('diagnosisBranch'))])
         else:
             kwargs = json.loads(element.get(f('pythonArguments')) or '{}')
             if not isinstance(kwargs, dict):
@@ -88,7 +88,7 @@ def compile_workflow(xml):
             raise ValueError('Invalid connection / 连线引用无效: ' + str(edge.get('id')))
         source, target = nodes[edge.get('sourceRef')], nodes[edge.get('targetRef')]
         source_kind, target_kind = source.get(f('diagnosisKind')), target.get(f('diagnosisKind'))
-        allowed = {'investigation': {'investigation', 'investigationAction', 'conclusion', 'remediation', 'jump', 'escalation'},
+        allowed = {'investigation': {'investigation', 'investigationAction', 'conclusion', 'jump', 'escalation'},
             'investigationAction': {'investigation'}, 'conclusion': {'remediation', 'jump', 'escalation'},
             'remediation': {'remediation', 'jump', 'problemSolved', 'deepDiagnosis', 'escalation'},
             'jump': {'remediation', 'jump', 'problemSolved', 'deepDiagnosis', 'escalation'}}
@@ -121,6 +121,8 @@ def compile_workflow(xml):
         kind = node.get(f('diagnosisKind'))
         if kind not in KINDS:
             raise ValueError('Unknown diagnosis kind / 未知诊断节点: ' + node_id)
+        if kind == 'conclusion' and not node.get(f('conclusionText'), '').strip():
+            node.set(f('conclusionText'), node.get('name', ''))
         required = {'investigation': ('observation', 'acquisition', 'referenceImage', 'assessment'),
                     'conclusion': ('conclusionText',), 'investigationAction': ('actionText',)}
         if any(not node.get(f(field), '').strip() for field in required.get(kind, ())):
@@ -156,9 +158,18 @@ def compile_workflow(xml):
             raise ValueError('Conclusion requires one successor / 结论必须有且仅有一个后继')
         module, function = node.get(f('pythonModule'), '').strip(), node.get(f('pythonFunction'), '').strip()
         if kind not in ('problemSolved', 'escalation'):
-            human = node.get(f('humanDecision')) == 'true'
+            human = kind == 'investigation' and node.get(f('humanDecision')) == 'true'
+            branches = {}
+            if kind == 'investigation':
+                for edge in outgoing:
+                    branch = edge.get(f('diagnosisBranch')) or {'是': 'yes', '否': 'no', 'yes': 'yes', 'no': 'no'}.get(edge.get('name', '').lower())
+                    if branch not in ('yes', 'no'):
+                        raise ValueError('Select Yes/No for branch / 请设置是或否分支: ' + edge.get('id'))
+                    branches[edge.get('id')] = branch
+                if set(branches.values()) != {'yes', 'no'}:
+                    raise ValueError('Investigation requires Yes and No / 排查节点需要是和否两种分支: ' + node_id)
             has_python = bool(module or function)
-            if not human and not has_python:
+            if kind != 'conclusion' and not human and not has_python:
                 raise ValueError('Bind Python interface / 请绑定 Python 接口: ' + node_id)
             if has_python and (not re.fullmatch(r'[A-Za-z_]\w*(\.[A-Za-z_]\w*)*', module) or not re.fullmatch(r'[A-Za-z_]\w*', function)):
                 raise ValueError('Invalid Python interface / 无效 Python 接口: ' + node_id)
@@ -170,13 +181,13 @@ def compile_workflow(xml):
                 raise ValueError('Duplicate topic / 重复工作主题: ' + topic)
             manifest['bindings'][topic] = {'nodeId': node_id, 'module': module, 'function': function,
                 'kwargs': kwargs, 'outgoing': sorted(e.get('id') for e in outgoing), 'kind': kind,
-                'humanDecision': human}
-            node.tag = b('serviceTask') if has_python else b('userTask')
+                'humanDecision': human, 'branches': branches}
+            node.tag = b('serviceTask') if has_python else b('userTask') if human else b('task')
             if has_python:
                 node.set(f('type'), 'external-worker')
                 node.set(f('topic'), topic)
             continuation_id = node_id
-            if human or has_python:
+            if kind == 'investigation':
                 # 引擎只消费组件发出的等待请求；自动结果直接绕过人工任务。
                 review_id = new_id(node_id + '_review') if has_python else node_id
                 if has_python:
@@ -203,21 +214,21 @@ def compile_workflow(xml):
                     'name': node.get('name') or node_id,
                     'instructions': {field: node.get(f(field), '') for field in
                         ('observation', 'acquisition', 'assessment', 'referenceImage', 'conclusionText', 'actionText')},
-                    'options': [{'id': edge.get('id'), 'name': option_names[edge.get('id')]}
-                                for edge in outgoing]}
+                    'options': [{'id': 'yes', 'name': '是 / Yes'}, {'id': 'no', 'name': '否 / No'}]}
             if len(outgoing) > 1:
                 gateway_id = new_id(node_id + '_decision')
-                ET.SubElement(process, b('exclusiveGateway'), {'id': gateway_id})
+                ET.SubElement(process, b('inclusiveGateway') if branches else b('parallelGateway'), {'id': gateway_id})
                 ET.SubElement(process, b('sequenceFlow'), {'id': new_id(node_id + '_to_decision'),
                     'sourceRef': continuation_id, 'targetRef': gateway_id})
                 for edge in outgoing:
                     edge.set('sourceRef', gateway_id)
                     for condition in list(edge):
                         edge.remove(condition)
-                    expression = ET.SubElement(edge, b('conditionExpression'), {
-                        '{http://www.w3.org/2001/XMLSchema-instance}type': 'bpmn:tFormalExpression'})
-                    # 变量与连线 ID 均通过 JSON 字符串编码，避免拼接任意表达式。
-                    expression.text = '${execution.getVariable(' + json.dumps('route_' + node_id) + ') == ' + json.dumps(edge.get('id')) + '}'
+                    if branches:
+                        expression = ET.SubElement(edge, b('conditionExpression'), {
+                            '{http://www.w3.org/2001/XMLSchema-instance}type': 'bpmn:tFormalExpression'})
+                        # 同一判断结果的所有出口同时触发，不依赖 XML 中的顺序。
+                        expression.text = '${execution.getVariable(' + json.dumps('route_' + node_id) + ') == ' + json.dumps(branches[edge.get('id')]) + '}'
             elif not outgoing:
                 end_id = new_id(node_id + '_handoff')
                 ET.SubElement(process, b('endEvent'), {'id': end_id, 'name': 'Handoff / 跳转交接'})
@@ -241,6 +252,8 @@ def compile_workflow(xml):
             break
     if set(nodes) - can_finish:
         raise ValueError('Chain cannot reach an end / 存在无法到达最终节点的链路')
+    for edge in flows:
+        edge.attrib.pop(f('diagnosisBranch'), None)
     process.set('isExecutable', 'true')
     # 流程说明在 Flowable 中限制为 2000 字符；执行元数据及参考图放在扩展元素。
     extensions = process.find(b('extensionElements'))

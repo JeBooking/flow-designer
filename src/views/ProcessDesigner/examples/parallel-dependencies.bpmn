@@ -1,0 +1,209 @@
+<?xml version='1.0' encoding='cp936'?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:flowable="http://flowable.org/bpmn" targetNamespace="regression">
+  <bpmn:process id="DependencyDiagnosis" name="并行排查与依赖">
+    <bpmn:startEvent id="Start">
+      <bpmn:outgoing>StartFlow</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:task id="Inspect" flowable:diagnosisKind="investigation" flowable:humanDecision="false" flowable:observation="模拟设备数据" flowable:acquisition="调用模拟接口" flowable:assessment="返回是或否，触发同一分支的所有后继" flowable:referenceImage="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAPAAAAB4CAIAAABD1OhwAAABtUlEQVR4nO3XsW3DMABFQS8TL5a1s0GGiAOktkVAskI+3eGXBMHiNbz9QMjtvx8ARxI0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkbAT9db+bTbVdQcNaBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBM0yPj6/f/f6jKCZwl+srzdyj6B5u6NiHSFodjkz1hGC5qnZYh0h6ItaMdYRgg6qxjpC0Iu5cqwjBD0Rse4n6JOI9RyCPoBY5yHoDWJdy6WDFmtPNmixXtOSQYuVZ6YLWqzscWrQYuXdDgtarMxgKGixsoqNoMXKWqb7FMIegiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBk/IAUAlcYCiwr8oAAAAASUVORK5CYII=" name="是否具备检查条件？" flowable:pythonModule="diagnostic_demo.dependencies" flowable:pythonFunction="ready">
+      <bpmn:incoming>StartFlow</bpmn:incoming>
+      <bpmn:outgoing>ToA</bpmn:outgoing>
+      <bpmn:outgoing>ToB</bpmn:outgoing>
+      <bpmn:outgoing>ToC</bpmn:outgoing>
+      <bpmn:outgoing>ToD</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="A" name="A" flowable:diagnosisKind="conclusion" flowable:conclusionText="A">
+      <bpmn:outgoing>ARun</bpmn:outgoing>
+      <bpmn:incoming>PowerYes</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:task id="AAction" flowable:diagnosisKind="remediation" flowable:pythonModule="diagnostic_demo.dependencies" flowable:pythonFunction="record_power" name="记录 AAction">
+      <bpmn:incoming>ARun</bpmn:incoming>
+      <bpmn:outgoing>ADone</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="B" name="B" flowable:diagnosisKind="conclusion" flowable:conclusionText="B">
+      <bpmn:incoming>ToB</bpmn:incoming>
+      <bpmn:outgoing>BRun</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="BAction" flowable:diagnosisKind="remediation" flowable:pythonModule="diagnostic_demo.dependencies" flowable:pythonFunction="record_power" name="记录 BAction">
+      <bpmn:incoming>BRun</bpmn:incoming>
+      <bpmn:outgoing>BDone</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="C" name="C" flowable:diagnosisKind="conclusion" flowable:conclusionText="C">
+      <bpmn:incoming>ToC</bpmn:incoming>
+      <bpmn:outgoing>CRun</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="CAction" flowable:diagnosisKind="remediation" flowable:pythonModule="diagnostic_demo.dependencies" flowable:pythonFunction="record_power" name="记录 CAction">
+      <bpmn:incoming>CRun</bpmn:incoming>
+      <bpmn:outgoing>CDone</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="D" name="D" flowable:diagnosisKind="conclusion" flowable:conclusionText="D">
+      <bpmn:incoming>ToD</bpmn:incoming>
+      <bpmn:outgoing>DRun</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="DAction" flowable:diagnosisKind="remediation" flowable:pythonModule="diagnostic_demo.dependencies" flowable:pythonFunction="record_power" name="记录 DAction">
+      <bpmn:incoming>DRun</bpmn:incoming>
+      <bpmn:outgoing>DDone</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Solved" name="问题解决" flowable:diagnosisKind="problemSolved">
+      <bpmn:incoming>ADone</bpmn:incoming>
+      <bpmn:incoming>BDone</bpmn:incoming>
+      <bpmn:incoming>CDone</bpmn:incoming>
+      <bpmn:incoming>DDone</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="StartFlow" sourceRef="Start" targetRef="Inspect" />
+    <bpmn:sequenceFlow id="ToA" sourceRef="Inspect" targetRef="PowerCheck" flowable:diagnosisBranch="yes" name="yes" />
+    <bpmn:sequenceFlow id="ARun" sourceRef="A" targetRef="AAction" />
+    <bpmn:sequenceFlow id="ADone" sourceRef="AAction" targetRef="Solved" />
+    <bpmn:sequenceFlow id="ToB" sourceRef="Inspect" targetRef="B" flowable:diagnosisBranch="yes" name="yes" />
+    <bpmn:sequenceFlow id="BRun" sourceRef="B" targetRef="BAction" />
+    <bpmn:sequenceFlow id="BDone" sourceRef="BAction" targetRef="Solved" />
+    <bpmn:sequenceFlow id="ToC" sourceRef="Inspect" targetRef="C" flowable:diagnosisBranch="no" name="no" />
+    <bpmn:sequenceFlow id="CRun" sourceRef="C" targetRef="CAction" />
+    <bpmn:sequenceFlow id="CDone" sourceRef="CAction" targetRef="Solved" />
+    <bpmn:sequenceFlow id="ToD" sourceRef="Inspect" targetRef="D" flowable:diagnosisBranch="no" name="no" />
+    <bpmn:sequenceFlow id="DRun" sourceRef="D" targetRef="DAction" />
+    <bpmn:sequenceFlow id="DDone" sourceRef="DAction" targetRef="Solved" />
+    <bpmn:task id="PowerCheck" flowable:diagnosisKind="investigation" flowable:humanDecision="false" flowable:observation="模拟设备数据" flowable:acquisition="调用模拟接口" flowable:assessment="返回是或否，触发同一分支的所有后继" flowable:referenceImage="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAPAAAAB4CAIAAABD1OhwAAABtUlEQVR4nO3XsW3DMABFQS8TL5a1s0GGiAOktkVAskI+3eGXBMHiNbz9QMjtvx8ARxI0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkbAT9db+bTbVdQcNaBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBM0yPj6/f/f6jKCZwl+srzdyj6B5u6NiHSFodjkz1hGC5qnZYh0h6ItaMdYRgg6qxjpC0Iu5cqwjBD0Rse4n6JOI9RyCPoBY5yHoDWJdy6WDFmtPNmixXtOSQYuVZ6YLWqzscWrQYuXdDgtarMxgKGixsoqNoMXKWqb7FMIegiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBk/IAUAlcYCiwr8oAAAAASUVORK5CYII=" name="供电检查是否通过？" flowable:pythonModule="diagnostic_demo.dependencies" flowable:pythonFunction="power_ok">
+      <bpmn:incoming>ToA</bpmn:incoming>
+      <bpmn:outgoing>PowerYes</bpmn:outgoing>
+      <bpmn:outgoing>PowerNo</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="PowerYes" sourceRef="PowerCheck" targetRef="A" flowable:diagnosisBranch="yes" name="yes" />
+    <bpmn:task id="Escalation" name="上升" flowable:diagnosisKind="escalation">
+      <bpmn:incoming>PowerNo</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="PowerNo" sourceRef="PowerCheck" targetRef="Escalation" flowable:diagnosisBranch="no" name="no" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="DependencyDiagram">
+    <bpmndi:BPMNPlane id="DependencyPlane" bpmnElement="DependencyDiagnosis">
+      <bpmndi:BPMNShape id="Start_di" bpmnElement="Start">
+        <dc:Bounds x="60" y="250" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Inspect_di" bpmnElement="Inspect">
+        <dc:Bounds x="170" y="220" width="160" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="PowerCheck_di" bpmnElement="PowerCheck">
+        <dc:Bounds x="410" y="40" width="160" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="A_di" bpmnElement="A">
+        <dc:Bounds x="650" y="40" width="160" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="AAction_di" bpmnElement="AAction">
+        <dc:Bounds x="900" y="40" width="160" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="B_di" bpmnElement="B">
+        <dc:Bounds x="410" y="220" width="160" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BAction_di" bpmnElement="BAction">
+        <dc:Bounds x="900" y="220" width="160" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="C_di" bpmnElement="C">
+        <dc:Bounds x="410" y="400" width="160" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="CAction_di" bpmnElement="CAction">
+        <dc:Bounds x="900" y="400" width="160" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="D_di" bpmnElement="D">
+        <dc:Bounds x="410" y="580" width="160" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="DAction_di" bpmnElement="DAction">
+        <dc:Bounds x="900" y="580" width="160" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Solved_di" bpmnElement="Solved">
+        <dc:Bounds x="1150" y="220" width="160" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Escalation_di" bpmnElement="Escalation">
+        <dc:Bounds x="650" y="730" width="160" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="StartFlow_di" bpmnElement="StartFlow">
+        <di:waypoint x="96" y="268.0" />
+        <di:waypoint x="133.0" y="268.0" />
+        <di:waypoint x="133.0" y="265.0" />
+        <di:waypoint x="170" y="265.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="ToA_di" bpmnElement="ToA">
+        <di:waypoint x="330" y="265.0" />
+        <di:waypoint x="370.0" y="265.0" />
+        <di:waypoint x="370.0" y="85.0" />
+        <di:waypoint x="410" y="85.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="ARun_di" bpmnElement="ARun">
+        <di:waypoint x="810" y="85.0" />
+        <di:waypoint x="855.0" y="85.0" />
+        <di:waypoint x="855.0" y="85.0" />
+        <di:waypoint x="900" y="85.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="ADone_di" bpmnElement="ADone">
+        <di:waypoint x="1060" y="85.0" />
+        <di:waypoint x="1105.0" y="85.0" />
+        <di:waypoint x="1105.0" y="265.0" />
+        <di:waypoint x="1150" y="265.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="ToB_di" bpmnElement="ToB">
+        <di:waypoint x="330" y="265.0" />
+        <di:waypoint x="370.0" y="265.0" />
+        <di:waypoint x="370.0" y="265.0" />
+        <di:waypoint x="410" y="265.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BRun_di" bpmnElement="BRun">
+        <di:waypoint x="570" y="265.0" />
+        <di:waypoint x="735.0" y="265.0" />
+        <di:waypoint x="735.0" y="265.0" />
+        <di:waypoint x="900" y="265.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BDone_di" bpmnElement="BDone">
+        <di:waypoint x="1060" y="265.0" />
+        <di:waypoint x="1105.0" y="265.0" />
+        <di:waypoint x="1105.0" y="265.0" />
+        <di:waypoint x="1150" y="265.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="ToC_di" bpmnElement="ToC">
+        <di:waypoint x="330" y="265.0" />
+        <di:waypoint x="370.0" y="265.0" />
+        <di:waypoint x="370.0" y="445.0" />
+        <di:waypoint x="410" y="445.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="CRun_di" bpmnElement="CRun">
+        <di:waypoint x="570" y="445.0" />
+        <di:waypoint x="735.0" y="445.0" />
+        <di:waypoint x="735.0" y="445.0" />
+        <di:waypoint x="900" y="445.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="CDone_di" bpmnElement="CDone">
+        <di:waypoint x="1060" y="445.0" />
+        <di:waypoint x="1105.0" y="445.0" />
+        <di:waypoint x="1105.0" y="265.0" />
+        <di:waypoint x="1150" y="265.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="ToD_di" bpmnElement="ToD">
+        <di:waypoint x="330" y="265.0" />
+        <di:waypoint x="370.0" y="265.0" />
+        <di:waypoint x="370.0" y="625.0" />
+        <di:waypoint x="410" y="625.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="DRun_di" bpmnElement="DRun">
+        <di:waypoint x="570" y="625.0" />
+        <di:waypoint x="735.0" y="625.0" />
+        <di:waypoint x="735.0" y="625.0" />
+        <di:waypoint x="900" y="625.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="DDone_di" bpmnElement="DDone">
+        <di:waypoint x="1060" y="625.0" />
+        <di:waypoint x="1105.0" y="625.0" />
+        <di:waypoint x="1105.0" y="265.0" />
+        <di:waypoint x="1150" y="265.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="PowerYes_di" bpmnElement="PowerYes">
+        <di:waypoint x="570" y="85.0" />
+        <di:waypoint x="610.0" y="85.0" />
+        <di:waypoint x="610.0" y="85.0" />
+        <di:waypoint x="650" y="85.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="PowerNo_di" bpmnElement="PowerNo">
+        <di:waypoint x="570" y="85.0" />
+        <di:waypoint x="610.0" y="85.0" />
+        <di:waypoint x="610.0" y="775.0" />
+        <di:waypoint x="650" y="775.0" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

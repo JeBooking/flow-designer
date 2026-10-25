@@ -8,6 +8,11 @@
   "associations": [],
   "types": [
     {
+      "name": "DiagnosisFlow",
+      "extends": ["bpmn:SequenceFlow"],
+      "properties": [{ "name": "diagnosisBranch", "isAttr": true, "type": "String" }]
+    },
+    {
       "name": "DiagnosisTask",
       "extends": ["bpmn:Task"],
       "properties": [

@@ -46,14 +46,32 @@ instead end at Jump. Investigation/action loops remain valid when they can still
 outcomes.
 
 Investigation accepts a start event, another investigation or an Investigation Action as predecessor.
-It may continue to another investigation, Investigation Action, conclusion or handling action.
+It may continue to another investigation, Investigation Action, conclusion, Jump or Escalation.
+Direct connections to Remediation are rejected, including shortcut append menus.
 Self-connections are rejected. These rules apply when drawing, reconnecting and inserting nodes;
 imported invalid connections and missing fields are reported by process validation. Drafts can still
 be saved with validation errors.
 Use Start → Investigation → Conclusion → Remediation → Problem Solved for an initial example.
 
-All diagnostic fields use `flowable:` attributes on `bpmn:Task`, with command-stack undo/redo.
-This adds the authoring model only; code and manual generation are not implemented yet.
+Investigations have **Yes and No** groups. Select a connection to assign its group; each group
+can connect to multiple independent successors without priority. Connect dependent checks after
+their prerequisite. Both groups are required before execution. Groups persist as
+`flowable:diagnosisBranch` on sequence flows. Flowable compiles them as inclusive splits;
+the offline Python runner starts matching successors concurrently. A terminal ends its own path.
+Merges continue on each arrival and do not synchronize other paths, so multiple actions may
+connect to Problem Solved without a gateway warning.
+
+Fill either conclusion field: content generates a name of up to 30 characters, while a name
+fills empty content in full. Independently edited fields are preserved. Diagnosis nodes can
+be resized; names wrap and expand the node. Changes participate in command-stack undo/redo.
+
+Only investigations show human judgment settings. Action nodes retain interface binding with
+automatic signature-based parameters: exact workflow variable names, then unique fields in
+upstream results, then function defaults. Missing or ambiguous data produces an explicit error.
+No-argument functions and actions returning `None` are supported; no JSON entry is required.
+Existing explicit mappings remain readable; selecting a new interface clears stale mappings.
+The **Parallel investigations and dependencies** example demonstrates this contract. Legacy examples
+retain migration labels: assign Yes/No and move decisions out of action nodes before execution.
 
 ## Related Project
 
@@ -159,8 +177,9 @@ IDs to editable functions. Unimplemented acquisition displays the manual data
 collection instructions and accepts text, JSON or `@path/to/data.json`. You can
 also pass `{node_id: raw_data}` via `run(supplied=...)` or `--data inputs.json`.
 Unimplemented diagnosis displays the diagram's assessment instructions and asks
-the operator to choose an outgoing flow. Automatic diagnosis must return an
-outgoing flow ID. Machine actions require explicit confirmation when unimplemented.
+the operator to choose Yes or No. Automatic diagnosis returns `True`/`False`, `yes`/`no`,
+or a dictionary with `next`. A legacy outgoing flow ID selects its whole group.
+Machine actions require explicit completion confirmation when unimplemented in the offline skeleton.
 
 The ZIP includes the original BPMN XML, extracted reference images, workflow JSON,
 sample inputs and a bilingual README. Nested plain subprocesses and exclusive
@@ -195,6 +214,7 @@ If this project helps you, sponsorship is welcome.
 ## 📄 License
 
 [Apache-2.0 License](./LICENSE)
+
 # Flowable diagnostic execution
 
 Diagnostic nodes can bind external Python module functions. Open **Flowable execution** to

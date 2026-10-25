@@ -202,7 +202,8 @@ const setCurrentComponents = (element: Element) => {
   }
   const diagnosisKind = getDiagnosisKind(element)
   if (diagnosisKind) {
-    if (!['problemSolved', 'escalation'].includes(diagnosisKind)) slots.basic.push('PythonBinding')
+    if (!['problemSolved', 'escalation', 'conclusion'].includes(diagnosisKind))
+      slots.basic.push('PythonBinding')
     if (diagnosisKind === 'conclusion') slots.basic.push('Conclusion')
     else if (diagnosisKind === 'investigation') slots.basic.push('Investigation')
     else if (diagnosisKind === 'investigationAction') slots.basic.push('InvestigationAction')

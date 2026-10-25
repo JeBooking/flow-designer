@@ -59,35 +59,36 @@ const inspect = node('Task', 'Inspect', {
 })
 const task = (id, kind, attributes = {}) =>
   node('Task', id, { name: id, 'flowable:diagnosisKind': kind, ...attributes })
-const conclusion = task('Conclusion', 'conclusion', { 'flowable:conclusionText': '电源异常' })
+const conclusion = task('Conclusion', 'conclusion', { 'flowable:conclusionText': '检查完成' })
+const secondConclusion = task('SecondConclusion', 'conclusion', {
+  'flowable:conclusionText': '第二项检查完成',
+})
 const repair = task('Repair', 'remediation')
+const secondRepair = task('SecondRepair', 'remediation')
 const solved = task('Solved', 'problemSolved')
 const escalation = task('Escalation', 'escalation')
 const jump = task('Jump', 'jump')
-const action = task('Action', 'investigationAction', { 'flowable:actionText': '重新采集' })
-const deep = task('Deep', 'deepDiagnosis')
-const flow = (id, sourceRef, targetRef) =>
-  node('SequenceFlow', id, { sourceRef, targetRef, name: id })
+const flow = (id, sourceRef, targetRef, branch) =>
+  node('SequenceFlow', id, { sourceRef, targetRef, name: id, 'flowable:diagnosisBranch': branch })
 const elements = [
   start,
   inspect,
   conclusion,
+  secondConclusion,
   repair,
+  secondRepair,
   solved,
   escalation,
   jump,
-  action,
-  deep,
   flow('begin', start, inspect),
-  flow('normal', inspect, conclusion),
-  flow('bad', inspect, escalation),
-  flow('retry', inspect, action),
-  flow('again', action, inspect),
+  flow('normal', inspect, conclusion, 'yes'),
+  flow('parallel', inspect, secondConclusion, 'yes'),
+  flow('bad', inspect, escalation, 'no'),
+  flow('handoff', inspect, jump, 'no'),
   flow('handle', conclusion, repair),
+  flow('secondHandle', secondConclusion, secondRepair),
   flow('fixed', repair, solved),
-  flow('handoff', repair, jump),
-  flow('deeper', repair, deep),
-  flow('done', deep, solved),
+  flow('secondFixed', secondRepair, solved),
 ]
 const processModel = node('Process', 'Process', { flowElements: elements })
 const definitions = node('Definitions', 'Definitions', {

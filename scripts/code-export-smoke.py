@@ -28,34 +28,41 @@ def execute(answers, supplied=None, **kwargs):
     return result, context, messages
 
 
-result, context, messages = execute(['{"voltage":24}', 'normal', 'yes', 'fixed'])
+
+# 两个动作互相等待对方到达，只有真正并发才能通过。
+import threading
+barrier = threading.Barrier(2, timeout=3)
+for name in ('Repair', 'SecondRepair'):
+    actions.HANDLERS[name] = lambda node, ctx: barrier.wait()
+result, context, messages = execute(['{"voltage":24}', 'yes'])
 assert result['status'] == 'problemSolved'
+assert len(result['outcomes']) == 2
+assert {'Repair', 'SecondRepair'} <= set(result['history'])
 assert context.data['Inspect']['parsed'] == {'voltage': 24}
 assert any('使用电压表' in m for m in messages)
 assert any('对照额定电压判断' in m for m in messages)
-assert execute(['bad'], {'Inspect': None})[0]['status'] == 'escalation'
-assert execute(['normal', 'yes', 'handoff'], {'Inspect': 24})[0]['status'] == 'jump'
-assert execute(['retry', 'yes', 'normal', 'yes', 'fixed'], {'Inspect': 24})[0]['history'].count('Inspect') == 2
-assert execute(['normal', 'yes', 'deeper', 'yes'], {'Inspect': 24})[0]['status'] == 'problemSolved'
+negative = execute(['no'], {'Inspect': None})[0]
+assert {item['status'] for item in negative['outcomes']} == {'escalation', 'jump'}
+assert not {'Repair', 'SecondRepair'} & set(negative['history'])
 data_file = root / 'data.json'
 data_file.write_text('{"voltage": 25}', encoding='utf-8')
-assert execute(['@' + str(data_file), 'bad'])[1].data['Inspect']['raw']['voltage'] == 25
+assert execute(['@' + str(data_file), 'no'])[1].data['Inspect']['raw']['voltage'] == 25
 nested = json.loads((root / 'nested.json').read_text(encoding='utf-8'))
 assert execute([], workflow=nested)[0]['history'] == ['Start', 'Sub', 'InnerStart', 'InnerEnd', 'Solved']
 acquisition.HANDLERS['Inspect'] = lambda node, ctx: 26
-diagnosis.HANDLERS['Inspect'] = lambda data, node, ctx: 'bad'
+diagnosis.HANDLERS['Inspect'] = lambda data, node, ctx: False
 assert execute([])[0]['status'] == 'escalation'
 diagnosis.HANDLERS['Inspect'] = lambda data, node, ctx: 'nonexistent'
 try:
     execute([])
-    raise AssertionError('Invalid flow must fail')
+    raise AssertionError('Invalid result must fail')
 except ValueError:
     pass
-diagnosis.HANDLERS['Inspect'] = lambda data, node, ctx: 'retry'
-actions.HANDLERS['Action'] = lambda node, ctx: None
+# 全局步数限制覆盖所有并行路径。
+diagnosis.HANDLERS['Inspect'] = lambda data, node, ctx: True
 try:
-    execute([], max_steps=6)
-    raise AssertionError('Loop limit must stop execution')
+    execute([], max_steps=2)
+    raise AssertionError('Step limit must stop execution')
 except RuntimeError as error:
     assert 'Maximum steps' in str(error)
 
@@ -70,4 +77,4 @@ try:
     raise AssertionError('Operational errors must not trigger manual fallback')
 except OSError:
     pass
-print('Generated Python: manual data, file data, injected data, automatic hooks, branching, actions, subflow, handoff, failure and loop limit verified.')
+print('Generated Python: concurrent Yes/No groups, terminal merges, manual/automatic decisions, data, subflows, failure and step limits verified.')
