@@ -8,6 +8,12 @@
 
 ---
 
+## User guide
+
+Read the [English user guide](docs/USER-GUIDE.md) / [中文用户手册](docs/USER-GUIDE.zh-CN.md) for existing-project registration, interpreters, discovery, node binding, automatic variable matching, Flowable/workers, human fallback, rechecks, export and troubleshooting.
+
+**Enable structure simulation** only animates BPMN tokens; it does not call Python. Real execution uses **Flowable Execution** with a separately started worker. Exported Python scaffolds default to manual fallback for unimplemented business logic and do not automatically execute saved external-module bindings.
+
 ## Online Preview
 
 - Preview URL: https://tsai996.github.io/vue-bpmn-designer/
@@ -34,7 +40,7 @@ This project deeply integrates `bpmn-js` and provides Flowable-focused customiza
 The palette includes Investigation, Investigation Action, Conclusion, Remediation, Deep Diagnosis,
 Jump, Problem Solved and Escalation tasks. Investigation
 means “further investigation is required” and requires data to inspect, acquisition instructions,
-a reference image and assessment criteria. Upload a PNG, JPEG or WebP image (up to 5 MB); the image
+a reference file and assessment criteria. Upload images, PDFs, text, audio, video or other files (up to 50 MiB); the file
 is embedded in BPMN XML for offline sharing. Conclusion is a text-only diagnostic judgment. It must
 follow an investigation and have exactly one successor: a handling action or escalation.
 Investigation Action records a machine action and may only connect from and to an Investigation.
@@ -189,7 +195,7 @@ importable entry module, lists public functions and calls them in Python.
 Existing projects remain independently maintained; optional interpreter paths
 support their existing virtual environments. See [backend integration guide](backend/README.md)
 for `__all__` exports, the included example and the generic invocation API.
-No BPMN node binding or business input/output schema is imposed by this entry point.
+Select discovered modules/functions in node properties to bind them; parameters match function signatures automatically. The registered interpreter serves discovery/debugging only. Start Flowable workers separately with business dependencies, the official client and `--project` directories.
 
 ## Export a diagnostic Python project
 
@@ -199,7 +205,7 @@ library and works offline without AI, a workflow server, or additional packages.
 
 The project separates acquisition, parsing, display, diagnosis, routing, machine
 actions and orchestration into Python modules. Each module maps stable BPMN node
-IDs to editable functions. Unimplemented acquisition displays the manual data
+IDs to editable functions. `IMPLEMENTATION.md` maps nodes to files/functions; each handler comment identifies the node, full business content, input/output contract, outlets and call relationships. Unimplemented acquisition displays the manual data
 collection instructions and accepts text, JSON or `@path/to/data.json`. You can
 also pass `{node_id: raw_data}` via `run(supplied=...)` or `--data inputs.json`.
 Unimplemented diagnosis displays the diagram's assessment instructions and asks
