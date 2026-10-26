@@ -11,6 +11,8 @@
 ## 使用手册
 
 从接入已有工程开始，请阅读 [中文用户手册](docs/USER-GUIDE.zh-CN.md) / [English guide](docs/USER-GUIDE.md)。
+
+[冷却系统完整工程示例](backend/examples/cooling_project/README.zh-CN.md) 包含独立 Python 业务包、已绑定的流程图、共用 CSV 资源和五种场景。运行 `pnpm exec node scripts/prepare-cooling-example.mjs` 即可创建环境、登记工程并生成执行包；手册第 7 节提供完整操作步骤。
 覆盖解释器与模块登记、接口发现、节点绑定、变量自动匹配、Flowable/worker 启动、人工兜底与回退、导出和排错。
 
 “开启结构模拟”仅展示 BPMN 令牌，不调用 Python。真实执行请使用“Flowable 执行”并单独启动 worker。

@@ -2,9 +2,9 @@
 
 [简体中文](USER-GUIDE.zh-CN.md) · [Project overview](../README.md)
 
-This guide takes you from an existing Python project to a workflow that calls its functions or object methods. Follow sections 1–6 to complete a real run. Later sections explain branching, human decisions, recovery, file storage, and alternative ways to run the diagram.
+This guide takes you from an existing Python project to a workflow that calls its functions or object methods. Follow sections 1–6 to complete a real run. Section 7 provides a second complete Python project; section 8 onward explains branching, human decisions, recovery, file storage, and alternative execution.
 
-The walkthrough uses the included device-voltage example. It collects a Python object, checks for low voltage, then restores and verifies the device. All equipment operations in this example are simulated. Once it works, replace the example directory, module, and class with your own project.
+Sections 1–6 use the included device-voltage example. It collects a Python object, checks for low voltage, then restores and verifies the device. All equipment operations in this example are simulated. Once it works, replace the example directory, module, and class with your own project.
 
 ## 1. Understand the parts you will run
 
@@ -238,9 +238,139 @@ Click **Refresh execution results**. With default inputs, this example should vi
 
 After a task error, refresh and expand its failure details to see the original Python traceback, including the business file, call location, and exception. Worker terminal output provides additional context. A result dictionary containing a `chartSvg` string can display a chart; returning a local file path alone does not display an image.
 
-## 7. Extend the example with more investigation paths
+## 7. Second complete example: a cooling system Python project
 
-### 7.1 Node content and connections
+The voltage walkthrough has one recovery path. This example supplies an independent Python project with two independent investigation methods. It shows native object passing and distinguishes successful recovery, an unmatched path, and a Python task error.
+
+### 7.1 Understand the project
+
+The project is in `backend/examples/cooling_project`. It uses only the Python standard library and runs independently of the platform. All equipment operations are simulated.
+
+| File                           | Responsibility                                                     |
+| ------------------------------ | ------------------------------------------------------------------ |
+| `src/cooling_lab/api.py`       | Expose `CoolingSession` to the platform                            |
+| `src/cooling_lab/session.py`   | Acquisition, judgment, remediation, and verification interfaces    |
+| `src/cooling_lab/simulator.py` | Simulated equipment, fault state, and protected concurrent access  |
+| `src/cooling_lab/models.py`    | Native `Measurement` objects and limit types                       |
+| `src/cooling_lab/charts.py`    | Before/after SVG temperature charts                                |
+| `assets/limits.csv`            | Threshold file actually read by Python and attached as a reference |
+| `assets/scenarios.json`        | Initial state for five scenarios                                   |
+| `run_demo.py`                  | Run the same business interfaces without the platform              |
+| `workflow.json`                | Bound parallel workflow with relative resource paths               |
+
+### 7.2 Run independently, then register it
+
+From the repository root:
+
+```powershell
+python backend/examples/cooling_project/run_demo.py --scenario fan
+```
+
+The default device is `COOL-01`. Its fan speed is too low; restarting recovers temperature from 85 C to 42 C. The terminal prints the result. To save its chart:
+
+```powershell
+python backend/examples/cooling_project/run_demo.py --scenario fan --report backend/examples/cooling_project/output/fan.svg
+```
+
+Once the business project works independently, register it with:
+
+```powershell
+pnpm exec node scripts/prepare-cooling-example.mjs
+```
+
+This command creates the example's own `.venv`, registers it under **Python projects**, and prepares the bound execution bundle. It does not change old examples, the current canvas, or existing runs. If `python` is unavailable, add `--python` followed by an existing interpreter path.
+
+With a running backend it registers through the API; otherwise it saves the default registration file, which becomes visible when the backend starts. The output includes the project ID, actual interpreter, and bundle directory:
+
+| Setting              | Value                                                |
+| -------------------- | ---------------------------------------------------- |
+| Project name         | `Cooling Lab / 冷却系统示例`                         |
+| Project directory    | This repository's `backend/examples/cooling_project` |
+| Entry module         | `cooling_lab.api`                                    |
+| Session class        | `CoolingSession`                                     |
+| Business interpreter | The full `.venv` path printed by preparation         |
+
+Open **Python projects**, click **Reload projects**, and select this project. Eleven public interfaces should appear. Call `summary` with defaults: temperature is 85 C. In the same debug session, call `restart_fan`, then `summary` again: temperature is 42 C and the repair list contains `restart_fan`. This checks instance reuse and asynchronous calls before running the diagram.
+
+### 7.3 Import and run the workflow
+
+Choose **Import project directory** and select `backend/examples/cooling_project`, saving existing canvas work first. The main relationships are:
+
+```text
+Initial overheat investigation
+  ├─ Yes → air_sample → filter judgment → conclusion → clean → verify/report ─┐
+  ├─ Yes → fan_sample → speed judgment  → conclusion → restart → verify/report ┼→ Problem Solved
+  └─ No  → normal conclusion → normal report ─────────────────────────────────┘
+```
+
+Airflow and fan acquisition are independent siblings under the same Yes group. Each judgment depends on its own acquisition and cannot skip it.
+
+| Node ID                       | Method                          | Key relationship                                        |
+| ----------------------------- | ------------------------------- | ------------------------------------------------------- |
+| `Overheat`                    | `is_overheated`                 | Yes starts both paths; No records a healthy result      |
+| `air_sample`                  | `collect_air`                   | Returns a native `Measurement`                          |
+| `FilterCheck`                 | `filter_is_blocked`             | Parameter `air_sample` receives that original object    |
+| `CleanFilter`, `FilterReport` | `clean_filter`, `report_filter` | Finish cleaning before reacquiring and reporting        |
+| `fan_sample`                  | `collect_fan`                   | Returns the fan path's own native object                |
+| `FanCheck`                    | `fan_is_faulty`                 | Parameter `fan_sample` receives its acquisition object  |
+| `RestartFan`, `FanReport`     | `restart_fan`, `report_fan`     | Await restart before reacquiring; `None` is not failure |
+| `NormalReport`                | `report_healthy`                | Record healthy equipment without repairs                |
+
+Bindings already select `cooling_lab.api` and `CoolingSession`. Repairs and reports keep using this run's device instance; internal state needs no duplicate inputs.
+
+Preparation already exported the bundle, so the first run needs no additional export. Keep the backend, page, and Java service from section 2 running, and start this worker from the repository root:
+
+```powershell
+backend/.local/venv/Scripts/python.exe backend/flowable_worker.py backend/.local/cooling-example-parallel/bindings.json
+```
+
+Open **Flowable execution** and click **Reload startup inputs**. Set `scenario` to `fan` and `device_id` to `COOL-01`, or leave both blank for defaults. Click **Deploy and start**. This creates a new business instance, separate from the debug session you already repaired.
+
+Refresh results. The filter hypothesis should end as unmatched; the fan path restarts the fan, verifies cooling, and reaches Problem Solved. Its chart falls from 85 C to 42 C. The failed sibling does not trigger the fan path again.
+
+### 7.4 Try different outcomes
+
+Start a new workflow with each `scenario`:
+
+| `scenario`  | Initial state                          | Expected parallel outcome                                  |
+| ----------- | -------------------------------------- | ---------------------------------------------------------- |
+| `fan`       | Low fan speed                          | Filter path fails; fan restart succeeds and charts cooling |
+| `filter`    | Blocked filter                         | Fan path fails; cleaning succeeds and charts cooling       |
+| `healthy`   | Normal initial temperature             | Entry takes No; no cleaning or restart                     |
+| `unknown`   | Overheat with normal airflow and speed | Neither path matches; the investigation fails              |
+| `fan_stuck` | Seized fan                             | Restart raises the original exception; no Problem Solved   |
+
+`unknown` means that diagnostic logic found no cause. `fan_stuck` means a business method failed; expand failure details to see the original traceback in `simulator.py`.
+
+Each scenario presets at most one recoverable fault, so resolving one cause is not presented as resolving several simultaneous faults. Real combined faults need a separate verification and recovery strategy.
+
+### 7.5 Run the serial version
+
+After finishing active example runs, prepare serial mode:
+
+```powershell
+pnpm exec node scripts/prepare-cooling-example.mjs --mode serial
+```
+
+Use **Import BPMN or workflow.json** to import `backend/.local/cooling-example-serial/source.bpmn`, then start the matching worker:
+
+```powershell
+backend/.local/venv/Scripts/python.exe backend/flowable_worker.py backend/.local/cooling-example-serial/bindings.json
+```
+
+Changing only the worker while keeping the parallel canvas will not work: the imported diagram and `bindings.json` must match.
+
+With `scenario=fan`, the filter path fails first, then the fan path succeeds. With `scenario=filter`, the first path succeeds and pauses the fan path. **Finish investigation** leaves the fan nodes unexecuted; **Continue remaining paths** starts fan checks without cleaning the filter again.
+
+### 7.6 Change or move the project
+
+`assets/limits.csv` is the file Python actually reads, not a separate display-only copy. After editing it, prepare the bundle and reimport the diagram for new runs to keep its attached reference in sync. Do not expect configuration edits to update an active session automatically.
+
+You can copy the complete project elsewhere or to another computer. Run preparation there again to update the project registration and interpreter path. Portable diagnostic export does not contain Python source or `.venv`; distribute the business project as well.
+
+## 8. Extend the example with more investigation paths
+
+### 8.1 Node content and connections
 
 Every diagnostic node has a name and details. New nodes have no default names. Details generate a summary that fits the node dimensions; manual names are preserved, while automatic summaries adjust when resized. **General → Node type** is read-only. For conclusions, a name entered without content is copied into the conclusion content, and content entered without a name generates a name summary.
 
@@ -250,7 +380,7 @@ The main connection sequence is Start → Investigation; Investigation Action �
 
 Investigation uses a diamond, Investigation Action an upright trapezoid, Conclusion a rectangle, Remediation an inverted trapezoid, Jump an ellipse, Problem Solved a triangle, and Escalation a star. Deep Diagnosis retains its existing style. Resize with the node border. Validation reports illegal connections and missing content.
 
-### 7.2 Yes/No groups and dependencies
+### 8.2 Yes/No groups and dependencies
 
 An investigation can have Yes and No output groups, each connecting to multiple distinct nodes. Either group may be absent. Change a connection's canvas label to `是`, `否`, `yes`, or `no` to change its group; English is case-insensitive. Other labels are rejected.
 
@@ -258,7 +388,7 @@ Connect independent methods as siblings in the same group after their common pre
 
 A judgment with no matching successor records a failed path. This is a normal diagnostic outcome, distinct from a Python exception, which is a task-execution error.
 
-### 7.3 Parallel and serial modes
+### 8.3 Parallel and serial modes
 
 Select the process and choose its investigation mode:
 
@@ -273,15 +403,15 @@ In serial mode, select a connection and enter a number under **Execution order**
 
 Parallel nodes may call methods on one object simultaneously. The business project controls whether concurrent access is valid and how equipment access or shared state is protected.
 
-## 8. Handle human waits, rechecks, and interruptions
+## 9. Handle human waits, rechecks, and interruptions
 
-### 8.1 Request a human decision
+### 9.1 Request a human decision
 
 Enable **Human decision / confirmation** on an investigation. With no Python interface it waits directly; with an interface it executes that interface before requesting review. This switch belongs only to investigations that make a judgment and choose a branch.
 
 When the workflow waits, refresh **Flowable execution**, inspect the evidence and assessment instructions, select Yes or No, and continue. Escalation also waits for human review. Serial success with remaining paths offers **Finish investigation** and **Continue remaining paths**.
 
-### 8.2 Request human help for unimplemented judgment code
+### 9.2 Request human help for unimplemented judgment code
 
 Engineers can explicitly request human handling with the supplied decision component:
 
@@ -299,28 +429,28 @@ Only an unimplemented component or an explicit `NotImplementedError` handled by 
 
 The worker supplies the import path for `diagnostic_components`. Add this repository's `backend` to the import path when running business code independently. Optional request choices should be Yes/No groups or match all successor flow IDs. This protocol applies only to investigation nodes.
 
-### 8.3 Recheck an earlier node
+### 9.3 Recheck an earlier node
 
 During an investigation or escalation human wait, select a **previously executed node**, provide a reason and optional recheck input variables, then click **Recheck**. The system retains previous history, results, and the reason; it clears results requiring recomputation and runs again from the selected node.
 
 Rechecking does not undo equipment actions or restore an older Python object state. It reruns methods on the current instance, and actions may occur again. The current node, unvisited nodes, and completed instances are not arbitrary recheck targets. Running automatic tasks do not expose this intervention. At a serial-success pause, choose continue or finish rather than recheck.
 
-### 8.4 Stop, restart, and update
+### 9.4 Stop, restart, and update
 
 Flowable saves progress and display results, not the entire Python memory. Restarting the worker or business subprocess loses its device instances. Continuing an old workflow then reports session loss; neither `repr` nor historical display data can reconstruct those objects.
 
 Account for active investigations before updating business code. Reload interfaces after editing code and start the updated worker for new runs; restarting loses its current sessions. Changes to bindings, connections, groups, or order also require a new execution bundle. Old instances still need their matching old worker. The worker releases business sessions after observing process completion; unfinished failed processes retain sessions for subsequent handling.
 
-## 9. Save workflows and reference files
+## 10. Save workflows and reference files
 
-### 9.1 Choose a format for your purpose
+### 10.1 Choose a format for your purpose
 
 | What you need                                                     | Command                                          | Output                                           |
 | ----------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------ |
 | Diagnostic logic and resources for moving and restoring           | **Export diagnostic project**                    | ZIP containing `workflow.json` and `assets/`     |
 | Complete editing state, including layout, size, colors, and fonts | **Export complete BPMN with layout and styles**  | Full BPMN editor snapshot                        |
 | Deployment to Flowable                                            | **Flowable execution → Export execution bundle** | The three execution files described in section 6 |
-| Offline Python code for further implementation                    | **Export Python skeleton**                       | Code and resources described in section 10       |
+| Offline Python code for further implementation                    | **Export Python skeleton**                       | Code and resources described in section 11       |
 
 A portable diagnostic project's main definition is version 4 `workflow.json`. It keeps node content, bindings, connections, Yes/No groups, serial order, and investigation mode. It omits layout, dimensions, colors, and fonts. Resources live separately in the directory; JSON records relative paths, embeds no file data, and adds no duplicate BPMN file.
 
@@ -328,7 +458,7 @@ Move the complete directory together. Restore it with **Import project directory
 
 These exports do not package the business Python project, interpreter, or local registrations. On another computer, prepare the business project and dependencies, register it again, and start the required services.
 
-### 9.2 Add and open reference files
+### 10.2 Add and open reference files
 
 Select a file under a node's **Reference file**. Common images, PDFs, text, CSV, Markdown, JSON, and some audio/video can be previewed in the UI, depending on browser support. Active documents such as HTML, SVG, and XML, and other formats, are opened through the Windows local service in a local application.
 
@@ -338,13 +468,13 @@ Each reference file is limited to 50 MiB. Combined deployment/start requests are
 
 If business Python code needs the same file, read it from the appropriate project path and deploy it with that project. Attaching it to a node does not automatically add a file argument or modify paths in Python code.
 
-## 10. Alternative execution and advanced settings
+## 11. Alternative execution and advanced settings
 
-### 10.1 Structural simulation
+### 11.1 Structural simulation
 
 **Start structural simulation** only animates BPMN tokens. It permits nodes without Python bindings and does not validate functions, parameters, real judgments, or diagnostic serial-success pauses. Use **Flowable execution** to check business behavior.
 
-### 10.2 Export an offline Python skeleton
+### 11.2 Export an offline Python skeleton
 
 Use **Export Python skeleton** when engineers will implement business logic from the diagram's content. It retains the same `workflow.json` and resources, adding a runner and business modules. It does not automatically execute saved external-module bindings.
 
@@ -376,7 +506,7 @@ The offline skeleton also supports ordinary nested subprocesses and exclusive se
 
 Regenerate into a new directory and migrate implementations by stable node ID to avoid overwriting business code. `node_N` numbering changes with export order.
 
-### 10.3 Other worker and service settings
+### 11.3 Other worker and service settings
 
 | Situation                                              | Configuration                                                                                                                             |
 | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
@@ -392,7 +522,7 @@ The current Flowable compiler supports one top-level process, one plain start ev
 
 Legacy explicit mappings still support `$NodeID.field`, `$variable`, `$` for all variables, dictionary/array paths, and `$$` for a literal dollar sign. New integrations normally do not need them.
 
-## 11. Find the right place to troubleshoot
+## 12. Find the right place to troubleshoot
 
 | Symptom                                 | First check                                                                  | Next step                                                                                        |
 | --------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |

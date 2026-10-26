@@ -12,6 +12,8 @@
 
 Read the [English user guide](docs/USER-GUIDE.md) / [中文用户手册](docs/USER-GUIDE.zh-CN.md) for existing-project registration, interpreters, discovery, node binding, automatic variable matching, Flowable/workers, human fallback, rechecks, export and troubleshooting.
 
+The [cooling-system project](backend/examples/cooling_project/README.md) includes an independent Python package, a bound workflow, shared CSV resources, and five scenarios. Run `pnpm exec node scripts/prepare-cooling-example.mjs` to create its environment, register it, and prepare the execution bundle.
+
 **Enable structure simulation** only animates BPMN tokens; it does not call Python. Real execution uses **Flowable Execution** with a separately started worker. Exported Python scaffolds default to manual fallback for unimplemented business logic and do not automatically execute saved external-module bindings.
 
 ## Online Preview
