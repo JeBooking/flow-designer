@@ -487,8 +487,8 @@ defineExpose({
       <p>
         {{
           $tu(
-            '此处仅列出会话类或工厂的初始化参数。节点方法的输入可能来自上游结果，额外启动数据可按名称添加。数字、布尔值、null、数组和对象自动识别，其他输入作为文本；空字符串请填双引号。',
-            'Only session class or factory initialization parameters are listed here. Method inputs may come from upstream results; add any extra startup data by name. Numbers, booleans, null, arrays and objects are parsed automatically; other input is text. Enter double quotes for an empty string.',
+            '此处列出工程业务对象的初始化参数。节点方法的输入可能来自上游结果，额外启动数据可按名称添加。数字、布尔值、null、数组和对象自动识别，其他输入作为文本；空字符串请填双引号。',
+            'Initialization parameters for the project business object are listed here. Method inputs may come from upstream results; add any extra startup data by name. Numbers, booleans, null, arrays and objects are parsed automatically; other input is text. Enter double quotes for an empty string.',
           )
         }}
       </p>

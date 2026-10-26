@@ -323,14 +323,14 @@ const example = () => {
       <el-form-item :label="$tu('入口模块', 'Entry module')" required
         ><el-input v-model="registration.module" placeholder="plotting.api"
       /></el-form-item>
-      <el-form-item :label="$tu('会话类或工厂（可选）', 'Session class or factory (optional)')">
+      <el-form-item :label="$tu('业务对象入口（可选）', 'Business object entry (optional)')">
         <el-input v-model="registration.factory" placeholder="Device / create_session" />
       </el-form-item>
       <p>
         {{
           $tu(
-            '留空使用模块普通函数。填写类名或工厂路径后，每次排查创建一个实例，同次排查的接口共享其原生对象。无返回类注解的工厂会在接入时临时初始化一次以发现接口。',
-            'Leave blank for module functions. A class or factory creates one instance per investigation, sharing native objects between its calls. Factories without a return class annotation are initialized temporarily during registration to discover methods.',
+            '填写工程的主业务类名，或创建业务对象的函数名，例如 Device 或 create_session。入口只需在此配置，节点选择工程和接口即可。同一次排查复用该对象，不同排查分别创建。使用模块普通函数时留空。没有返回类注解的创建函数会在接入时临时调用一次，以发现接口。',
+            'Enter the main business class or a function that creates it, such as Device or create_session. Configure it here once; nodes only select the project and interface. Each investigation reuses its own object. Leave blank for module functions. Creator functions without a return class annotation are called once during registration to discover interfaces.',
           )
         }}
       </p>
