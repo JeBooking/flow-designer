@@ -6,6 +6,10 @@ Register project directory `backend/examples/session_project`, module `device_se
 and factory `Device`. Use the existing Python 3.9+ environment; no extra dependencies
 are needed. `create_session` is an alternative factory returning the same class.
 
+Follow the [user guide](../../../docs/USER-GUIDE.md) for the complete walkthrough.
+This directory includes `workflow.json` and `assets/voltage-reference.txt`. Choose
+**Import project directory** and select this folder to restore the bound example workflow.
+
 In **Python Projects**, call `collect`, `restore`, then `verify` in the same debug
 session. The initial reading is 22.6 V; verification after recovery returns `True`.
 Reset the session and collect again to get the initial reading. These actions are simulated.

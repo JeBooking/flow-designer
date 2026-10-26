@@ -1,0 +1,14 @@
+设备会话示例：所有采集与恢复均为模拟，不操作真实设备。
+
+Device 的默认设备编号为 M01，默认电压阈值为 24 V。
+首次采集得到 22.6 V；模拟恢复后的采集得到 24.5 V。
+is_low(reading) 判断电压是否低于阈值。
+restore_and_verify() 执行恢复并异步复核；复核失败时抛出 RuntimeError。
+
+本流程只演示“电压偏低后尝试恢复”的思路。
+排查仅配置“是”出口；结果不匹配出口时，该思路失败。
+
+This example simulates acquisition and recovery; it does not operate real equipment.
+Defaults: device M01, threshold 24 V. Voltage is 22.6 V before recovery and 24.5 V after it.
+restore_and_verify() raises RuntimeError if verification fails.
+Only the low-voltage recovery path is modeled. An unmatched branch ends that path as failed.

@@ -5,6 +5,9 @@
 登记目录 `backend/examples/session_project`、入口模块 `device_session`、工厂 `Device`。
 使用现有 Python 3.9+ 环境，无需额外依赖。也可将 `create_session` 登记为工厂，返回同一类实例。
 
+完整步骤见[用户手册](../../../docs/USER-GUIDE.zh-CN.md)。目录内已提供 `workflow.json` 和
+`assets/voltage-reference.txt`；在平台选择“导入项目目录”并选中本目录，即可恢复带绑定的示例流程。
+
 在“Python 项目”的同一调试会话依次调用 `collect`、`restore`、`verify`。
 初次采集为 22.6 V，恢复后的复核返回 `True`。重置会话后再次采集回到初始值。
 这些设备动作均为模拟。
