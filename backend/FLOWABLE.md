@@ -162,7 +162,9 @@ Factory functions with a return-class annotation can also be inspected without i
 An unannotated factory is temporarily called with defaults; required inputs need a return-class
 annotation. Leave factory empty for existing module functions and `__all__` exports.
 
-On each non-final node select the module, factory and method/function. Signature matching
+Configure the business object entry once in **Python projects**. On each non-final node,
+select that registered project and its method/function; the entry is carried into the binding
+automatically. Existing XML and JSON bindings remain supported. Signature matching
 supplies startup variables, complete raw results by node ID and unique dictionary fields,
 preserving defaults, positional-only arguments and `async def`. No parameter expressions
 are required. Legacy mappings still support `$Inspect.data`, `$` (all variables), dictionary

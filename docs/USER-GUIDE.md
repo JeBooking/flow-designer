@@ -86,7 +86,7 @@ Click **Python projects** in the toolbar and enter:
 | Project name (optional)             | Device voltage example             | A recognizable display name                                                                            |
 | Project directory                   | `backend/examples/session_project` | Business project root; relative paths start at this repository's root                                  |
 | Entry module                        | `device_session`                   | An importable Python module name, not a file path                                                      |
-| Session class or factory (optional) | `Device`                           | The class whose methods this example calls                                                             |
+| Business object entry (optional)    | `Device`                           | The main business class, configured once when registering the project                                  |
 | Python executable                   | Leave blank                        | Uses the backend interpreter; for your own project, supply its actual virtual-environment `python.exe` |
 
 Click **Register project**. The interface list should contain `ready`, `collect`, `is_low`, `restore`, `verify`, and `restore_and_verify`.
@@ -112,11 +112,11 @@ Debugging calls the selected interface, not the complete diagram, and uses an in
 
 ### 3.3 Replace the example with your own project
 
-Suppose `Device` is defined or exported in `D:/equipment/diagnostics/machine/api.py`. Set the project directory to `D:/equipment/diagnostics`, entry module to `machine.api`, session class or factory to `Device`, and executable to the interpreter actually used by that project.
+Suppose `Device` is defined or exported in `D:/equipment/diagnostics/machine/api.py`. Set the project directory to `D:/equipment/diagnostics`, entry module to `machine.api`, business object entry to `Device`, and executable to the interpreter actually used by that project. Configure these entries once during project registration; do not repeat them on individual nodes.
 
 There are three entry styles:
 
-| Existing interface                                              | Session class or factory field | How it is called                                                                 |
+| Existing interface                                              | Business object entry field    | How it is called                                                                 |
 | --------------------------------------------------------------- | ------------------------------ | -------------------------------------------------------------------------------- |
 | Ordinary module functions                                       | Leave blank                    | Call the module's public functions                                               |
 | An existing class, such as `Device`                             | Class name                     | Create an instance per investigation and call its public methods                 |
@@ -149,7 +149,9 @@ Entry investigation: ready ──Yes──→ Acquisition action: collect
                                       Problem Solved
 ```
 
-Select nodes to inspect the following bindings. Every business node uses module `device_session` and class `Device`. Leave the job topic blank.
+Select a node, choose the registered Device voltage example under **Python project**, and select the method below under **Interface to call**. The platform automatically uses the registered `device_session` module and `Device` entry. Nodes no longer have a Session class or factory field. Leave the job topic blank.
+
+Existing workflow bindings are preserved. If the project is marked “not registered,” register the corresponding entry under **Python projects**, then reopen the node's project list to load its interfaces. Clearing the project also clears the node's interface binding; switching projects requires selecting an interface again. These changes support undo, redo, and export.
 
 | Node ID      | Node type            | Interface            | What happens                                                                               |
 | ------------ | -------------------- | -------------------- | ------------------------------------------------------------------------------------------ |
@@ -160,7 +162,7 @@ Select nodes to inspect the following bindings. Every business node uses module 
 | `Repair`     | Remediation          | `restore_and_verify` | Restore the same instance, verify asynchronously, and raise an error if verification fails |
 | `Solved`     | Problem Solved       | None                 | Mark this recovery path complete                                                           |
 
-Bind investigations under **Execution and human decisions**, and action/remediation nodes under **Interface binding**. A text-only conclusion needs no interface. Problem Solved and Escalation nodes do not bind business functions. Select `collect` as the function name; do not enter a call expression such as `Device.collect()`.
+Bind investigations under **Execution and human decisions**, and action/remediation nodes under **Interface binding**. A text-only conclusion needs no interface. Problem Solved and Escalation nodes do not bind business functions. Select `collect` under **Interface to call**; do not enter a call expression such as `Device.collect()`.
 
 To draw the example manually, use the same node types and bindings. The acquisition node's **General → ID** must be `reading`, matching the parameter in the example's judgment method. Choose your own display names or let details generate them.
 
@@ -178,7 +180,7 @@ device.is_low(reading)
 # When the judgment succeeds, call async restore_and_verify on this instance.
 ```
 
-Nodes using the same module and class/factory reuse the same instance within an investigation. Existing Python methods maintain its attributes; you do not configure `latest`, `attempts`, or `recovered` again as platform parameters. Another investigation gets its own process and instance.
+Nodes selecting the same registered project reuse its business object within an investigation. That object may internally manage sensors, controllers, and other objects; the Python project organizes them without per-node configuration. Existing Python methods maintain its attributes; you do not configure `latest`, `attempts`, or `recovered` again as platform parameters. Another investigation gets its own process and instance.
 
 For inputs declared in a function signature, the platform searches in this order:
 
@@ -287,7 +289,7 @@ With a running backend it registers through the API; otherwise it saves the defa
 | Project name         | `Cooling Lab / 冷却系统示例`                         |
 | Project directory    | This repository's `backend/examples/cooling_project` |
 | Entry module         | `cooling_lab.api`                                    |
-| Session class        | `CoolingSession`                                     |
+| Business object entry | `CoolingSession`                                    |
 | Business interpreter | The full `.venv` path printed by preparation         |
 
 Open **Python projects**, click **Reload projects**, and select this project. Eleven public interfaces should appear. Call `summary` with defaults: temperature is 85 C. In the same debug session, call `restart_fan`, then `summary` again: temperature is 42 C and the repair list contains `restart_fan`. This checks instance reuse and asynchronous calls before running the diagram.
