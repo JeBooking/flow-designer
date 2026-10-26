@@ -183,10 +183,10 @@ const reviewInstructions = computed(() =>
     { label: translateUi('动作内容', 'Action'), value: review.value.instructions?.actionText },
   ].filter((item) => item.value),
 )
-const selectedExampleId = ref(diagnosticExamples[0].id)
-const selectedExample = computed(
-  () =>
-    diagnosticExamples.find((item) => item.id === selectedExampleId.value) || diagnosticExamples[0],
+const currentDiagramId = 'current-diagram'
+const selectedExampleId = ref(currentDiagramId)
+const selectedExample = computed(() =>
+  diagnosticExamples.find((item) => item.id === selectedExampleId.value),
 )
 const loadedExampleId = ref('')
 const loadedExample = computed(() =>
@@ -201,6 +201,12 @@ const loadedExample = computed(() =>
   }),
 )
 const selectedScenario = ref('')
+const onExampleChange = () => {
+  if (selectedExampleId.value !== currentDiagramId) return
+  // 切回用户画布时不再注入内置示例的场景变量，保留用户填写的启动输入。
+  loadedExampleId.value = ''
+  selectedScenario.value = ''
+}
 const applyScenario = (scenario: string) => {
   selectedScenario.value = scenario
 }
@@ -235,6 +241,8 @@ function download(files: Record<string, string>) {
 }
 const loadDemo = () =>
   perform(async () => {
+    const example = selectedExample.value
+    if (!example) return
     await ElMessageBox.confirm(
       translateUi(
         '载入示例会替换当前画布，请先导出需要保留的流程。',
@@ -243,13 +251,13 @@ const loadDemo = () =>
       translateUi('载入诊断示例', 'Load diagnostic example'),
       { type: 'warning' },
     )
-    await props.modeler.importXML(selectedExample.value.xml)
-    loadedExampleId.value = selectedExample.value.id
+    await props.modeler.importXML(example.xml)
+    loadedExampleId.value = example.id
     additionalInputs.value = []
     Object.keys(startupValues).forEach((key) => delete startupValues[key])
     advancedVariables.value = false
     await reloadStartupInputs()
-    selectedScenario.value = selectedExample.value.scenarios[0]
+    selectedScenario.value = example.scenarios[0]
     applyScenario(selectedScenario.value)
     const canvas = props.modeler.get<Canvas>('canvas')
     canvas.zoom('fit-viewport')
@@ -420,7 +428,11 @@ defineExpose({
   >
     <el-form label-position="top">
       <el-form-item :label="$tu('诊断示例', 'Diagnostic example')">
-        <el-select v-model="selectedExampleId" style="width: 100%">
+        <el-select v-model="selectedExampleId" style="width: 100%" @change="onExampleChange">
+          <el-option
+            :value="currentDiagramId"
+            :label="$tu('当前绘制的流程图', 'Current diagram')"
+          />
           <el-option
             v-for="example in diagnosticExamples"
             :key="example.id"
@@ -430,9 +442,19 @@ defineExpose({
         </el-select>
       </el-form-item>
     </el-form>
-    <p>{{ $tu(selectedExample.description, selectedExample.descriptionEn) }}</p>
+    <p v-if="selectedExample">
+      {{ $tu(selectedExample.description, selectedExample.descriptionEn) }}
+    </p>
+    <p v-else>
+      {{
+        $tu(
+          '使用当前画布上的节点、连线和函数配置，无需载入示例。执行时读取画布的最新内容。',
+          'Use the nodes, connections and function bindings on the current canvas. No example needs to be loaded; execution reads the latest diagram.',
+        )
+      }}
+    </p>
     <el-space wrap>
-      <el-button :disabled="busy" @click="loadDemo">{{
+      <el-button v-if="selectedExample" :disabled="busy" @click="loadDemo">{{
         $tu('载入诊断示例', 'Load diagnostic example')
       }}</el-button>
       <el-button :disabled="busy" @click="exportBundle">{{
