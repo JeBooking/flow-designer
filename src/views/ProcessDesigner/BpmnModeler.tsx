@@ -5,6 +5,7 @@ import type EventBus from 'diagram-js/lib/core/EventBus'
 import type { Linting } from 'bpmn-js-bpmnlint'
 import type ContextPad from 'diagram-js/lib/features/context-pad/ContextPad'
 import type Selection from 'diagram-js/lib/features/selection/Selection'
+import type Canvas from 'diagram-js/lib/core/Canvas'
 import BpmnModeler from 'bpmn-js/lib/Modeler'
 import GridLineModule from 'diagram-js-grid-bg'
 // import GridModule from 'diagram-js-grid'
@@ -36,6 +37,7 @@ export default defineComponent({
   setup(props, { emit }) {
     const canvasRef = ref<HTMLDivElement>()
     const modeler = ref<BpmnModeler>()
+    let resizeObserver: ResizeObserver | undefined
     watch(I18n.global.locale, () => {
       // BPMN 菜单和校验覆盖层不在 Vue 模板内，需要通知它们重新翻译。
       modeler.value?.get<EventBus>('eventBus').fire('i18n.changed')
@@ -94,11 +96,18 @@ export default defineComponent({
         },
         ...props.options,
       })
+      // 工具栏换行和属性栏收起都会改变画布尺寸，需要同步刷新 bpmn-js 的视口缓存。
+      resizeObserver = new ResizeObserver(() => modeler.value?.get<Canvas>('canvas').resized())
+      resizeObserver.observe(canvasRef.value!)
       /*const linting = modeler.value.get<any>('linting');
       linting.toggle(true);
       console.log(linting.isActive())
       console.log(linting.getLinterConfig())*/
       emit('modeler-ready', modeler.value)
+    })
+    onBeforeUnmount(() => {
+      resizeObserver?.disconnect()
+      modeler.value?.destroy()
     })
     return () => <div class="canvas" ref={canvasRef} />
   },

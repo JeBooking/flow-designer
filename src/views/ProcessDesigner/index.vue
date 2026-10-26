@@ -141,6 +141,7 @@ const isDark = customRef<boolean>((track, trigger) => {
 const rightArrow = ref(true)
 const issuesList = ref<ElementIssue[]>([])
 const modeler = ref<BpmnModeler>()
+const modelerRevision = ref(0)
 const injector = ref<Injector>()
 const fileRef = ref<HTMLInputElement>()
 const directoryRef = ref<HTMLInputElement>()
@@ -330,14 +331,14 @@ const layout = async () => {
     modeler.value?.importXML(diagramWithLayoutXML)
   }
 }
-const restart = () => {
+const restart = async () => {
   modeler.value?.get<CommandStack>('commandStack').clear()
   const xml = EmptyXML(props.id || nextId('Process_'), props.name || t('ui.newProcess'))
-  modeler.value?.importXML(props.xml || xml)
+  await modeler.value?.importXML(props.xml || xml)
   modeler.value?.get<Canvas>('canvas')?.zoom('fit-viewport')
 }
 const loadXml = (xml: string) => {
-  modeler.value?.importXML(xml)
+  return modeler.value?.importXML(xml)
 }
 const getXml = async () => {
   const res = await modeler.value?.saveXML({ format: true, preamble: true })
@@ -345,12 +346,13 @@ const getXml = async () => {
 }
 const modelerReady = async (bpmnModeler: BpmnModeler) => {
   modeler.value = bpmnModeler
+  modelerRevision.value++
   injector.value = bpmnModeler.get<Injector>('injector')
   bpmnModeler.on('canvas.viewbox.changed', () => notifyZoomChanged?.())
   modeler.value?.on<{ issues: Issues }>('linting.completed', ({ issues }) => {
     issuesList.value = Object.values(issues).flat()
   })
-  restart()
+  await restart()
   // await bpmnModeler.createDiagram()
 }
 const validate = async () => {
@@ -400,8 +402,8 @@ defineExpose({
       @change="importDirectory"
     />
     <el-header class="design-header">
-      <el-text tag="b" :size="'large'">{{ $t('ui.title') }}</el-text>
-      <el-space>
+      <el-text tag="b" size="large" class="design-title">{{ $t('ui.title') }}</el-text>
+      <div class="header-actions" role="toolbar" :aria-label="$tu('编辑器设置', 'Editor settings')">
         <el-button @click="flowableRef?.open()">{{
           $tu('Flowable 执行', 'Flowable execution')
         }}</el-button>
@@ -415,6 +417,7 @@ defineExpose({
           active-value="top"
           inactive-value="left"
           v-model="labelPosition"
+          :aria-label="$tu('切换表单标签位置', 'Switch form label position')"
         />
         <el-switch
           inline-prompt
@@ -423,8 +426,15 @@ defineExpose({
           active-value="default"
           inactive-value="small"
           v-model="formSize"
+          :aria-label="$tu('切换表单密度', 'Switch form density')"
         />
-        <el-switch inline-prompt :active-icon="Moon" :inactive-icon="Sunny" v-model="isDark" />
+        <el-switch
+          inline-prompt
+          :active-icon="Moon"
+          :inactive-icon="Sunny"
+          v-model="isDark"
+          :aria-label="$tu('切换明暗主题', 'Toggle color theme')"
+        />
         <el-switch
           v-model="language"
           inline-prompt
@@ -448,133 +458,167 @@ defineExpose({
         >
           <Iconify class="el-icon--left" icon="ri:gitee-fill" width="25px" />
         </el-link>
-      </el-space>
+      </div>
     </el-header>
-    <el-container style="overflow-y: auto">
-      <el-container style="position: relative">
-        <el-header class="design-inner__header">
-          <el-space :size="10">
-            <el-button-group size="small">
-              <el-tooltip placement="top" :content="$t('ui.import')">
-                <el-button
-                  :icon="FolderOpened"
-                  :loading="importing"
-                  :aria-label="$tu('导入 BPMN 或 workflow.json', 'Import BPMN or workflow.json')"
-                  @click="fileRef?.click()"
-                />
-              </el-tooltip>
-              <el-button :disabled="importing" @click="directoryRef?.click()">{{
-                $tu('导入项目目录', 'Import project directory')
-              }}</el-button>
-              <el-tooltip
-                placement="top"
-                :content="
-                  $tu(
-                    '导出完整 BPMN（含布局与样式）',
-                    'Export complete BPMN with layout and styles',
-                  )
-                "
-              >
-                <el-button
-                  :icon="Download"
-                  size="small"
-                  @click="exportXml"
-                  :aria-label="
-                    $tu(
-                      '导出完整 BPMN（包含布局与样式）',
-                      'Export complete BPMN with layout and styles',
-                    )
-                  "
-                />
-              </el-tooltip>
-              <el-button @click="exportDefinition">{{
-                $tu('导出诊断项目', 'Export diagnostic project')
-              }}</el-button>
-              <el-button :loading="exportingCode" @click="exportCode">
-                {{ $tu('导出 Python 骨架', 'Export Python skeleton') }}
-              </el-button>
-            </el-button-group>
+    <el-header class="design-inner__header">
+      <div
+        class="toolbar-actions"
+        role="toolbar"
+        :aria-label="$tu('流程工具栏', 'Workflow toolbar')"
+      >
+        <div class="toolbar-files" role="group" :aria-label="$tu('流程文件', 'Workflow files')">
+          <el-tooltip placement="top" :content="$t('ui.import')">
+            <el-button
+              :icon="FolderOpened"
+              size="small"
+              :loading="importing"
+              :aria-label="$tu('导入 BPMN 或 workflow.json', 'Import BPMN or workflow.json')"
+              @click="fileRef?.click()"
+            />
+          </el-tooltip>
+          <el-button size="small" :disabled="importing" @click="directoryRef?.click()">{{
+            $tu('导入项目目录', 'Import project directory')
+          }}</el-button>
+          <el-tooltip
+            placement="top"
+            :content="
+              $tu('导出完整 BPMN（含布局与样式）', 'Export complete BPMN with layout and styles')
+            "
+          >
+            <el-button
+              :icon="Download"
+              size="small"
+              @click="exportXml"
+              :aria-label="
+                $tu(
+                  '导出完整 BPMN（包含布局与样式）',
+                  'Export complete BPMN with layout and styles',
+                )
+              "
+            />
+          </el-tooltip>
+          <el-button size="small" @click="exportDefinition">{{
+            $tu('导出诊断项目', 'Export diagnostic project')
+          }}</el-button>
+          <el-button size="small" :loading="exportingCode" @click="exportCode">
+            {{ $tu('导出 Python 骨架', 'Export Python skeleton') }}
+          </el-button>
+        </div>
 
-            <el-button-group size="small">
-              <el-tooltip placement="top" :content="$t('ui.undo')">
-                <el-button @click="undo">
-                  <iconify icon="ic:baseline-undo" :size="3" />
-                </el-button>
-              </el-tooltip>
-              <el-tooltip placement="top" :content="$t('ui.redo')">
-                <el-button @click="redo">
-                  <iconify icon="ic:baseline-redo" :size="3" />
-                </el-button>
-              </el-tooltip>
-            </el-button-group>
+        <el-button-group size="small">
+          <el-tooltip placement="top" :content="$t('ui.undo')">
+            <el-button @click="undo" :aria-label="$t('ui.undo')">
+              <iconify icon="ic:baseline-undo" :size="3" />
+            </el-button>
+          </el-tooltip>
+          <el-tooltip placement="top" :content="$t('ui.redo')">
+            <el-button @click="redo" :aria-label="$t('ui.redo')">
+              <iconify icon="ic:baseline-redo" :size="3" />
+            </el-button>
+          </el-tooltip>
+        </el-button-group>
 
-            <el-button-group size="small">
-              <el-tooltip :content="$t('ui.zoomIn')" placement="top-start">
-                <el-button :icon="ZoomIn" @click="zoom += 0.1" :disabled="zoom >= 1.7"></el-button>
-              </el-tooltip>
-              <el-tooltip :content="$t('ui.resetZoom')" placement="top-start">
-                <el-button @click="resetZoom"> {{ (zoom * 100).toFixed(0) }}%</el-button>
-              </el-tooltip>
-              <el-tooltip :content="$t('ui.zoomOut')" placement="top-start">
-                <el-button :icon="ZoomOut" @click="zoom -= 0.1" :disabled="zoom <= 0.5"></el-button>
-              </el-tooltip>
-            </el-button-group>
+        <el-button-group size="small">
+          <el-tooltip :content="$t('ui.zoomIn')" placement="top-start">
+            <el-button
+              :icon="ZoomIn"
+              @click="zoom += 0.1"
+              :disabled="zoom >= 1.7"
+              :aria-label="$t('ui.zoomIn')"
+            />
+          </el-tooltip>
+          <el-tooltip :content="$t('ui.resetZoom')" placement="top-start">
+            <el-button @click="resetZoom" :aria-label="$t('ui.resetZoom')">
+              {{ (zoom * 100).toFixed(0) }}%</el-button
+            >
+          </el-tooltip>
+          <el-tooltip :content="$t('ui.zoomOut')" placement="top-start">
+            <el-button
+              :icon="ZoomOut"
+              @click="zoom -= 0.1"
+              :disabled="zoom <= 0.5"
+              :aria-label="$t('ui.zoomOut')"
+            />
+          </el-tooltip>
+        </el-button-group>
 
-            <el-button-group size="small">
-              <!--              <el-tooltip placement="top" :content="$tu('自动布局')">
+        <div class="toolbar-controls">
+          <!--              <el-tooltip placement="top" :content="$tu('自动布局')">
                 <el-button @click="layout">
                   <iconify icon="tabler:layout-filled" :size="3" />
                 </el-button>
               </el-tooltip>-->
-              <el-tooltip placement="top" :content="$t('ui.reset')">
-                <el-button @click="restart">
-                  <iconify icon="solar:eraser-outline" :size="3" />
-                </el-button>
-              </el-tooltip>
-              <el-tooltip placement="top" :content="$t('ui.simulation')">
-                <el-button
-                  :icon="mockVisible ? VideoPause : VideoPlay"
-                  @click="mockVisible = !mockVisible"
-                >
-                  {{
-                    mockVisible
-                      ? $tu('关闭结构模拟', 'Stop structural simulation')
-                      : $tu('开启结构模拟', 'Start structural simulation')
-                  }}
-                </el-button>
-              </el-tooltip>
-              <el-tooltip placement="top" :content="$t('ui.validation')">
-                <el-button
-                  :icon="lintVisible ? VideoPause : VideoPlay"
-                  @click="lintVisible = !lintVisible"
-                >
-                  {{ $t(lintVisible ? 'ui.disableValidation' : 'ui.enableValidation') }}
-                </el-button>
-              </el-tooltip>
-              <el-tooltip placement="top" :content="$t('ui.minimap')">
-                <el-button
-                  :icon="mapVisible ? VideoPause : VideoPlay"
-                  @click="mapVisible = !mapVisible"
-                >
-                  {{ $t(mapVisible ? 'ui.collapseMinimap' : 'ui.expandMinimap') }}
-                </el-button>
-              </el-tooltip>
-            </el-button-group>
-          </el-space>
-        </el-header>
+          <el-tooltip placement="top" :content="$t('ui.reset')">
+            <el-button size="small" @click="restart" :aria-label="$t('ui.reset')">
+              <iconify icon="solar:eraser-outline" :size="3" />
+            </el-button>
+          </el-tooltip>
+          <el-tooltip placement="top" :content="$t('ui.simulation')">
+            <el-button
+              size="small"
+              :icon="mockVisible ? VideoPause : VideoPlay"
+              @click="mockVisible = !mockVisible"
+            >
+              {{
+                mockVisible
+                  ? $tu('关闭结构模拟', 'Stop structural simulation')
+                  : $tu('开启结构模拟', 'Start structural simulation')
+              }}
+            </el-button>
+          </el-tooltip>
+          <el-tooltip placement="top" :content="$t('ui.validation')">
+            <el-button
+              size="small"
+              :icon="lintVisible ? VideoPause : VideoPlay"
+              @click="lintVisible = !lintVisible"
+            >
+              {{ $t(lintVisible ? 'ui.disableValidation' : 'ui.enableValidation') }}
+            </el-button>
+          </el-tooltip>
+          <el-tooltip placement="top" :content="$t('ui.minimap')">
+            <el-button
+              size="small"
+              :icon="mapVisible ? VideoPause : VideoPlay"
+              @click="mapVisible = !mapVisible"
+            >
+              {{ $t(mapVisible ? 'ui.collapseMinimap' : 'ui.expandMinimap') }}
+            </el-button>
+          </el-tooltip>
+        </div>
+      </div>
+    </el-header>
+    <el-container class="design-workspace">
+      <el-container class="design-canvas">
         <el-main class="design-inner__main">
           <bpmn-designer @modeler-ready="modelerReady" />
         </el-main>
-        <div class="right-panel-arrow" @click="toggleRightArrow">
+        <button
+          type="button"
+          class="right-panel-arrow"
+          :aria-label="
+            rightArrow && !mockVisible
+              ? $tu('收起节点配置', 'Collapse node properties')
+              : $tu('展开节点配置', 'Expand node properties')
+          "
+          :aria-expanded="rightArrow && !mockVisible"
+          @click="toggleRightArrow"
+        >
           <el-icon :size="15">
             <CaretRight v-if="rightArrow && !mockVisible" />
             <CaretLeft v-else />
           </el-icon>
-        </div>
+        </button>
       </el-container>
-      <el-aside :width="rightArrow && !mockVisible ? '370px' : '0px'" class="design-aside">
+      <el-aside
+        :width="rightArrow && !mockVisible ? 'var(--properties-width)' : '0px'"
+        class="design-aside"
+        :class="{ 'is-collapsed': !rightArrow || mockVisible }"
+        :aria-hidden="!rightArrow || mockVisible"
+        :inert="!rightArrow || mockVisible"
+      >
         <BpmnPanel
           v-if="modeler"
+          :key="modelerRevision"
           :modeler="modeler"
           :size="formSize"
           :label-position="labelPosition"
@@ -592,6 +636,8 @@ defineExpose({
   z-index: 3;
   transform: translateY(-50%);
   background-color: var(--el-bg-color);
+  color: var(--el-text-color-regular);
+  border: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -603,40 +649,147 @@ defineExpose({
 }
 
 .design-container {
+  --properties-width: 370px;
   width: 100%;
   height: 100%;
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
 
   .design-header {
-    height: 50px;
+    height: auto;
+    min-height: 50px;
+    padding: 8px 16px;
     border-bottom: var(--el-border);
     background-color: var(--el-bg-color);
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 20px;
+    flex-wrap: wrap;
+    gap: 8px 20px;
+  }
+
+  .design-title {
+    flex-shrink: 0;
+  }
+
+  .header-actions {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 8px;
+
+    > * {
+      flex-shrink: 0;
+    }
   }
 
   .design-inner__header {
-    height: 40px;
+    height: auto;
+    min-height: 40px;
+    padding: 8px 16px;
     display: flex;
     align-items: center;
-    justify-content: space-between;
     border-bottom: var(--el-border);
-    // background-color: var(--el-bg-color);
-    // box-shadow: var(--el-box-shadow-light);
+  }
+
+  .toolbar-actions,
+  .toolbar-files,
+  .toolbar-controls {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .toolbar-actions :deep(.el-button-group) {
+    display: inline-flex;
+    flex-shrink: 0;
+  }
+
+  .toolbar-actions :deep(.el-button),
+  .header-actions :deep(.el-button) {
+    margin-left: 0;
+    float: none;
+  }
+
+  .design-workspace,
+  .design-canvas {
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .design-canvas {
+    position: relative;
+    flex: 1;
   }
 
   .design-inner__main {
     padding: 0;
-    height: 100%;
+    min-height: 0;
+    overflow: hidden;
   }
 
   .design-aside {
+    min-width: 0;
+    min-height: 0;
+    flex-shrink: 0;
     box-shadow: var(--el-box-shadow);
     transition: width 0.3s ease;
     background-color: var(--el-bg-color);
-    // z-index: 1;
+    border-left: var(--el-border);
+  }
+
+  .design-aside.is-collapsed {
+    border: 0;
+  }
+}
+
+@media (max-width: 1000px) {
+  .design-container {
+    --properties-width: 340px;
+  }
+}
+
+@media (max-width: 760px) {
+  .design-container {
+    --properties-width: 100%;
+
+    .header-actions {
+      flex-basis: 100%;
+      justify-content: flex-start;
+    }
+
+    .design-workspace {
+      flex-direction: column;
+      overflow-y: auto;
+    }
+
+    .design-canvas {
+      min-height: 280px;
+    }
+
+    .design-aside {
+      height: 340px;
+      border-left: 0;
+      border-top: var(--el-border);
+    }
+
+    .design-aside.is-collapsed {
+      height: 0;
+    }
+
+    .right-panel-arrow {
+      top: auto;
+      bottom: 0;
+      right: 50%;
+      transform: translateX(50%) rotate(90deg);
+    }
   }
 }
 
