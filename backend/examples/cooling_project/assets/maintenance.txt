@@ -1,0 +1,10 @@
+冷却系统教学示例：所有设备操作均为模拟。
+温度超过 70 C 时，并列检查滤网风量与风机转速。
+风量低于 0.6 m3/s 时清理滤网；转速低于 1000 rpm 时重启风机。
+处置后重新测量温度，确认不再超过 70 C 才到达问题解决。
+每个场景只预设一种可恢复故障；unknown 不匹配已知原因，fan_stuck 模拟处置报错。
+
+Simulated equipment only. Investigate airflow and fan speed independently above 70 C.
+Clear the filter below 0.6 m3/s; restart the fan below 1000 rpm.
+Verify temperature before reporting success. Each scenario presets at most one recoverable fault.
+unknown matches neither cause; fan_stuck raises a remediation error.

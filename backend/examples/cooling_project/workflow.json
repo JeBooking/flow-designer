@@ -1,0 +1,143 @@
+{
+  "version": 4,
+  "process": { "id": "CoolingSystem", "name": "冷却系统排查：风路与风机" },
+  "mode": "parallel",
+  "start": "Start",
+  "nodes": {
+    "Start": { "kind": "start", "outgoing": [{ "id": "Start_Overheat", "target": "Overheat" }] },
+    "Overheat": {
+      "kind": "investigation",
+      "nameMode": "auto",
+      "detailText": "读取初始温度。超过阈值时并列检查风路和风机；未超温时记录正常结果。",
+      "observation": "设备初始温度。",
+      "acquisition": "调用 CoolingSession.is_overheated。",
+      "assessment": "温度超过 assets/limits.csv 中的阈值返回是。",
+      "referenceImage": "assets/limits.csv",
+      "pythonModule": "cooling_lab.api",
+      "pythonFactory": "CoolingSession",
+      "pythonFunction": "is_overheated",
+      "outgoing": [
+        { "id": "Overheat_Air", "target": "air_sample", "branch": "yes", "order": 0 },
+        { "id": "Overheat_Fan", "target": "fan_sample", "branch": "yes", "order": 1 },
+        { "id": "Overheat_Normal", "target": "NormalConclusion", "branch": "no" }
+      ]
+    },
+    "air_sample": {
+      "kind": "investigationAction",
+      "nameMode": "auto",
+      "detailText": "采集风路的原生 Measurement 对象。",
+      "pythonModule": "cooling_lab.api",
+      "pythonFactory": "CoolingSession",
+      "pythonFunction": "collect_air",
+      "outgoing": [{ "id": "Air_Filter", "target": "FilterCheck" }]
+    },
+    "FilterCheck": {
+      "kind": "investigation",
+      "nameMode": "auto",
+      "detailText": "使用 air_sample 原始对象判断滤网是否堵塞。",
+      "observation": "采集对象中的 airflow。",
+      "acquisition": "接收 air_sample 节点的原始 Measurement。",
+      "assessment": "风量低于 CSV 阈值返回是；否则这条滤网思路不成立。",
+      "referenceImage": "assets/maintenance.txt",
+      "pythonModule": "cooling_lab.api",
+      "pythonFactory": "CoolingSession",
+      "pythonFunction": "filter_is_blocked",
+      "outgoing": [{ "id": "Filter_Conclusion", "target": "FilterConclusion", "branch": "yes" }]
+    },
+    "FilterConclusion": {
+      "kind": "conclusion",
+      "nameMode": "auto",
+      "detailText": "滤网堵塞导致风量不足，进行清理。",
+      "outgoing": [{ "id": "Filter_Clean", "target": "CleanFilter" }]
+    },
+    "CleanFilter": {
+      "kind": "remediation",
+      "nameMode": "auto",
+      "detailText": "模拟清理滤网，保持当前设备实例，方法无返回值。",
+      "pythonModule": "cooling_lab.api",
+      "pythonFactory": "CoolingSession",
+      "pythonFunction": "clean_filter",
+      "outgoing": [{ "id": "Clean_Report", "target": "FilterReport" }]
+    },
+    "FilterReport": {
+      "kind": "remediation",
+      "nameMode": "auto",
+      "detailText": "复采确认温度恢复，并生成处置前后的温度图表。",
+      "pythonModule": "cooling_lab.api",
+      "pythonFactory": "CoolingSession",
+      "pythonFunction": "report_filter",
+      "outgoing": [{ "id": "Filter_Solved", "target": "Solved" }]
+    },
+    "fan_sample": {
+      "kind": "investigationAction",
+      "nameMode": "auto",
+      "detailText": "采集风机原生 Measurement，可与风路采集并行。",
+      "pythonModule": "cooling_lab.api",
+      "pythonFactory": "CoolingSession",
+      "pythonFunction": "collect_fan",
+      "outgoing": [{ "id": "Fan_Check", "target": "FanCheck" }]
+    },
+    "FanCheck": {
+      "kind": "investigation",
+      "nameMode": "auto",
+      "detailText": "使用 fan_sample 原始对象判断风机转速是否异常。",
+      "observation": "采集对象中的 fan_rpm。",
+      "acquisition": "接收 fan_sample 节点的原始 Measurement。",
+      "assessment": "转速低于 CSV 阈值返回是；否则这条风机思路不成立。",
+      "referenceImage": "assets/limits.csv",
+      "pythonModule": "cooling_lab.api",
+      "pythonFactory": "CoolingSession",
+      "pythonFunction": "fan_is_faulty",
+      "outgoing": [{ "id": "Fan_Conclusion", "target": "FanConclusion", "branch": "yes" }]
+    },
+    "FanConclusion": {
+      "kind": "conclusion",
+      "nameMode": "auto",
+      "detailText": "风机转速异常，尝试重启并验证降温。",
+      "outgoing": [{ "id": "Fan_Restart", "target": "RestartFan" }]
+    },
+    "RestartFan": {
+      "kind": "remediation",
+      "nameMode": "auto",
+      "detailText": "异步模拟重启风机；卡死场景抛出原始 Python 异常。",
+      "pythonModule": "cooling_lab.api",
+      "pythonFactory": "CoolingSession",
+      "pythonFunction": "restart_fan",
+      "outgoing": [{ "id": "Fan_Report", "target": "FanReport" }]
+    },
+    "FanReport": {
+      "kind": "remediation",
+      "nameMode": "auto",
+      "detailText": "复采确认重启后温度恢复，返回报告及 SVG 图表。",
+      "pythonModule": "cooling_lab.api",
+      "pythonFactory": "CoolingSession",
+      "pythonFunction": "report_fan",
+      "outgoing": [{ "id": "Fan_Solved", "target": "Solved" }]
+    },
+    "NormalConclusion": {
+      "kind": "conclusion",
+      "nameMode": "auto",
+      "detailText": "设备未超温，无需进行故障处置。",
+      "outgoing": [{ "id": "Normal_Report", "target": "NormalReport" }]
+    },
+    "NormalReport": {
+      "kind": "remediation",
+      "nameMode": "auto",
+      "detailText": "记录正常状态，不改变设备，生成正常温度报告。",
+      "pythonModule": "cooling_lab.api",
+      "pythonFactory": "CoolingSession",
+      "pythonFunction": "report_healthy",
+      "outgoing": [{ "id": "Normal_Solved", "target": "Solved" }]
+    },
+    "Solved": {
+      "kind": "problemSolved",
+      "nameMode": "auto",
+      "detailText": "设备温度已确认正常，本条思路完成。"
+    }
+  },
+  "resources": [
+    { "path": "assets/limits.csv", "mediaType": "text/csv" },
+    { "path": "assets/maintenance.txt", "mediaType": "text/plain" },
+    { "path": "assets/scenarios.json", "mediaType": "application/json" }
+  ]
+}

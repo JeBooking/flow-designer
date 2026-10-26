@@ -1,0 +1,32 @@
+{
+  "filter": {
+    "filter_blocked": true,
+    "fan_fault": false,
+    "unknown_heat": false,
+    "restart_fails": false
+  },
+  "fan": {
+    "filter_blocked": false,
+    "fan_fault": true,
+    "unknown_heat": false,
+    "restart_fails": false
+  },
+  "healthy": {
+    "filter_blocked": false,
+    "fan_fault": false,
+    "unknown_heat": false,
+    "restart_fails": false
+  },
+  "unknown": {
+    "filter_blocked": false,
+    "fan_fault": false,
+    "unknown_heat": true,
+    "restart_fails": false
+  },
+  "fan_stuck": {
+    "filter_blocked": false,
+    "fan_fault": true,
+    "unknown_heat": false,
+    "restart_fails": true
+  }
+}
