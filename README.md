@@ -195,7 +195,9 @@ importable entry module, lists public functions and calls them in Python.
 Existing projects remain independently maintained; optional interpreter paths
 support their existing virtual environments. See [backend integration guide](backend/README.md)
 for `__all__` exports, the included example and the generic invocation API.
-Select discovered modules/functions in node properties to bind them; parameters match function signatures automatically. The registered interpreter serves discovery/debugging only. Start Flowable workers separately with business dependencies, the official client and `--project` directories.
+Optionally register a class or factory such as `Device` to expose its public bound methods. Debug calls share a resettable session. Select interfaces in node properties; parameters match signatures automatically. Start the Flowable worker separately with the official client: it reads `backend/.local/projects.json` and runs each project's calls in its registered interpreter and working directory. Each workflow has an isolated persistent Python process, retaining native objects, instance state and ordinary module globals. Flowable stores display projections and execution history. Worker restarts lose active sessions and explicitly fail affected workflows; no automatic checkpoint is provided. See the [native device example](backend/examples/session_project/README.md).
+
+Run one worker coordinator for the same execution package/topics on one Flowable service; it handles multiple workflow runs concurrently. Duplicate local workers are rejected. The local lock cannot coordinate hosts, so retain one coordinator across machines too; stateless-function compatibility does not provide shared native objects or horizontal scaling.
 
 ## Export a diagnostic Python project
 

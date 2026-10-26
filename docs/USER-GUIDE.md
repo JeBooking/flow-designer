@@ -8,7 +8,7 @@ For engineers integrating an existing Python project with diagnostic workflows. 
 
 | Entry                       | Purpose                                                          | Executes business Python?                                           |
 | --------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------- |
-| Python Projects             | Register projects, discover interfaces, debug one call           | Yes, when you invoke a function                                     |
+| Python Projects             | Register projects, discover interfaces, debug a session          | Yes, when you invoke an interface                                   |
 | Enable structure simulation | Observe BPMN token animation                                     | No; does not validate Python, data or business decisions            |
 | Flowable Execution          | Deploy and run actual workflows, inspect results and human waits | The worker calls bound interfaces                                   |
 | Export Python skeleton      | Generate an offline project for engineers to complete            | Acquisition/decision/action placeholders default to manual fallback |
@@ -32,7 +32,8 @@ Open **Python Projects** in the toolbar:
 1. **Project directory**: the existing root, e.g. `D:/equipment/diagnostics`. Absolute paths or paths relative to this repository are accepted; no copying is necessary.
 2. **Entry module**: an importable name such as `machine.api`, not `machine/api.py`.
 3. **Python interpreter**: an existing environment such as `D:/equipment/diagnostics/.venv/Scripts/python.exe`. Empty uses the backend interpreter. Dependencies must already be installed there.
-4. Optionally enter a display name and register the project.
+4. **Factory** (optional): a class or factory name such as `Device` or `create_session`. Leave empty for ordinary module functions. With a factory, the interfaces are the returned object's public bound methods; `self` is never an input.
+5. Optionally enter a display name and register the project.
 
 Discovery shows functions, signatures and documentation. With `__all__`, exported functions including re-exports are listed; otherwise only public functions defined by the entry module appear:
 
@@ -44,9 +45,11 @@ from .actions import reset_device
 __all__ = ['inspect_voltage', 'reset_device']
 ```
 
-Discovery/debug calls add the project's `src/`, root and parent to the import path and use its root as the working directory. Each call uses a separate subprocess; do not depend on objects retained by earlier calls. Refresh interfaces after code changes. Removing registration leaves source files intact. Registrations persist in `backend/.local/projects.json`.
+The selected interpreter uses the project's root as its working directory and adds its `src/`, root and parent to the import path. Refresh interfaces after code changes. Removing registration leaves source files intact. Registrations persist in `backend/.local/projects.json` and are also read by the Flowable worker.
 
-Debug a function without side effects first: select it, enter a JSON array of positional arguments and a JSON object of keyword arguments, then inspect the result/error. This invokes one function, not the workflow. JSON results pass through; other objects are represented as `repr`, not transferable original objects. The default timeout is 120 seconds; change it with `python backend/server.py --timeout 600`.
+Start with the [device session example](../backend/examples/session_project/README.md): register directory `backend/examples/session_project`, module `device_session`, factory `Device`. Select interfaces and fill only the inputs shown by their signatures. In the same debug session call `collect`, `restore`, then `verify`: acquisition returns a native `Reading` object and verification returns `True`. The object and device state remain in that session. **Reset session** starts again from the initial state. Debug calls execute real Python without running the entire workflow; use safe interfaces first. The default timeout is 120 seconds, configurable with `python backend/server.py --timeout 600`.
+
+Class discovery inspects methods without constructing the class, so required constructor arguments are supported. At session creation, constructor/factory arguments come from same-name startup inputs or defaults. A factory annotated with its return class can also be discovered without calling it. An unannotated factory is called temporarily for discovery using defaults; if it needs required arguments, add the return-class annotation.
 
 ## 3. Draw a small workflow and describe the work
 
@@ -64,13 +67,13 @@ Without a default association, the system application chooser opens. Scripts and
 
 ## 4. Bind interfaces and match variables automatically
 
-Select **Execution and human decisions** on an investigation or **Interface binding** on an action. Choose the module and function; registered interfaces show signatures. Importable names can also be entered manually. Leave Job topic empty to use the node ID; topics must be unique within the workflow.
+Select **Execution and human decisions** on an investigation or **Interface binding** on an action. Choose the registered module, factory (if used) and method/function; interfaces show signatures. Importable names can also be entered manually. Leave Job topic empty to use the node ID; topics must be unique within the workflow.
 
 Text-only conclusions need no binding. Problem Solved and Escalation do not bind functions. Actions support no arguments and `None` returns. Put decisions in investigations and return `True`/`False`, `yes`/`no`, or `{"next":"yes", ...}` / `{"next":"no", ...}`. A compatible outgoing flow ID selects its entire Yes/No group, not only that flow. Arbitrary numbers or strings are not interpreted by truthiness.
 
 The worker matches signature parameters in this order: legacy explicit mappings when present, same-name workflow variables, a unique same-name field in upstream results, then defaults. No-argument functions run directly; positional-only parameters and `async def` are supported. Missing or ambiguous values report the parameter name rather than guessing.
 
-For `inspect_voltage(device_id, threshold=24)`, initial variables `{"device_id":"M01"}` supply the device and preserve the default threshold. A return value `{"next":"yes","voltage":22.6}` is saved as a **workflow variable named after the node ID**. A downstream `voltage` parameter finds the unique field automatically. Two results containing `voltage` are ambiguous: engineers should use clear business names or an entry wrapper. A parameter named after a node ID receives its full result; top-level variables take precedence over result fields.
+For `inspect_voltage(device_id, threshold=24)`, add startup data named `device_id` with value `M01`; the default threshold is preserved. The original return value is retained in the Python session **under the node ID**. A downstream parameter named after that node ID receives the full original result, including a non-JSON object. A return value `{"next":"yes","voltage":22.6}` also supplies a unique downstream `voltage` parameter. Two results containing `voltage` are ambiguous: use clear business names or an entry wrapper. Top-level variables take precedence over result fields.
 
 If the existing function returns only raw data, an engineer can add a thin entry wrapper that reuses acquisition and adapts it to the Yes/No protocol (assuming numeric readings here):
 
@@ -84,9 +87,15 @@ def inspect_voltage(device_id, threshold=24):
 
 Save it as `workflow_api.py` at the project root, register module `workflow_api`, and bind `inspect_voltage` on the investigation. Adapt parsing/assessment to the actual return type; keep the original project in place.
 
-No code or parameter expressions are needed in the panel. Selecting a different interface clears old mappings. Existing mappings still support `$NodeID.field`, `$variable`, `$` (all variables), and `$$` (escaped dollar sign). Workflow function results must be JSON serializable.
+No code or parameter expressions are needed in the panel. Selecting a different interface clears old mappings. Existing mappings still support `$NodeID.field`, `$variable`, `$` (all variables), and `$$` (escaped dollar sign).
 
-**Registration and worker interpreters are separate settings.** Registration configures discovery/debugging only. Real execution needs a worker started with an interpreter containing both business dependencies and the official client, with `--project` pointing to the business project.
+For a stateful project, register its existing class directly. One instance is created per project per workflow in a persistent isolated Python subprocess, using the registered interpreter and working directory. Methods keep normal access to internal attributes without asking users to re-enter them. Ordinary module functions remain supported and keep module globals in the same per-workflow subprocess. Different workflows have separate processes and objects. Parallel methods on one shared instance require business code to handle thread safety.
+
+Flowable schedules branches, human waits and history. Python keeps original objects and node results; Flowable receives only a JSON display projection. Non-JSON displays include `pythonType` and `representation` metadata. A `repr` display is never substituted for the original object. Human rechecking reruns methods on the current instance rather than rolling its state back.
+
+Native references stay within one project's subprocess; different projects cannot directly share them. Finished workflow sessions are released after completion is observed; failed sessions remain available for inspection.
+
+The device example uses Start → investigation `ready` (Yes) → investigation action `collect` (node ID `reading`) → investigation `is_low` (Yes) → conclusion → remediation `restore_and_verify` → Problem Solved. The remediation performs async verification before completing; failed verification raises a task error. Leave `is_low`'s No group unconnected for this recovery-only idea, or design a separate valid conclusion/outcome path. Keep the existing topology rules: investigations cannot directly reach Problem Solved, and remediation cannot return to an investigation.
 
 ## 5. Deploy and execute for real
 
@@ -107,19 +116,23 @@ If Maven dependencies are unavailable but an executable jar already exists, `scr
 Keep the backend and frontend from section 2 running. Java defaults to `http://127.0.0.1:8080`, with demo credentials `diagnostic / local-demo`. The proxy and worker share `FLOWABLE_URL`, `FLOWABLE_USER`, and `FLOWABLE_PASSWORD`. Configure appropriate credentials and access control for deployments.
 
 1. Open **Flowable Execution**, export the execution package and extract it. `source.bpmn` is the editable snapshot, `workflow.bpmn20.xml` the engine definition, and `bindings.json` the interface bindings. Do not edit the engine definition as your source diagram.
-2. Start the worker using the environment with the business dependencies:
+2. Start the worker using an environment with the official client:
 
    ```powershell
-   D:/equipment/diagnostics/.venv/Scripts/python.exe backend/flowable_worker.py D:/exports/bindings.json --project D:/equipment/diagnostics
+   backend/.local/venv/Scripts/python.exe backend/flowable_worker.py D:/exports/bindings.json
    ```
 
-   Install the official client in that environment too. Repeated `--project` options add each root and `src/`. The worker does not read the registered interpreter or provide discovery/debugging's per-call subprocess isolation. Avoid conflicting module names and relative file paths that assume the debug working directory.
+   By default the worker reads `backend/.local/projects.json` and selects the registration matching each module/factory. Business calls run in that registration's interpreter and project working directory; business dependencies belong there. `--registry D:/config/projects.json` selects another registry. For unregistered legacy modules, repeat `--project D:/equipment/diagnostics` to supply fallback roots; these calls use the worker's interpreter.
 
-3. Enter an initial variable JSON object, e.g. `{"device_id":"M01"}`, and deploy/start from the drawer.
+3. Fill the startup form in the drawer. It reads registered session-class/factory initialization parameters automatically; leave optional values blank to use defaults. Add name/value rows for other startup data, such as `device_id` = `M01`. Ordinary method parameters may come from upstream results and are not all requested as startup inputs. For an included example, choose its scenario from the dropdown. Then deploy/start. The collapsed **Advanced initial variables JSON** option can replace the form when enabled; it defaults to `{}`. For example, `{"device_id":"M01"}` is an advanced alternative.
 4. Refresh execution results to inspect visited nodes, results, failures, human waits and execution details. Results containing a `chartSvg` string can display that SVG; arbitrary local file paths do not automatically become charts.
-5. Re-export and start matching workers after changes to bindings, connections, groups or ordering. Existing instances still need their old workers. Restart workers after business code changes too. Workers with different business configurations must not subscribe to the same topics.
+5. Re-export and start matching workers after changes to bindings, connections, groups or ordering. Existing instances still need their old workers. Workers with different business configurations must not subscribe to the same topics. Plan business-code updates before starting workflows: restarting a worker loses its active Python sessions.
 
-Without a running worker, automatic tasks wait; Python is not launched automatically. Interface exceptions are task failures; inspect worker logs and execution details. Retries may repeat calls, so equipment actions need suitable idempotency.
+Without a running worker, automatic tasks wait; Python is not launched automatically. Interface exceptions are task failures: refresh Flowable execution results and expand the failure details to read the original Python traceback. Worker logs provide additional context. Retries may repeat calls, so equipment actions need suitable idempotency.
+
+Python memory is not checkpointed or automatically restored. After a worker/subprocess restart, continuing an affected workflow reports a lost session instead of silently constructing another device. Flowable history and display variables do not reconstruct the original objects. Start a new workflow when appropriate after handling any real equipment state.
+
+Run one worker coordinator for the same execution package/topics on the same Flowable service. It can handle multiple workflow runs concurrently, with isolated project subprocesses for each run. A duplicate worker on the same machine is rejected explicitly. The local lock does not coordinate different machines: keep one coordinator across machines too. Ordinary stateless functions do not provide shared native objects or make multiple competing coordinators safe.
 
 Flowable compilation currently supports one top-level process, one plain start and the project's diagnostic nodes. Subprocesses, complex events and ordinary parallel gateways are rejected, as are condition expressions/default flows: use investigation Yes/No results. The offline scaffold's broader scope does not imply Flowable deployability.
 

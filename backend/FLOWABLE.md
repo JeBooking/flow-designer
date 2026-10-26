@@ -67,8 +67,12 @@ then export and extract the execution bundle. Keep `source.bpmn` for editing; de
 backend/.local/venv/Scripts/python.exe backend/flowable_worker.py C:/path/to/bindings.json --project backend/examples/diagnostic_demo
 ```
 
-Deploy and start from the drawer with `{"scenario":"recover"}` and refresh results to see
-activities, variables and the actual temperature charts. SVG files are stored under
+Select `recover` in the drawer's scenario dropdown, then deploy/start and refresh results to see
+activities, variables and the actual temperature charts. The startup form reads registered
+session-class/factory initialization parameters, preserves defaults for blank optional values,
+and accepts extra name/value rows. Ordinary method arguments still match upstream results.
+The collapsed advanced initial JSON option can replace the form when enabled; it defaults
+to `{}` (for example, `{"scenario":"recover"}` is an advanced alternative). SVG files are stored under
 `backend/examples/diagnostic_demo/output/`.
 
 All eight diagnostic node types are included. Scenarios: `normal` and `recover` reach
@@ -150,14 +154,57 @@ process documentation limit.
 
 ## Bind a project
 
-On non-final nodes, configure module, function and JSON keyword arguments. Repeat `--project`
-to add project roots (including `src/`). Install project dependencies into the worker's Python
-environment. `$Inspect.data` reads an earlier result; `$` passes the complete variable dictionary. Dot paths support dictionaries and list
-indices. `$$device` passes the literal string `$device`. Both synchronous and `async def`
-functions are supported. Results must be JSON serializable and are stored under the node ID. Branch functions
-in automatic mode must return `{"next":"outgoingFlowId", ...}`. Invalid routing fails the job rather than
-executing every branch. The compiler creates exclusive gateways without evaluating arbitrary
-user Python or condition expressions.
+Register an existing directory, importable module, interpreter and optional factory in
+**Python Projects**. A class such as `Device` is the simplest stateful entry: public bound
+methods become interfaces without exposing `self`. Discovery inspects a class without
+constructing it; constructor inputs come from same-name startup variables or defaults.
+Factory functions with a return-class annotation can also be inspected without invocation.
+An unannotated factory is temporarily called with defaults; required inputs need a return-class
+annotation. Leave factory empty for existing module functions and `__all__` exports.
+
+On each non-final node select the module, factory and method/function. Signature matching
+supplies startup variables, complete raw results by node ID and unique dictionary fields,
+preserving defaults, positional-only arguments and `async def`. No parameter expressions
+are required. Legacy mappings still support `$Inspect.data`, `$` (all variables), dictionary
+and list paths, and `$$device` for a literal `$device`. Actions can return `None`.
+Investigations return explicit Yes/No (`True`/`False`, `yes`/`no`, or a `next` dictionary).
+A legacy outgoing flow ID chooses its whole group; arbitrary object truthiness is rejected.
+
+Start the worker with its official-client environment. By default it reads
+`backend/.local/projects.json`, matches module/factory registrations and starts business
+subprocesses with each registration's interpreter and project working directory. Use
+`--registry PATH` for another registry. Repeated `--project PATH` remains a fallback for
+unregistered modules, using the worker interpreter; business dependencies belong in the
+interpreter that actually runs that project.
+
+One workflow's calls to the same project share a persistent isolated subprocess. A factory
+instance is created once; ordinary module functions retain their globals. Different workflows
+are isolated. Raw results stay under node IDs inside Python and may be arbitrary Python
+objects. Flowable stores only JSON display projections, including `native`, `pythonType`
+and `representation` metadata where needed; a `repr` display is never used as the original
+object. Native references cannot cross project subprocesses. Parallel methods on the same
+instance require project-managed thread safety. Flowable continues to own scheduling,
+human waits, routing and history; this adds no second workflow engine.
+
+Try the [device session example](examples/session_project/README.md) for acquisition,
+decision, recovery and async verification with native objects. In debugging, calls share
+a session and **Reset session** starts fresh. During a real workflow, rechecks rerun methods
+on current state and do not roll the object back. Finished sessions are released after the
+worker observes completion; failed sessions remain for inspection. There is no automatic
+checkpoint: restarting a worker/subprocess loses sessions, and affected old workflows report
+session loss instead of silently rebuilding instances. History/projections cannot restore them.
+Offline skeleton exports retain their existing implementation/manual-fallback rules and do
+not automatically execute bindings saved in the diagram.
+
+Use one worker coordinator per execution package/topics on the same Flowable service.
+That coordinator supports concurrent workflow runs through their isolated subprocesses.
+Duplicate subscriptions on the same machine are rejected by a local singleton lease.
+The lease does not span machines: deployments must retain one coordinator across hosts
+as well. Compatibility with ordinary stateless functions does not imply that competing
+workers can share native objects or safely scale this session model horizontally.
+
+After a Python task failure, refresh Flowable execution results and expand the failure
+details to inspect the original Python traceback; worker logs provide additional context.
 
 Topics include process ID and an execution-definition digest. Layout, descriptive text and
 XML/argument-JSON formatting changes preserve topics. Re-export and restart the matching worker

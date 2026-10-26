@@ -1,88 +1,130 @@
-# Local Python project integration / 本地 Python 工程接入
+# Local Python integration / 本地 Python 工程接入
 
-## 启动 / Start
+Read the [English user guide](../docs/USER-GUIDE.md) / [中文用户手册](../docs/USER-GUIDE.zh-CN.md)
+for drawing, binding, execution, human review and offline exports.
 
-在仓库根目录开两个终端 / From the repository root:
+## 启动与登记 / Start and register
 
-```sh
+在仓库根目录分别启动 / From separate terminals at the repository root:
+
+```powershell
 python backend/server.py
 pnpm dev
 ```
 
-打开 Vite 提示的网页，点击顶栏 **Python 项目**。开发服务器将 `/api` 转发给
-`127.0.0.1:8765`。修改 Vite 配置后需要重启 `pnpm dev`。
-Alternatively run `pnpm build-only`, then open
-`http://127.0.0.1:8765/vue-bpmn-designer/`; the Python server also serves `dist`.
+打开 Vite 地址，在顶栏选择 **Python 项目**。`/api` 转发至 `127.0.0.1:8765`。
+也可先 `pnpm build-only`，再访问 `http://127.0.0.1:8765/vue-bpmn-designer/`。
+登记已有工程目录、可导入模块、可选解释器和工厂；工程保留原目录，依赖须已安装。
 
-## 接入已有工程 / Register a project
+Register a local directory, importable module (for example `machine.api`, not a
+filename), optional interpreter and optional factory. Relative paths resolve from
+the repository root. Registration does not copy files or install dependencies.
+The interpreter uses the project's root as its working directory, with `src/`, root
+and parent on its import path.
 
-1. 将外部工程复制到本仓库的任意子目录，或保留在已有目录。
-2. 填写该目录；相对路径从本仓库根目录计算，绝对路径也支持。
-3. 填写 Python 入口模块，例如 `plotting.api` 或导出函数的包名 `plotting`。
-4. 可指定工程虚拟环境中的 Python，例如 `D:\plotting\.venv\Scripts\python.exe`；
-   留空使用后端的 Python。依赖必须已经安装在选定环境中。
-5. 点击接入，查看函数名、签名和文档，选择函数后即可调用。
+工厂填 `Device` 等类名或 `create_session` 等函数名，公开绑定方法成为接口，`self` 不需输入。
+类登记只检查签名，不实例化；会话创建时用同名启动变量或默认值传入构造参数。
+工厂有返回类注解时同样免调用发现；无注解工厂会用默认值临时创建对象，若有必填参数，须补充
+返回类注解。留空工厂时兼容原模块函数：有 `__all__` 按其导出（含重导出），否则发现入口模块
+自身定义的公开函数。
 
-注册只引用本地路径，不自动下载、安装、复制或覆盖工程。
-The project remains a normal, independently maintained Python project. Register
-its local path and importable entry module. Choose an existing interpreter if it
-requires a virtual environment; dependencies are not installed automatically.
+Set factory to a class or factory function to expose its object's public bound
+methods. Class discovery does not construct the class; required constructor inputs
+are matched from startup variables at runtime, with defaults preserved. A factory
+with a return-class annotation also supports discovery without invocation. An
+unannotated factory is temporarily called using defaults; add a return-class
+annotation if it requires arguments. An empty factory preserves ordinary module
+function exports, including `__all__`.
 
-入口包可用正常的 Python 导出方式 / Ordinary Python exports:
+## 连续调试与原生对象 / Debug native objects
 
-```python
-# plotting/__init__.py
-from .charts import draw_chart
-from .parser import parse_data
+可运行的[设备示例](examples/session_project/README.zh-CN.md) / [device example](examples/session_project/README.md):
 
-__all__ = ['draw_chart', 'parse_data']
+| 登记字段 / Field                    | 值 / Value                                   |
+| ----------------------------------- | -------------------------------------------- |
+| path                                | `backend/examples/session_project`           |
+| module                              | `device_session`                             |
+| factory                             | `Device`                                     |
+| 调试启动输入 / Debug startup inputs | `{"device_id":"M01","threshold":24}` or `{}` |
+
+按接口签名填写输入，在同一调试会话依次调用 `collect`、`restore`、`verify`。
+初次采集返回 `Reading` 实例，恢复后异步复核返回 `True`；重置会话再采集恢复为初始状态。
+界面只显示对象投影，含 `native`、`pythonType`、`representation` 等信息，`repr` 不代替原始对象。
+内部属性及采集结果由实例保存，无需在每次调用时重复填写。
+
+Input fields follow the selected signature. Consecutive calls share a debug session;
+**Reset session** discards its instance and results. Native objects stay in Python;
+the HTTP response is a display projection, never a transferable replacement object.
+Calls execute real business code. The default timeout is 120 seconds, configurable
+with `python backend/server.py --timeout 600`; stopping a call cannot undo external actions.
+
+## Flowable 执行 / Workflow execution
+
+按[执行说明](FLOWABLE.zh-CN.md) / [execution guide](FLOWABLE.md) 导出绑定并启动 worker：
+
+```powershell
+backend/.local/venv/Scripts/python.exe backend/flowable_worker.py C:/exports/bindings.json
 ```
 
-有 `__all__` 时只展示其导出的函数；没有时展示入口模块自身定义的公开函数。
-平台会把工程的 `src/`、根目录和父目录加入该次执行的 Python 搜索路径，支持普通包和 src 布局。
-If `__all__` is present it selects exported functions, including re-exports;
-otherwise only public functions defined by the entry module are exposed.
+worker 所在环境安装 `backend/requirements-flowable.txt`。默认从 `backend/.local/projects.json`
+按模块/工厂选择工程登记，业务子进程使用登记解释器及工作目录。可用 `--registry PATH` 指定登记文件。
+旧模块可用可重复的 `--project PATH` 指定备用根目录，使用 worker 自身解释器。
 
-## 快速验证 / Quick check
+The worker environment needs the official client. It reads `backend/.local/projects.json`
+by default and matches module/factory registrations; business subprocesses use the
+registered interpreter and working directory. `--registry PATH` selects another
+registry. Repeated `--project PATH` options support unregistered legacy modules with
+the worker's interpreter.
 
-点击“填入示例项目”，然后“接入项目”，选择 `summarize`：
+真实执行抽屉按登记类/工厂的初始化签名生成启动表单，留空采用默认值；额外启动数据可添加名称/值行，
+内置示例从场景下拉框选择。普通方法参数继续从上游自动匹配。高级初始变量 JSON 默认折叠，可开启
+以替代表单（默认 `{}`）。任务失败后刷新 Flowable 执行结果，展开失败详情查看原始 Python traceback。
 
-- 位置参数 / args: `[[2, 4, 6]]`
-- 关键字参数 / kwargs: `{}`
-- 结果 / result: `{"count": 3, "mean": 4.0}`
+The execution drawer builds startup fields from registered class/factory initialization
+signatures, preserving defaults for blank values. Add name/value rows for extra startup
+data or choose an example scenario from its dropdown. Ordinary method inputs still match
+upstream results. The collapsed advanced JSON option can replace the form (default `{}`).
+Refresh execution results and expand failure details to read an original Python traceback.
 
-`draw_chart` 示例会在示例工程目录生成 SVG，并返回路径。
-这只是接入示例，不要求实际项目采用它的数据格式或绘图方法。
+同一流程的同一工程常驻一个隔离子进程，创建一次工厂实例；普通函数也保留模块全局状态。
+不同流程完全隔离，不同工程间不能直接传递原生对象引用。原始节点结果留在会话，按签名从
+启动变量及唯一同名结果自动匹配；节点 ID 同名参数可取得完整原对象。支持默认值、位置专用
+参数、异步和返回 `None` 的动作。排查返回明确是/否，不能将任意对象真假性用作路由。
+
+Flowable owns scheduling, branch selection, human waits and history. Python owns
+native objects and raw results; Flowable stores display projections. A project uses
+one persistent isolated subprocess per workflow. Ordinary functions keep module globals.
+Native references cannot cross project subprocesses. Parallel methods sharing an
+instance require business code to manage thread safety. Finished workflow sessions
+are released after the worker observes completion; failed sessions remain for inspection.
+
+没有自动检查点。worker 或子进程重启后，旧流程继续时明确报告会话丢失，不会静默创建新实例。
+人工回退在当前实例上重跑，不回滚内部状态或设备动作；历史显示不能恢复原始对象。
+离线骨架仍需工程师补业务，不会自动调用流程图上的 binding。
+
+There is no automatic checkpoint/recovery. Restarted workers report a lost session
+for affected workflows rather than silently rebuilding objects. Rechecks rerun methods
+on current state, without undoing equipment operations. Exported offline scaffolds
+still require business implementation and do not automatically execute saved bindings.
+
+同一 Flowable 服务的相同执行包/主题只启动一个 worker 协调器；它能同时处理多次排查，
+内部按流程隔离工程子进程。同机重复启动会明确报错，本机单例锁不能跨机器，跨机器也须保持
+单协调器。兼容无状态函数不代表竞争 worker 能共享对象或安全水平扩容。
+
+Run one worker coordinator for the same execution package/topics on the same Flowable
+service. It supports concurrent workflow runs with isolated subprocesses. A local lease
+rejects duplicate workers on one machine; it cannot coordinate different machines, so
+retain one coordinator across hosts too. Stateless-function compatibility does not
+provide shared objects or safe horizontal scaling through competing workers.
 
 ## Platform API
 
-- `GET /api/projects`: 已登记工程和接口列表。
-- `POST /api/projects`: `{ "path": "...", "module": "plotting", "python": "可选", "name": "可选" }`
-- `POST /api/projects/{id}/refresh`: 重新导入并读取接口。
-- `POST /api/projects/{id}/call`: `{ "function": "draw_chart", "args": [], "kwargs": {} }`
-- `POST /api/projects/{id}/remove`: 移除登记，不删除源文件。
+- `GET /api/projects`: registrations and discovered interfaces.
+- `POST /api/projects`: `{ "path": "...", "module": "...", "python": "optional", "factory": "optional", "name": "optional" }`.
+- `POST /api/projects/{id}/refresh`: refresh discovery after code changes.
+- `POST /api/projects/{id}/call`: `{ "function": "collect", "args": [], "kwargs": {}, "sessionId": "optional", "inputs": {} }`; returns `sessionId`. `inputs` initializes the first call's factory. Reuse `sessionId` to retain state.
+- `POST /api/projects/{id}/sessions/close`: `{ "sessionId": "..." }`; discard that debug session.
+- `POST /api/projects/{id}/remove`: remove registration without deleting source files.
 
-调用只是把通用 JSON 位置/关键字参数传给 Python 函数，不定义业务输入输出协议。
-JSON 兼容返回值直接传回；其他 Python 对象返回 `repr` 文本并标记 `representation: "repr"`，
-不等于把该对象传递给另一模块。函数内部可以自由导入和组合工程中的其他能力。
-Python stdout/stderr 和异常详情保留在响应中，前端只展示原始结果。
-
-Each discovery/call runs in a separate Python process, with the project directory
-as its working directory. No cross-call Python object/session state is retained.
-Desktop-window calls may wait until the window closes; use a noninteractive entry
-when appropriate. The default operation timeout is 120 seconds, adjustable with
-`python backend/server.py --timeout 600`. A timeout stops the worker but cannot
-undo external side effects. The current scope is project registration/discovery/
-invocation, not BPMN node binding or full workflow execution.
-
-登记在 `backend/.local/projects.json` 持久保存。后端绑定本机回环地址；当前是本地开发工具，
-不作为带认证的多用户远程执行服务。非默认本机前端来源可通过 `--origin URL` 添加。
-
-## Verification
-
-```sh
-python scripts/verify-python-projects.py
-```
-
-使用临时目录和真实 HTTP 请求，验证工程接入、函数发现、调用、图表文件生成、同名模块隔离、
-登记持久化、刷新、移除和失败返回。
+登记持久保存在 `backend/.local/projects.json`。后端默认绑定本机回环地址，用于本地工具；
+额外本机前端来源可用 `--origin URL` 添加。刷新/重新登记后需重置旧调试会话才能加载新代码。
