@@ -91,6 +91,7 @@ with tempfile.TemporaryDirectory(prefix='diagnosis-modes-') as directory:
             f'--server.port={port}', '--spring.datasource.url=jdbc:h2:mem:executionmodes;DB_CLOSE_DELAY=-1'],
             cwd=directory, stdout=log, stderr=log)
         workers = []
+        launched_versions = set()
         try:
             def ready():
                 if engine.poll() is not None: raise RuntimeError((directory / 'engine.log').read_text(errors='replace'))
@@ -102,9 +103,12 @@ with tempfile.TemporaryDirectory(prefix='diagnosis-modes-') as directory:
                 metadata = json.loads(bundle['files']['bindings.json'])
                 filename = directory / (metadata['version'] + '.json')
                 filename.write_text(bundle['files']['bindings.json'], encoding='utf-8')
-                workers.append(subprocess.Popen([str(ROOT / 'backend/.local/venv/Scripts/python.exe'), '-X', 'utf8',
-                    str(ROOT / 'backend/flowable_worker.py'), str(filename), '--project', str(directory)],
-                    cwd=directory, stdout=log, stderr=log))
+                # 多次排查由同一个协调器管理独立会话，不能重复订阅同一执行包的主题。
+                if metadata['version'] not in launched_versions:
+                    launched_versions.add(metadata['version'])
+                    workers.append(subprocess.Popen([str(ROOT / 'backend/.local/venv/Scripts/python.exe'), '-X', 'utf8',
+                        str(ROOT / 'backend/flowable_worker.py'), str(filename), '--project', str(directory)],
+                        cwd=directory, stdout=log, stderr=log))
                 deployment = deploy(bundle['files']['workflow.bpmn20.xml'])
                 definition = engine_request('/process-api/repository/process-definitions?deploymentId=' + deployment['id'])['data'][0]['id']
                 return post('/process-api/runtime/process-instances', {'processDefinitionId': definition})['id']

@@ -174,7 +174,7 @@ public class ReviewController {
             Map<String, Object> changes = request.variables() == null ? Map.of() : request.variables();
             for (String key : changes.keySet()) {
                 if (bindings.containsKey(key) || key.startsWith("route_") || key.startsWith("diagnostic")
-                    || key.startsWith("human_") || key.startsWith("request_")) {
+                    || key.startsWith("human_") || key.startsWith("request_") || key.startsWith("pythonSession_")) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot overwrite execution results or audit fields / 不可覆盖执行结果和复核记录");
                 }
             }

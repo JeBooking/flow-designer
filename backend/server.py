@@ -13,6 +13,7 @@ from urllib.parse import urlparse, unquote
 import uuid
 from flowable_bridge import compile_workflow, deploy, engine_request
 from reference_files import open_reference_file
+from python_sessions import SessionManager
 
 ROOT = Path(__file__).resolve().parent.parent
 WORKER = Path(__file__).with_name('worker.py')
@@ -23,6 +24,8 @@ class Registry:
         self.file = Path(file)
         self.timeout = timeout
         self.lock = threading.RLock()
+        self.sessions = SessionManager(timeout)
+        self.debug_sessions = {}
         self.projects = json.loads(self.file.read_text(encoding='utf-8')) if self.file.exists() else {}
 
     def save(self):
@@ -32,6 +35,19 @@ class Registry:
         temporary.replace(self.file)
 
     def run(self, project, operation, **arguments):
+        if operation == 'call':
+            with self.lock:
+                session_id = arguments.pop('sessionId', None)
+                if session_id:
+                    entry = self.debug_sessions.get(session_id)
+                    if not entry or entry[0] != project['id']:
+                        raise ValueError('Debug session lost / 调试会话已丢失，请重置后重试')
+                    session = entry[2]
+                else:
+                    run_id = 'debug:' + uuid.uuid4().hex
+                    session = self.sessions.get(run_id, project)
+                    self.debug_sessions[session.id] = (project['id'], run_id, session)
+            return session.call({'operation': 'debug', **arguments})
         with tempfile.TemporaryDirectory(prefix='diagnostic-interface-') as directory:
             result_file = Path(directory) / 'result.json'
             completed = subprocess.run(
@@ -58,22 +74,38 @@ class Registry:
         module = str(data.get('module', '')).strip()
         if not re.fullmatch(r'[A-Za-z_]\w*(\.[A-Za-z_]\w*)*', module):
             raise ValueError('Use an importable module name, for example plotting.api')
+        factory = str(data.get('factory') or '').strip()
+        if factory and not all(part.isidentifier() and not part.startswith('_') for part in factory.split('.')):
+            raise ValueError('Use a public class or factory name / 请填写公开的类或工厂函数名')
         project = {'id': uuid.uuid4().hex, 'name': str(data.get('name') or path.name),
                    'path': str(path), 'module': module,
+                   'factory': factory,
                    'python': str(data.get('python') or sys.executable)}
         result = self.run(project, 'discover')
         if not result['ok']:
             return result
-        project.update(interfaces=result['interfaces'], moduleFile=result['moduleFile'])
+        project.update(interfaces=result['interfaces'], moduleFile=result['moduleFile'],
+                       initParameters=result.get('initParameters', []))
         with self.lock:
             # 同一入口重新登记即刷新接口，保留平台 ID。
             existing = next((p for p in self.projects.values()
-                             if p['path'] == project['path'] and p['module'] == module), None)
+                             if p['path'] == project['path'] and p['module'] == module
+                             and p.get('factory', '') == factory), None)
             if existing:
                 project['id'] = existing['id']
+                self.close_debug(project['id'])
             self.projects[project['id']] = project
             self.save()
         return {**result, 'project': project}
+
+    def close_debug(self, project_id=None, session_id=None):
+        with self.lock:
+            keys = [key for key, entry in self.debug_sessions.items()
+                    if (project_id is None or entry[0] == project_id)
+                    and (session_id is None or key == session_id)]
+            for key in keys:
+                _, run_id, _ = self.debug_sessions.pop(key)
+                self.sessions.close(run_id)
 
     def get(self, project_id):
         with self.lock:
@@ -118,7 +150,12 @@ def make_handler(registry):
                     self.reply({'error': 'Invalid run ID'}, 400)
                     return
                 try:
+                    failed = engine_request('/process-api/management/deadletter-jobs?processInstanceId=' + run_id + '&size=100')['data']
+                    for job in failed:
+                        if job.get('exceptionMessage'):
+                            job['traceback'] = engine_request('/process-api/management/deadletter-jobs/' + job['id'] + '/exception-stacktrace', as_text=True)
                     self.reply({'process': engine_request('/process-api/history/historic-process-instances/' + run_id),
+                        'failures': failed,
                         'variables': engine_request('/process-api/history/historic-variable-instances?processInstanceId=' + run_id + '&size=200'),
                         'activities': engine_request('/process-api/history/historic-activity-instances?processInstanceId=' + run_id + '&size=200&sort=startTime&order=asc'),
                         'review': engine_request('/diagnosis-api/instances/' + run_id + '/review')})
@@ -179,15 +216,21 @@ def make_handler(registry):
                     result = {'ok': True, 'run': run, 'files': compiled['files']}
                 elif parts == ['api', 'projects']:
                     result = registry.register(data)
+                elif len(parts) == 5 and parts[:2] == ['api', 'projects'] and parts[3:] == ['sessions', 'close']:
+                    registry.get(parts[2])
+                    registry.close_debug(parts[2], data.get('sessionId'))
+                    result = {'ok': True}
                 elif len(parts) == 4 and parts[:2] == ['api', 'projects']:
                     project = registry.get(parts[2])
                     if parts[3] == 'call':
                         result = registry.run(project, 'call', function=data['function'],
-                                              args=data.get('args', []), kwargs=data.get('kwargs', {}))
+                                              args=data.get('args', []), kwargs=data.get('kwargs', {}),
+                                              inputs=data.get('inputs', {}), sessionId=data.get('sessionId'))
                     elif parts[3] == 'refresh':
                         result = registry.register(project)
                     elif parts[3] == 'remove':
                         with registry.lock:
+                            registry.close_debug(project['id'])
                             del registry.projects[project['id']]
                             registry.save()
                         result = {'ok': True}
@@ -198,7 +241,7 @@ def make_handler(registry):
                     self.reply({'error': 'Not found'}, 404)
                     return
                 self.reply(result, 200 if result.get('ok') else 422)
-            except (ValueError, TypeError, KeyError, OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+            except (ValueError, TypeError, KeyError, OSError, RuntimeError, TimeoutError, subprocess.TimeoutExpired) as error:
                 self.reply({'ok': False, 'error': f'{type(error).__name__}: {error}'}, 400)
 
     return Handler
@@ -207,6 +250,11 @@ def make_handler(registry):
 def create_server(port=8765, registry_file=None, timeout=120, origins=None):
     registry = Registry(registry_file or ROOT / 'backend' / '.local' / 'projects.json', timeout)
     server = ThreadingHTTPServer(('127.0.0.1', port), make_handler(registry))
+    close_server = server.server_close
+    def close():
+        registry.close_debug()
+        close_server()
+    server.server_close = close
     server.allowed_origins = set(origins or []) | {
         f'http://{host}:{p}' for host in ('localhost', '127.0.0.1')
         for p in (5173, 5174, server.server_port)}
@@ -217,9 +265,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Local Python project integration')
     parser.add_argument('--port', type=int, default=8765)
     parser.add_argument('--timeout', type=int, default=120)
+    parser.add_argument('--registry', type=Path, default=None)
     parser.add_argument('--origin', action='append', default=[])
     args = parser.parse_args()
-    server = create_server(args.port, timeout=args.timeout, origins=args.origin)
+    server = create_server(args.port, registry_file=args.registry, timeout=args.timeout, origins=args.origin)
     print(f'Python backend: http://127.0.0.1:{server.server_port}/vue-bpmn-designer/', flush=True)
     try:
         server.serve_forever()

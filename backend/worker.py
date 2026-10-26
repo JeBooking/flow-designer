@@ -1,23 +1,12 @@
-"""每次操作在独立 Python 进程内导入项目，避免同名包和模块缓存串用。"""
-import asyncio
+"""登记时独立导入工程发现接口；实际调试和流程由会话进程运行。"""
 import contextlib
 import importlib
-import inspect
 import io
 import json
 from pathlib import Path
 import sys
 import traceback
-
-
-def public_functions(module):
-    names = getattr(module, '__all__', None)
-    if names is None:
-        names = [name for name, value in vars(module).items()
-                 if not name.startswith('_') and inspect.isroutine(value)
-                 and getattr(value, '__module__', None) == module.__name__]
-    return {name: getattr(module, name) for name in names
-            if isinstance(name, str) and inspect.isroutine(getattr(module, name, None))}
+from python_runtime import NativeRuntime, display_value, member, public_members
 
 
 def execute(request):
@@ -27,31 +16,22 @@ def execute(request):
     location = getattr(module, '__file__', None)
     if not location or project not in Path(location).resolve().parents:
         raise ValueError('Entry module must come from the selected project directory')
-    functions = public_functions(module)
-    if request['operation'] == 'discover':
-        result = []
-        for name, function in functions.items():
-            try:
-                signature = str(inspect.signature(function))
-            except (ValueError, TypeError):
-                signature = '(...)'
-            result.append({'name': name, 'signature': signature,
-                           'description': inspect.getdoc(function) or ''})
-        return {'interfaces': result, 'moduleFile': str(location)}
-    function = functions.get(request['function'])
-    if function is None:
-        raise ValueError('Function is not public in this entry module')
-    args, kwargs = request.get('args', []), request.get('kwargs', {})
-    if not isinstance(args, list) or not isinstance(kwargs, dict):
-        raise ValueError('args must be an array and kwargs must be an object')
-    value = function(*args, **kwargs)
-    if inspect.isawaitable(value):
-        value = asyncio.run(value)
+    runtime = NativeRuntime()
     try:
-        json.dumps(value, allow_nan=False)
-        return {'result': value, 'representation': 'json'}
-    except (TypeError, ValueError):
-        return {'result': repr(value), 'representation': 'repr'}
+        if request['operation'] == 'discover':
+            return runtime.discover(request['module'], request.get('factory', ''), request.get('inputs', {}))
+        owner = runtime.target(request['module'], request.get('factory', ''), request.get('inputs', {}))
+        if not request.get('factory') and request['function'] not in public_members(owner):
+            raise ValueError('Function is not public in this entry module')
+        function = member(owner, request['function'])
+        args, kwargs = request.get('args', []), request.get('kwargs', {})
+        if not isinstance(args, list) or not isinstance(kwargs, dict):
+            raise TypeError('args must be an array and kwargs must be an object')
+        value = runtime.wait(function(*args, **kwargs))
+        payload = display_value(value)
+        return {'result': payload, 'representation': 'json' if payload is value else 'repr'}
+    finally:
+        runtime.close()
 
 
 if __name__ == '__main__':

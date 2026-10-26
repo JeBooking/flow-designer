@@ -1,141 +1,139 @@
-"""使用官方 Python 客户端执行绑定函数；业务工程通过普通 Python 导入复用。"""
+"""Flowable 调度任务，业务代码在每次排查独立的原生 Python 会话内运行。"""
 import argparse
-import asyncio
-import importlib
-import inspect
+import atexit
 import json
+import math
 import os
 from pathlib import Path
 import sys
 import threading
-from diagnostic_components import HumanDecisionRequest
+import traceback
 
-
-def resolve(value, variables):
-    if isinstance(value, str) and value.startswith('$'):
-        if value.startswith('$$'):
-            return value[1:]
-        if value == '$':
-            return variables
-        current = variables
-        for part in value[1:].split('.'):
-            current = current[int(part)] if isinstance(current, list) else current[part]
-        return current
-    if isinstance(value, list):
-        return [resolve(item, variables) for item in value]
-    if isinstance(value, dict):
-        return {key: resolve(item, variables) for key, item in value.items()}
-    return value
-
-
-def automatic_arguments(function, explicit, variables):
-    """仅匹配可证明唯一的数据来源；保留默认值，不猜测设备参数。"""
-    parameters = inspect.signature(function).parameters
-    values = dict(explicit)
-    for name, parameter in parameters.items():
-        if name in values or parameter.kind in (parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD):
-            continue
-        if name in variables:
-            values[name] = variables[name]
-            continue
-        candidates = [value[name] for key, value in variables.items()
-                      if not key.startswith(('request_', 'review_', 'route_', 'human_'))
-                      and isinstance(value, dict) and name in value]
-        if len(candidates) > 1:
-            raise ValueError('Ambiguous interface parameter / 接口参数来源不唯一: ' + name)
-        if candidates:
-            values[name] = candidates[0]
-        elif parameter.default is parameter.empty:
-            raise ValueError('Missing interface parameter / 缺少接口参数数据: ' + name)
-    args = []
-    for name, parameter in parameters.items():
-        if parameter.kind == parameter.POSITIONAL_ONLY:
-            args.append(values.pop(name, parameter.default))
-    return args, values
-
-
-def decision_branch(result, binding):
-    value = result.get('next', result.get('result')) if isinstance(result, dict) else result
-    if value is True or value in ('yes', '是'):
-        return 'yes'
-    if value is False or value in ('no', '否'):
-        return 'no'
-    branch = binding.get('branches', {}).get(value) if isinstance(value, str) else None
-    if branch in ('yes', 'no'):
-        return branch
-    raise ValueError('Investigation must return yes/no / 排查接口必须返回是或否')
+from python_runtime import NativeRuntime, automatic_arguments, decision_branch, resolve
+from python_sessions import SessionManager, project_key
+from worker_lease import WorkerLease
 
 
 def execute(binding, variables):
-    module = importlib.import_module(binding['module'])
-    function = getattr(module, binding['function'])
-    args, kwargs = automatic_arguments(function, resolve(binding.get('kwargs', {}), variables), variables)
-    result = function(*args, **kwargs)
-    if inspect.isawaitable(result):
-        result = asyncio.run(result)
-    # 约定只限制执行器需要的路由信息，业务结果仍可采用各工程自己的结构。
-    if isinstance(result, HumanDecisionRequest):
-        if not isinstance(result.instructions, str):
-            raise ValueError('Human decision instructions must be text')
-        if binding.get('kind') and binding['kind'] != 'investigation':
-            raise ValueError('Only investigations can request judgment / 只有排查节点可请求判断')
-        if result.options and set(result.options) not in (set(binding['outgoing']), {'yes', 'no'}):
-            raise ValueError('Human decision options must match outgoing flow IDs')
-        json.dumps(result.data, allow_nan=False)
-        return result
-    json.dumps(result, allow_nan=False)
-    outgoing = binding['outgoing']
-    if (binding.get('kind') == 'investigation' or binding.get('branches')) and not binding.get('humanDecision'):
-        decision_branch(result, binding)
-    elif not binding.get('kind') and len(outgoing) > 1 and not binding.get('humanDecision'):
-        if not isinstance(result, dict) or result.get('next') not in outgoing:
-            raise ValueError('Branch function must return {"next": "outgoing flow ID", ...}')
-    return result
+    """直接调用入口供组件工具使用；真实流程使用隔离会话。"""
+    runtime = NativeRuntime()
+    try:
+        return runtime.execute(binding, variables)
+    finally:
+        runtime.close()
 
 
-def make_callback(binding):
+def select_project(binding, projects, registered):
+    candidates = [project for project in registered
+                  if project['module'] == binding['module']
+                  and project.get('factory', '') == binding.get('factory', '')]
+    if projects:
+        candidates = [project for project in candidates if Path(project['path']).resolve() in projects]
+    identities = {(str(Path(project['path']).resolve()), project['python']) for project in candidates}
+    if len(identities) > 1:
+        raise ValueError('Multiple matching projects; select one with --project / 同名模块来自多个工程，请用 --project 指定目录')
+    if candidates:
+        return candidates[0]
+    module_path = Path(*binding['module'].split('.'))
+    for project in projects:
+        if any((root / module_path).with_suffix('.py').is_file()
+               or (root / module_path / '__init__.py').is_file()
+               for root in (project / 'src', project)):
+            return {'path': str(project), 'python': sys.executable, 'module': binding['module']}
+    if projects:
+        raise ValueError('Module is not in selected project / 指定工程中找不到模块: ' + binding['module'])
+    raise ValueError('Register the project or use --project / 请先登记工程或使用 --project: ' + binding['module'])
+
+
+def make_callback(binding, sessions=None, project=None, checkpoint=None):
     def callback(job, builder):
         variables = {variable.name: variable.value for variable in job.variables}
-        result = execute(binding, variables)
-        requested = isinstance(result, HumanDecisionRequest)
-        manual = requested or bool(binding.get('humanDecision'))
-        payload = result.data if requested else result
-        success = builder.success().variable_json(binding['nodeId'], payload)
-        # 适配层只传递组件请求，不捕获业务异常，也不判断业务代码是否已实现。
-        success.variable_boolean('human_' + binding['nodeId'], manual)
-        success.variable_json('request_' + binding['nodeId'],
-            {'instructions': result.instructions} if requested else {})
-        if (binding.get('kind') == 'investigation' or binding.get('branches')) and not manual:
-            success.variable_string('route_' + binding['nodeId'], decision_branch(result, binding))
-        elif not binding.get('kind') and len(binding['outgoing']) > 1 and not manual:
-            success.variable_string('route_' + binding['nodeId'], result['next'])
-        print(json.dumps({'node': binding['nodeId'], 'result': payload, 'human': manual}, ensure_ascii=False), flush=True)
-        return success
+        try:
+            if sessions is None or project is None:
+                raise RuntimeError('Python session manager is required')
+            marker = 'pythonSession_' + project_key(project)
+            session = sessions.get(job.process_instance_id, project, variables.get(marker))
+            if checkpoint and not variables.get(marker):
+                # 调用业务前保存归属，首次节点抛异常后重启也不能静默重造对象。
+                checkpoint(job.process_instance_id, marker, session.id)
+            response = session.call({'binding': binding, 'variables': variables})
+            for stream in ('stdout', 'stderr'):
+                if response.get(stream):
+                    print(response[stream], end='', file=sys.stderr if stream == 'stderr' else sys.stdout, flush=True)
+            if not response['ok']:
+                return (builder.failure().error_message(binding['nodeId'] + ': ' + response['error'])
+                        .error_details(response['traceback']).retries(0))
+            success = builder.success().variable_json(binding['nodeId'], response['result'])
+            success.variable_string(marker, session.id)
+            success.variable_boolean('human_' + binding['nodeId'], response['human'])
+            success.variable_json('request_' + binding['nodeId'], response['request'])
+            if 'route' in response:
+                success.variable_string('route_' + binding['nodeId'], response['route'])
+            print(json.dumps({'node': binding['nodeId'], 'result': response['result'],
+                              'human': response['human']}, ensure_ascii=False), flush=True)
+            return success
+        except Exception as error:
+            details = traceback.format_exc()
+            print(details, file=sys.stderr, flush=True)
+            return (builder.failure().error_message(binding['nodeId'] + ': ' + str(error))
+                    .error_details(details).retries(0))
     return callback
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Flowable official Python external worker')
+    parser = argparse.ArgumentParser(description='Flowable worker with per-run native Python sessions')
     parser.add_argument('bindings', type=Path)
     parser.add_argument('--project', type=Path, action='append', default=[])
+    parser.add_argument('--registry', type=Path, default=Path(__file__).parent / '.local' / 'projects.json')
+    parser.add_argument('--timeout', type=float, default=120)
     args = parser.parse_args()
-    for project in reversed(args.project):
-        sys.path[:0] = [str(project.resolve() / 'src'), str(project.resolve())]
+    if args.timeout <= 0:
+        parser.error('--timeout must be positive')
+    projects = [path.resolve() for path in args.project]
+    registered = list(json.loads(args.registry.read_text(encoding='utf-8')).values()) if args.registry.exists() else []
     from flowable.external_worker_client import ExternalWorkerClient
     from requests.auth import HTTPBasicAuth
+    import requests
     manifest = json.loads(args.bindings.read_text(encoding='utf-8-sig'))
-    client = ExternalWorkerClient(os.environ.get('FLOWABLE_URL', 'http://127.0.0.1:8080'),
-        auth=HTTPBasicAuth(os.environ.get('FLOWABLE_USER', 'diagnostic'),
-                           os.environ.get('FLOWABLE_PASSWORD', 'local-demo')))
+    host = os.environ.get('FLOWABLE_URL', 'http://127.0.0.1:8080')
+    auth = HTTPBasicAuth(os.environ.get('FLOWABLE_USER', 'diagnostic'),
+                         os.environ.get('FLOWABLE_PASSWORD', 'local-demo'))
+    client = ExternalWorkerClient(host, auth=auth)
+    sessions = SessionManager(args.timeout)
+    atexit.register(sessions.close)
     automatic = {topic: binding for topic, binding in manifest['bindings'].items() if binding.get('module')}
-    subscriptions = [client.subscribe(topic, make_callback(binding), lock_duration='PT5M',
-        wait_period_seconds=1) for topic, binding in automatic.items()]
+    lease = WorkerLease(host, automatic)
+    atexit.register(lease.close)
+    resolved = {topic: select_project(binding, projects, registered) for topic, binding in automatic.items()}
+    def checkpoint(run_id, marker, session_id):
+        from flowable_bridge import engine_request
+        engine_request('/process-api/runtime/process-instances/' + run_id + '/variables',
+                       json.dumps([{'name': marker, 'type': 'string', 'value': session_id}]).encode())
+    subscriptions = [client.subscribe(topic, make_callback(binding, sessions, resolved[topic], checkpoint),
+                     lock_duration=f'PT{max(300, math.ceil(args.timeout) + 60)}S', wait_period_seconds=1)
+                     for topic, binding in automatic.items()]
     print('Subscribed: ' + ', '.join(automatic), flush=True)
     try:
-        threading.Event().wait()
+        while True:
+            threading.Event().wait(10)
+            with sessions.lock:
+                runs = {key[0] for key in sessions.sessions}
+            for run_id in runs:
+                try:
+                    response = requests.get(host.rstrip('/') + '/process-api/runtime/process-instances/' + run_id,
+                                            auth=auth, timeout=5)
+                    if response.status_code == 404:
+                        sessions.close(run_id)
+                except requests.RequestException:
+                    # 引擎暂时断开不代表流程结束，保留人工等待中的实例。
+                    pass
     except KeyboardInterrupt:
+        pass
+    finally:
         for subscription in subscriptions:
-            subscription.unsubscribe()
+            subscription.unsubscribe(timeout=10)
+        sessions.close()
+        lease.close()
 
 
 if __name__ == '__main__':

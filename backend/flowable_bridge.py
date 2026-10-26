@@ -152,7 +152,7 @@ def compile_workflow(xml):
     mode = process.get(f('diagnosisMode'), 'parallel')
     if mode not in ('parallel', 'serial'):
         raise ValueError('Invalid diagnosis mode / 无效排查模式')
-    signature = {'formatVersion': 6, 'processId': process_id, 'mode': mode, 'nodes': [], 'flows': []}
+    signature = {'formatVersion': 7, 'processId': process_id, 'mode': mode, 'nodes': [], 'flows': []}
     executable_elements = [e for e in process if e.tag in (b('task'), b('startEvent'), b('sequenceFlow'))]
     execution_ids = [e.get('id') for e in executable_elements]
     if any(not value for value in execution_ids) or len(set(execution_ids)) != len(execution_ids):
@@ -168,6 +168,7 @@ def compile_workflow(xml):
                 raise ValueError('Arguments must be an object / 参数必须是 JSON 对象')
             signature['nodes'].append({'id': element.get('id'), 'kind': element.get(f('diagnosisKind')),
                 'module': element.get(f('pythonModule'), '').strip(),
+                'factory': element.get(f('pythonFactory'), '').strip(),
                 'function': element.get(f('pythonFunction'), '').strip(), 'kwargs': kwargs,
                 'topic': element.get(f('pythonTopic'), '').strip(),
                 'humanDecision': element.get(f('humanDecision')) == 'true'})
@@ -292,6 +293,7 @@ def compile_workflow(xml):
         if kind == 'conclusion' and len(outgoing) != 1:
             raise ValueError('Conclusion requires one successor / 结论必须有且仅有一个后继')
         module, function = node.get(f('pythonModule'), '').strip(), node.get(f('pythonFunction'), '').strip()
+        factory = node.get(f('pythonFactory'), '').strip()
         if kind not in ('problemSolved', 'escalation'):
             human = kind == 'investigation' and node.get(f('humanDecision')) == 'true'
             branches = {}
@@ -306,6 +308,8 @@ def compile_workflow(xml):
                 raise ValueError('Bind Python interface / 请绑定 Python 接口: ' + node_id)
             if has_python and (not re.fullmatch(r'[A-Za-z_]\w*(\.[A-Za-z_]\w*)*', module) or not re.fullmatch(r'[A-Za-z_]\w*', function)):
                 raise ValueError('Invalid Python interface / 无效 Python 接口: ' + node_id)
+            if factory and (not has_python or not all(part.isidentifier() and not part.startswith('_') for part in factory.split('.'))):
+                raise ValueError('Invalid Python factory / 无效 Python 实例入口: ' + node_id)
             kwargs = json.loads(node.get(f('pythonArguments')) or '{}')
             if not isinstance(kwargs, dict):
                 raise ValueError('Arguments must be an object / 参数必须是 JSON 对象')
@@ -313,6 +317,7 @@ def compile_workflow(xml):
             if topic in manifest['bindings']:
                 raise ValueError('Duplicate topic / 重复工作主题: ' + topic)
             manifest['bindings'][topic] = {'nodeId': node_id, 'module': module, 'function': function,
+                'factory': factory,
                 'kwargs': kwargs, 'outgoing': sorted(e.get('id') for e in outgoing), 'kind': kind,
                 'humanDecision': human, 'branches': branches, 'mode': mode,
                 'detailText': manifest['nodes'][node_id]['detailText']}
@@ -433,7 +438,7 @@ def compile_workflow(xml):
         'bindings.json': json.dumps(manifest, ensure_ascii=False, indent=2)}}
 
 
-def engine_request(path, data=None, content_type='application/json'):
+def engine_request(path, data=None, content_type='application/json', as_text=False):
     base = os.environ.get('FLOWABLE_URL', 'http://127.0.0.1:8080').rstrip('/')
     credentials = os.environ.get('FLOWABLE_USER', 'diagnostic') + ':' + os.environ.get('FLOWABLE_PASSWORD', 'local-demo')
     headers = {'Authorization': 'Basic ' + base64.b64encode(credentials.encode()).decode()}
@@ -441,7 +446,9 @@ def engine_request(path, data=None, content_type='application/json'):
         headers['Content-Type'] = content_type
     try:
         with urlopen(Request(base + path, data=data, headers=headers), timeout=30) as response:
-            return json.load(response) if response.status != 204 else {}
+            if response.status == 204:
+                return {}
+            return response.read().decode('utf-8', errors='replace') if as_text else json.load(response)
     except HTTPError as error:
         raise RuntimeError(f'Flowable HTTP {error.code}: {error.read().decode(errors="replace")}') from error
     except URLError as error:
