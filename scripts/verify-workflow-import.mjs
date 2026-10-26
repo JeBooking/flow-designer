@@ -99,6 +99,7 @@ try {
   const complete = structuredClone(workflow)
   complete.nodes.Inspect.referenceImage = 'data:image/png;base64,AAAA'
   complete.nodes.Inspect.pythonModule = 'device.checks'
+  complete.nodes.Inspect.pythonFactory = 'Device'
   complete.nodes.Inspect.pythonFunction = 'inspect_voltage'
   complete.nodes.Inspect.pythonArguments = '{"limit":12}'
   complete.nodes.Inspect.pythonTopic = 'voltage'
@@ -115,6 +116,7 @@ try {
   assert.deepEqual([...projectFiles['assets/resource_1.png']], [0, 0, 0])
   assert.ok(!compact.includes('base64') && !('source.bpmn' in projectFiles))
   assert.equal(definition.nodes.Inspect.pythonFunction, 'inspect_voltage')
+  assert.equal(definition.nodes.Inspect.pythonFactory, 'Device')
   assert.equal(definition.nodes.Inspect.humanDecision, true)
   assert.ok(!('name' in definition.nodes.Inspect), 'Do not save size-dependent automatic summaries')
   assert.ok(!('scope' in definition.nodes.Inspect) && !('id' in definition.nodes.Inspect))

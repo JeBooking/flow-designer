@@ -42,6 +42,7 @@ interface WorkflowNode {
   documentation?: string
   nameMode?: string
   pythonModule?: string
+  pythonFactory?: string
   pythonFunction?: string
   pythonArguments?: string
   pythonTopic?: string
@@ -189,6 +190,7 @@ export async function importWorkflowJson(
     'documentation',
     'nameMode',
     'pythonModule',
+    'pythonFactory',
     'pythonFunction',
     'pythonArguments',
     'pythonTopic',

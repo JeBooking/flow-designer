@@ -4,7 +4,7 @@ import type {
   PythonCallResult,
 } from '@/types/pythonProject'
 
-async function request<T>(path: string, body?: unknown): Promise<T> {
+async function request<T>(path: string, body?: unknown, allowCallFailure = false): Promise<T> {
   const response = await fetch(`/api/projects${path}`, {
     method: body === undefined ? 'GET' : 'POST',
     headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
@@ -22,7 +22,7 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
       ),
     )
   }
-  if (!response.ok) {
+  if (!response.ok && !(allowCallFailure && data.sessionId && data.ok === false)) {
     throw new Error(
       [data.error || `HTTP ${response.status}`, data.traceback, data.stdout, data.stderr]
         .filter(Boolean)
@@ -43,4 +43,13 @@ export const callPythonInterface = (
   name: string,
   args: unknown[],
   kwargs: Record<string, unknown>,
-) => request<PythonCallResult>(`/${encodeURIComponent(id)}/call`, { function: name, args, kwargs })
+  sessionId?: string,
+  inputs?: Record<string, unknown>,
+) =>
+  request<PythonCallResult>(
+    `/${encodeURIComponent(id)}/call`,
+    { function: name, args, kwargs, sessionId, inputs },
+    true,
+  )
+export const closePythonSession = (id: string, sessionId: string) =>
+  request<{ ok: boolean }>(`/${encodeURIComponent(id)}/sessions/close`, { sessionId })

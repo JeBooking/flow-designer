@@ -6,16 +6,37 @@ import type { PythonProject } from '@/types/pythonProject'
 import { useCustomRef } from '@/views/ProcessDesigner/utils/ElementUtil'
 
 const moduleValue = useCustomRef('flowable:pythonModule')
+const factoryValue = useCustomRef('flowable:pythonFactory')
 const functionValue = useCustomRef('flowable:pythonFunction')
 const { selectedElement, updateProperties } = useBpmnContextService()
-const moduleName = computed({
-  get: () => moduleValue.value,
+const factory = computed({
+  get: () => factoryValue.value,
   set: (value: string) =>
     updateProperties({
-      'flowable:pythonModule': value,
+      'flowable:pythonFactory': value || undefined,
       'flowable:pythonFunction': undefined,
       'flowable:pythonArguments': undefined,
     }),
+})
+const moduleName = computed({
+  get: () =>
+    projects.value.some(
+      (project) =>
+        project.module === moduleValue.value && (project.factory || '') === (factory.value || ''),
+    )
+      ? JSON.stringify([moduleValue.value, factory.value || ''])
+      : moduleValue.value,
+  set: (value: string) => {
+    const project = projects.value.find(
+      (entry) => JSON.stringify([entry.module, entry.factory || '']) === value,
+    )
+    updateProperties({
+      'flowable:pythonModule': project?.module || value,
+      'flowable:pythonFactory': project?.factory || undefined,
+      'flowable:pythonFunction': undefined,
+      'flowable:pythonArguments': undefined,
+    })
+  },
 })
 const functionName = computed({
   get: () => functionValue.value,
@@ -34,7 +55,10 @@ onMounted(async () => {
 })
 const interfaces = computed(() =>
   projects.value
-    .filter((project) => project.module === moduleName.value)
+    .filter(
+      (project) =>
+        project.module === moduleValue.value && (project.factory || '') === (factory.value || ''),
+    )
     .flatMap((project) => project.interfaces),
 )
 const topic = useCustomRef('flowable:pythonTopic')
@@ -77,10 +101,15 @@ const humanDecision = useCustomRef<boolean>('flowable:humanDecision')
         <el-option
           v-for="project in projects"
           :key="project.id"
-          :value="project.module"
-          :label="project.name + ' · ' + project.module"
+          :value="JSON.stringify([project.module, project.factory || ''])"
+          :label="
+            project.name + ' · ' + project.module + (project.factory ? ' · ' + project.factory : '')
+          "
         />
       </el-select>
+    </el-form-item>
+    <el-form-item :label="$tu('会话类或工厂（可选）', 'Session class or factory (optional)')">
+      <el-input v-model="factory" placeholder="Device / create_session" />
     </el-form-item>
     <el-form-item :label="$tu('函数名称', 'Function name')">
       <el-select v-model="functionName" filterable allow-create default-first-option>
@@ -99,8 +128,8 @@ const humanDecision = useCustomRef<boolean>('flowable:humanDecision')
     <el-text size="small" type="info">
       {{
         $tu(
-          '参数按接口签名自动匹配流程变量或上游结果中的同名字段，默认值自动保留，无参数接口直接调用。动作可无返回值；排查接口返回是或否。数据缺失或同名冲突时会提示具体参数，不需要填写代码。',
-          'Parameters are matched by name from workflow variables or upstream results, preserving defaults. No-argument and void actions are supported. Investigations return yes/no. Missing or ambiguous data reports the parameter; no code entry is needed.',
+          '参数按接口签名自动匹配流程变量或上游结果中的同名字段，默认值自动保留，无参数接口直接调用。动作可无返回值；排查接口返回是或否。配置类或工厂后，同一次排查复用实例，不同排查相互隔离。调用失败会显示 Python 原生错误，不需要填写代码。',
+          'Parameters are matched by name from workflow variables or upstream results, preserving defaults. No-argument and void actions are supported. Investigations return yes/no. A configured class or factory reuses one instance within an investigation and isolates separate investigations. Call failures display native Python errors; no code entry is needed.',
         )
       }}
     </el-text>

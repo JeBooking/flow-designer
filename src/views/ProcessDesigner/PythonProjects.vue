@@ -3,6 +3,7 @@ import type {
   PythonProject,
   PythonProjectRegistration,
   PythonInterface,
+  PythonParameter,
 } from '@/types/pythonProject'
 import {
   listPythonProjects,
@@ -10,6 +11,7 @@ import {
   refreshPythonProject,
   removePythonProject,
   callPythonInterface,
+  closePythonSession,
 } from '@/services/pythonProjects'
 
 const visible = ref(false)
@@ -22,16 +24,146 @@ const registration = reactive<PythonProjectRegistration>({
   name: '',
   path: '',
   module: '',
+  factory: '',
   python: '',
 })
 const error = ref('')
 const activeFunction = ref<PythonInterface>()
-const positional = ref('[]')
-const keywords = ref('{}')
+const parameterValues = reactive<Record<string, string>>({})
+const initValues = reactive<Record<string, string>>({})
 const output = ref('')
-const resetSelection = () => {
+const session = ref<{ projectId: string; id: string }>()
+const resetSession = async () => {
+  const current = session.value
+  if (!current) return
+  await closePythonSession(current.projectId, current.id)
+  session.value = undefined
+}
+const resetSelection = async () => {
+  busy.value = true
   activeFunction.value = undefined
   output.value = ''
+  try {
+    await resetSession()
+    Object.keys(initValues).forEach((key) => delete initValues[key])
+  } catch (failure) {
+    error.value = describe(failure)
+  } finally {
+    busy.value = false
+  }
+}
+const resetDebugSession = async () => {
+  busy.value = true
+  error.value = ''
+  try {
+    await resetSession()
+    output.value = ''
+  } catch (failure) {
+    error.value = describe(failure)
+  } finally {
+    busy.value = false
+  }
+}
+const parameterGroups = computed(() => [
+  {
+    title: translateUi('会话初始化参数', 'Session initialization parameters'),
+    parameters: session.value
+      ? []
+      : (selected.value?.initParameters || []).filter(
+          (parameter) => parameter.kind !== 'VAR_POSITIONAL' && parameter.kind !== 'VAR_KEYWORD',
+        ),
+    values: initValues,
+  },
+  {
+    title: translateUi('接口参数', 'Function parameters'),
+    parameters: activeFunction.value?.parameters || [],
+    values: parameterValues,
+  },
+])
+const isVariadic = (parameter: PythonParameter) =>
+  parameter.kind === 'VAR_POSITIONAL' || parameter.kind === 'VAR_KEYWORD'
+const parseValue = (value: string): unknown => {
+  try {
+    return JSON.parse(value)
+  } catch {
+    return value
+  }
+}
+const displayResult = (value: unknown, representation?: 'json' | 'repr') => {
+  if (
+    value &&
+    typeof value === 'object' &&
+    'native' in value &&
+    value.native === true &&
+    'representation' in value &&
+    typeof value.representation === 'string'
+  )
+    return `${value.representation}\n${JSON.stringify(value, null, 2)}`
+  return representation === 'repr' && typeof value === 'string'
+    ? value
+    : JSON.stringify(value, null, 2)
+}
+const readValues = (parameters: PythonParameter[], values: Record<string, string>) => {
+  const supplied: Record<string, unknown> = {}
+  for (const parameter of parameters) {
+    const raw = values[parameter.name] || ''
+    if (!raw.trim()) {
+      if (parameter.required)
+        throw new Error(
+          translateUi('请填写必填参数：', 'Enter the required parameter: ') + parameter.name,
+        )
+      continue
+    }
+    supplied[parameter.name] = parseValue(raw)
+  }
+  return supplied
+}
+const buildArguments = (parameters: PythonParameter[], values: Record<string, unknown>) => {
+  const args: unknown[] = []
+  const kwargs: Record<string, unknown> = {}
+  const variadic = parameters.find((parameter) => parameter.kind === 'VAR_POSITIONAL')
+  const extra = variadic ? values[variadic.name] : undefined
+  if (extra !== undefined && !Array.isArray(extra))
+    throw new Error(translateUi('*args 须为 JSON 数组', '*args must be a JSON array'))
+  const hasExtra = Array.isArray(extra) && extra.length > 0
+  let omittedPositional = false
+  for (const parameter of parameters) {
+    const value = values[parameter.name]
+    if (parameter.kind === 'VAR_POSITIONAL') continue
+    if (parameter.kind === 'VAR_KEYWORD') {
+      if (value !== undefined) {
+        if (!value || typeof value !== 'object' || Array.isArray(value))
+          throw new Error(translateUi('**kwargs 须为 JSON 对象', '**kwargs must be a JSON object'))
+        Object.assign(kwargs, value)
+      }
+    } else if (
+      parameter.kind === 'POSITIONAL_ONLY' ||
+      (hasExtra && parameter.kind === 'POSITIONAL_OR_KEYWORD')
+    ) {
+      if (value === undefined) omittedPositional = true
+      else {
+        if (omittedPositional)
+          throw new Error(
+            translateUi(
+              '使用后续位置参数前，请填写此前的位置参数默认值',
+              'Supply preceding positional defaults before later positional arguments',
+            ),
+          )
+        args.push(value)
+      }
+    } else if (value !== undefined) kwargs[parameter.name] = value
+  }
+  if (hasExtra) {
+    if (omittedPositional)
+      throw new Error(
+        translateUi(
+          '使用 *args 前，请填写所有位置参数',
+          'Supply all positional parameters before *args',
+        ),
+      )
+    args.push(...extra)
+  }
+  return { args, kwargs }
 }
 const describe = (failure: unknown) =>
   failure instanceof Error ? failure.message : String(failure)
@@ -40,8 +172,12 @@ const load = async () => {
   error.value = ''
   try {
     projects.value = (await listPythonProjects()).projects
-    if (!projects.value.some((p) => p.id === selectedId.value))
+    if (!projects.value.some((p) => p.id === selectedId.value)) {
+      await resetSession()
+      activeFunction.value = undefined
+      Object.keys(initValues).forEach((key) => delete initValues[key])
       selectedId.value = projects.value[0]?.id || ''
+    }
   } catch (failure) {
     error.value = describe(failure)
   } finally {
@@ -53,6 +189,9 @@ const open = () => {
   void load()
 }
 defineExpose({ open })
+onBeforeUnmount(() => {
+  void resetSession().catch(() => undefined)
+})
 const register = async () => {
   if (!registration.path.trim() || !registration.module.trim()) {
     error.value = translateUi(
@@ -64,7 +203,9 @@ const register = async () => {
   busy.value = true
   error.value = ''
   try {
+    await resetSession()
     const { project } = await registerPythonProject({ ...registration })
+    Object.keys(initValues).forEach((key) => delete initValues[key])
     selectedId.value = project.id
     activeFunction.value = undefined
     await load()
@@ -79,6 +220,7 @@ const refresh = async () => {
   busy.value = true
   error.value = ''
   try {
+    await resetSession()
     await refreshPythonProject(selected.value.id)
     activeFunction.value = undefined
     await load()
@@ -93,6 +235,7 @@ const remove = async () => {
   busy.value = true
   error.value = ''
   try {
+    await resetSession()
     await removePythonProject(selected.value.id)
     activeFunction.value = undefined
     await load()
@@ -105,8 +248,7 @@ const remove = async () => {
 const choose = (entry: PythonInterface) => {
   activeFunction.value = entry
   output.value = ''
-  positional.value = '[]'
-  keywords.value = '{}'
+  Object.keys(parameterValues).forEach((key) => delete parameterValues[key])
 }
 const call = async () => {
   if (!selected.value || !activeFunction.value) return
@@ -114,23 +256,32 @@ const call = async () => {
   error.value = ''
   output.value = ''
   try {
-    const args: unknown = JSON.parse(positional.value)
-    const kwargs: unknown = JSON.parse(keywords.value)
-    if (!Array.isArray(args) || !kwargs || typeof kwargs !== 'object' || Array.isArray(kwargs)) {
-      throw new Error(
-        translateUi(
-          '位置参数须为 JSON 数组，关键字参数须为 JSON 对象',
-          'Positional arguments must be a JSON array; keyword arguments must be a JSON object',
-        ),
-      )
-    }
+    if (session.value && session.value.projectId !== selected.value.id) await resetSession()
+    const { args, kwargs } = buildArguments(
+      activeFunction.value.parameters || [],
+      readValues(activeFunction.value.parameters || [], parameterValues),
+    )
+    const inputs = session.value
+      ? undefined
+      : readValues(selected.value.initParameters || [], initValues)
     const result = await callPythonInterface(
       selected.value.id,
       activeFunction.value.name,
       args,
-      kwargs as Record<string, unknown>,
+      kwargs,
+      session.value?.id,
+      inputs,
     )
-    output.value = JSON.stringify(result, null, 2)
+    if (result.sessionId) session.value = { projectId: selected.value.id, id: result.sessionId }
+    output.value = [
+      displayResult(result.result, result.representation),
+      result.stdout,
+      result.stderr,
+      result.error,
+      result.traceback,
+    ]
+      .filter((value) => value !== undefined && value !== '')
+      .join('\n')
   } catch (failure) {
     error.value = describe(failure)
   } finally {
@@ -142,6 +293,7 @@ const example = () => {
     name: 'sample_plot',
     path: 'backend/examples/sample_project',
     module: 'sample_plot',
+    factory: '',
     python: '',
   })
 }
@@ -171,6 +323,17 @@ const example = () => {
       <el-form-item :label="$tu('入口模块', 'Entry module')" required
         ><el-input v-model="registration.module" placeholder="plotting.api"
       /></el-form-item>
+      <el-form-item :label="$tu('会话类或工厂（可选）', 'Session class or factory (optional)')">
+        <el-input v-model="registration.factory" placeholder="Device / create_session" />
+      </el-form-item>
+      <p>
+        {{
+          $tu(
+            '留空使用模块普通函数。填写类名或工厂路径后，每次排查创建一个实例，同次排查的接口共享其原生对象。无返回类注解的工厂会在接入时临时初始化一次以发现接口。',
+            'Leave blank for module functions. A class or factory creates one instance per investigation, sharing native objects between its calls. Factories without a return class annotation are initialized temporarily during registration to discover methods.',
+          )
+        }}
+      </p>
       <el-form-item
         :label="
           $tu(
@@ -196,7 +359,7 @@ const example = () => {
           <el-option
             v-for="project in projects"
             :key="project.id"
-            :label="`${project.name} (${project.module})`"
+            :label="`${project.name} (${project.module}${project.factory ? ' · ' + project.factory : ''})`"
             :value="project.id"
           />
         </el-select>
@@ -241,12 +404,63 @@ const example = () => {
     </template>
     <el-form v-if="activeFunction" label-position="top" :disabled="busy">
       <h3>{{ activeFunction.name }}{{ activeFunction.signature }}</h3>
-      <el-form-item :label="$tu('位置参数（JSON 数组）', 'Positional arguments (JSON array)')"
-        ><el-input v-model="positional" type="textarea" :rows="3"
-      /></el-form-item>
-      <el-form-item :label="$tu('关键字参数（JSON 对象）', 'Keyword arguments (JSON object)')"
-        ><el-input v-model="keywords" type="textarea" :rows="3"
-      /></el-form-item>
+      <p>
+        {{
+          $tu(
+            '数字、布尔值、null、数组和对象自动识别，其他输入按文本传递；空字符串请填双引号。可选参数留空使用 Python 默认值。',
+            'Numbers, booleans, null, arrays and objects are parsed automatically; other input is text. Enter double quotes for an empty string. Leave optional fields blank to use Python defaults.',
+          )
+        }}
+      </p>
+      <template v-for="group in parameterGroups" :key="group.title">
+        <template v-if="group.parameters.length">
+          <h4>{{ group.title }}</h4>
+          <template v-for="parameter in group.parameters" :key="parameter.name">
+            <el-form-item
+              v-if="!isVariadic(parameter)"
+              :label="parameter.name + (parameter.annotation ? ' · ' + parameter.annotation : '')"
+              :required="parameter.required"
+            >
+              <el-input
+                v-model="group.values[parameter.name]"
+                :placeholder="
+                  parameter.default !== undefined
+                    ? $tu('默认：', 'Default: ') + parameter.default
+                    : $tu('输入值', 'Enter a value')
+                "
+              />
+            </el-form-item>
+            <el-collapse v-else>
+              <el-collapse-item
+                :title="$tu('高级可变参数', 'Advanced variadic arguments') + ' · ' + parameter.name"
+              >
+                <el-form-item
+                  :label="
+                    parameter.kind === 'VAR_POSITIONAL'
+                      ? $tu('*args（JSON 数组）', '*args (JSON array)')
+                      : $tu('**kwargs（JSON 对象）', '**kwargs (JSON object)')
+                  "
+                >
+                  <el-input v-model="group.values[parameter.name]" type="textarea" :rows="2" />
+                </el-form-item>
+              </el-collapse-item>
+            </el-collapse>
+          </template>
+        </template>
+      </template>
+      <p>
+        {{
+          session
+            ? $tu(
+                '调试会话已建立，后续调用复用当前实例。',
+                'Debug session active; subsequent calls reuse this instance.',
+              )
+            : $tu('首次调用将创建调试会话。', 'The first call creates a debug session.')
+        }}
+      </p>
+      <el-button :disabled="!session" @click="resetDebugSession">{{
+        $tu('重置调试会话', 'Reset debug session')
+      }}</el-button>
       <el-button type="primary" :loading="busy" @click="call">{{
         $tu('调用 Python 接口', 'Call Python function')
       }}</el-button>

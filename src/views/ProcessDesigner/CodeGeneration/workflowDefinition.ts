@@ -110,6 +110,7 @@ export function generateWorkflowProject(definitions: ModelElement): ProjectFiles
     'referenceImage',
     'referenceImageName',
     'pythonModule',
+    'pythonFactory',
     'pythonFunction',
     'pythonArguments',
     'pythonTopic',
