@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Component, VNode } from 'vue'
+import type { VNode } from 'vue'
 import Investigation from '@/views/ProcessDesigner/Panel/Investigation/index.vue'
 import PythonBinding from '@/views/ProcessDesigner/Panel/PythonBinding/index.vue'
 import { getDiagnosisKind } from '@/views/ProcessDesigner/Diagnosis/model'
@@ -45,6 +45,7 @@ import Advanced from './Panel/BaseActivity/Advanced.vue'
 import Participant from './Panel/Participant/index.vue'
 import type EventBus from 'diagram-js/lib/core/EventBus'
 import type Canvas from 'diagram-js/lib/core/Canvas'
+import type Selection from 'diagram-js/lib/features/selection/Selection'
 import { find } from 'min-dash'
 import type { RootLike } from 'diagram-js/lib/model/Types'
 import type { Injector } from 'didi'
@@ -63,10 +64,12 @@ const eventBus = props.modeler.get<EventBus>('eventBus')
 const canvas = props.modeler.get<Canvas>('canvas')
 const injector = props.modeler.get<Injector>('injector')
 const elementRegistry = props.modeler.get<ElementRegistry>('elementRegistry')
+const selection = props.modeler.get<Selection>('selection')
 const selectedElement = shallowRef<Element>()
-const renderComponent = shallowRef<Component>(BaseActivity)
+const renderComponent = shallowRef<VNode>()
 const renderKey = ref('')
 const renderToken = ref('')
+let renderRevision = 0
 const PANEL_COMPONENTS = {
   Investigation,
   PythonBinding,
@@ -117,16 +120,31 @@ const elementsChangedHandler = (e: unknown) => onElementsChanged(e as { elements
 const rootAddedHandler = (e: unknown) => onRootAdded(e as { element?: RootLike })
 const replaceEndHandler = (e: unknown) =>
   onReplaceEnd(e as { element?: Element; newElement?: Element })
+const synchronizeSelection = () => {
+  const root = canvas.getRootElement()
+  if (root && !isImplicitRoot(root)) _update(selection.get()[0] || root)
+}
+const clearSelection = () => {
+  selectedElement.value = undefined
+  renderComponent.value = undefined
+  renderToken.value = ''
+}
 
 eventBus.on('selection.changed', selectionChangedHandler)
 eventBus.on('elements.changed', elementsChangedHandler)
 eventBus.on('root.added', rootAddedHandler)
 eventBus.on('replace.end', replaceEndHandler)
+eventBus.on('import.done', synchronizeSelection)
+eventBus.on('diagram.clear', clearSelection)
+// 导入可能先于面板挂载完成，不能只依赖 root.added 事件初始化节点上下文。
+onMounted(synchronizeSelection)
 onBeforeUnmount(() => {
   eventBus.off('selection.changed', selectionChangedHandler)
   eventBus.off('elements.changed', elementsChangedHandler)
   eventBus.off('root.added', rootAddedHandler)
   eventBus.off('replace.end', replaceEndHandler)
+  eventBus.off('import.done', synchronizeSelection)
+  eventBus.off('diagram.clear', clearSelection)
 })
 const onReplaceEnd = (e: { element?: Element; newElement?: Element }) => {
   const { element, newElement } = e
@@ -174,6 +192,8 @@ const _update = (element: Element) => {
   if (newSelectedElement && newSelectedElement.type === 'label') {
     newSelectedElement = newSelectedElement.labelTarget
   }
+  // 同 ID 的重新导入也会产生新对象，需要重建捕获旧节点的字段引用。
+  if (selectedElement.value !== newSelectedElement) renderToken.value = ''
   selectedElement.value = newSelectedElement
   useBpmnContextService({
     selectedElement: newSelectedElement,
@@ -297,7 +317,7 @@ const setCurrentComponents = (element: Element) => {
     ]),
   )
   renderComponent.value = h(BaseActivity, null, functionSlots)
-  renderKey.value = nextRenderToken
+  renderKey.value = `${++renderRevision}|${nextRenderToken}`
 }
 const isImplicitRoot = (element: RootLike) => {
   return element && element.isImplicit
@@ -314,28 +334,40 @@ const elementExists = (element: Element, elementRegistry: ElementRegistry) => {
   <div class="panel-container">
     <!--size="small" label-position="left" label-width="90px"-->
     <el-form v-bind="$attrs" label-width="110px">
-      <component :is="renderComponent" :key="renderKey" />
+      <component v-if="selectedElement && renderComponent" :is="renderComponent" :key="renderKey" />
+      <el-empty
+        v-else
+        :description="$tu('请选择节点以查看配置', 'Select a node to view its properties')"
+      />
     </el-form>
   </div>
 </template>
 <style scoped lang="scss">
 .panel-container {
   height: 100%;
+  min-height: 0;
+  min-width: 0;
 }
 
-:deep {
-  .el-form,
-  .el-tabs,
-  .el-tab-pane {
-    height: 100%;
-  }
+:deep(.el-form),
+:deep(.el-tabs),
+:deep(.el-tab-pane) {
+  height: 100%;
+  min-height: 0;
+}
 
-  .el-collapse {
-    height: calc(100% - 2px);
-  }
+:deep(.el-tabs) {
+  display: flex;
+  flex-direction: column;
+}
 
-  .el-tabs__header {
-    margin: 0;
-  }
+:deep(.el-tabs__header) {
+  flex-shrink: 0;
+  margin: 0;
+}
+
+:deep(.el-tabs__content) {
+  flex: 1;
+  min-height: 0;
 }
 </style>
