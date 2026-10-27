@@ -5,9 +5,12 @@ import json
 import math
 import os
 from pathlib import Path
+import signal
 import sys
 import threading
+import time
 import traceback
+import uuid
 
 from python_runtime import NativeRuntime, automatic_arguments, decision_branch, resolve
 from python_sessions import SessionManager, project_key
@@ -86,8 +89,9 @@ def main():
     parser.add_argument('--project', type=Path, action='append', default=[])
     parser.add_argument('--registry', type=Path, default=Path(__file__).parent / '.local' / 'projects.json')
     parser.add_argument('--timeout', type=float, default=120)
+    parser.add_argument('--ready-file', type=Path)
     args = parser.parse_args()
-    if args.timeout <= 0:
+    if not math.isfinite(args.timeout) or args.timeout <= 0:
         parser.error('--timeout must be positive')
     projects = [path.resolve() for path in args.project]
     registered = list(json.loads(args.registry.read_text(encoding='utf-8')).values()) if args.registry.exists() else []
@@ -98,24 +102,105 @@ def main():
     host = os.environ.get('FLOWABLE_URL', 'http://127.0.0.1:8080')
     auth = HTTPBasicAuth(os.environ.get('FLOWABLE_USER', 'diagnostic'),
                          os.environ.get('FLOWABLE_PASSWORD', 'local-demo'))
-    client = ExternalWorkerClient(host, auth=auth)
-    sessions = SessionManager(args.timeout)
-    atexit.register(sessions.close)
-    automatic = {topic: binding for topic, binding in manifest['bindings'].items() if binding.get('module')}
-    lease = WorkerLease(host, automatic)
-    atexit.register(lease.close)
-    resolved = {topic: select_project(binding, projects, registered) for topic, binding in automatic.items()}
+    class MonitoredClient(ExternalWorkerClient):
+        def _consume(self, event, topic, *arguments):
+            try:
+                super()._consume(event, topic, *arguments)
+            except BaseException:
+                traceback.print_exc()
+                with initialization_lock:
+                    failed.set()
+                    remove_ready()
+
+    failed = threading.Event()
+    initialized = set()
+    initialization_lock = threading.Lock()
+    client = MonitoredClient(host, auth=auth)
+    acquire_jobs = client._restClient.acquire_jobs
+
+    def monitored_acquire(topic, *arguments, **keywords):
+        result = acquire_jobs(topic, *arguments, **keywords)
+        with initialization_lock:
+            initialized.add(topic)
+        return result
+
+    # 官方 subscribe 只启动线程；首轮拉取成功才能证明认证、连接及订阅初始化成功。
+    client._restClient.acquire_jobs = monitored_acquire
+    request = client._restClient.request_session.request
+    def bounded_request(*arguments, **keywords):
+        keywords.setdefault('timeout', min(args.timeout, 30))
+        return request(*arguments, **keywords)
+    client._restClient.request_session.request = bounded_request
+    class WorkerSessions(SessionManager):
+        stopping = False
+
+        def get(self, *arguments, **keywords):
+            with self.lock:
+                if self.stopping:
+                    raise RuntimeError('Worker is stopping / 工作进程正在停止')
+                return super().get(*arguments, **keywords)
+
+        def close(self, run_id=None):
+            with self.lock:
+                if run_id is None:
+                    self.stopping = True
+                super().close(run_id)
+
+    sessions = WorkerSessions(args.timeout)
+    lease = None
+    subscriptions = []
+    ready_token = uuid.uuid4().hex
+    ready_temporary = None
+
+    def remove_ready():
+        if args.ready_file:
+            try:
+                if json.loads(args.ready_file.read_text(encoding='utf-8')).get('token') == ready_token:
+                    args.ready_file.unlink(missing_ok=True)
+            except (OSError, ValueError):
+                pass
+
+    atexit.register(remove_ready)
+    def stop(signum, frame):
+        raise SystemExit(0)
+    signal.signal(signal.SIGTERM, stop)
     def checkpoint(run_id, marker, session_id):
         from flowable_bridge import engine_request
         engine_request('/process-api/runtime/process-instances/' + run_id + '/variables',
                        json.dumps([{'name': marker, 'type': 'string', 'value': session_id}]).encode())
-    subscriptions = [client.subscribe(topic, make_callback(binding, sessions, resolved[topic], checkpoint),
-                     lock_duration=f'PT{max(300, math.ceil(args.timeout) + 60)}S', wait_period_seconds=1)
-                     for topic, binding in automatic.items()]
-    print('Subscribed: ' + ', '.join(automatic), flush=True)
     try:
+        automatic = {topic: binding for topic, binding in manifest['bindings'].items() if binding.get('module')}
+        lease = WorkerLease(host, automatic)
+        resolved = {topic: select_project(binding, projects, registered) for topic, binding in automatic.items()}
+        for topic, binding in automatic.items():
+            subscriptions.append(client.subscribe(
+                topic, make_callback(binding, sessions, resolved[topic], checkpoint),
+                lock_duration=f'PT{max(300, math.ceil(args.timeout) + 60)}S', wait_period_seconds=1))
+        deadline = time.monotonic() + min(args.timeout, 60)
         while True:
-            threading.Event().wait(10)
+            if failed.is_set() or any(not item.thread.is_alive() for item in subscriptions):
+                raise RuntimeError('Worker subscription failed / 工作进程订阅失败')
+            with initialization_lock:
+                complete = len(initialized) == len(automatic)
+            if complete:
+                break
+            if time.monotonic() >= deadline:
+                raise TimeoutError('Worker subscription initialization timed out / 工作进程订阅初始化超时')
+            failed.wait(0.05)
+        if args.ready_file:
+            args.ready_file.parent.mkdir(parents=True, exist_ok=True)
+            ready_temporary = args.ready_file.with_name(args.ready_file.name + '.' + ready_token + '.tmp')
+            ready_temporary.write_text(json.dumps({'pid': os.getpid(), 'token': ready_token,
+                                                  'version': manifest.get('version'),
+                                                  'topics': sorted(automatic)}), encoding='utf-8')
+            with initialization_lock:
+                if failed.is_set():
+                    raise RuntimeError('Worker subscription failed / 工作进程订阅失败')
+                ready_temporary.replace(args.ready_file)
+        print('Subscribed: ' + ', '.join(automatic), flush=True)
+        while True:
+            if failed.wait(10) or any(not item.thread.is_alive() for item in subscriptions):
+                raise RuntimeError('Worker subscription stopped / 工作进程订阅已停止')
             with sessions.lock:
                 runs = {key[0] for key in sessions.sessions}
             for run_id in runs:
@@ -130,10 +215,27 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
+        remove_ready()
+        if ready_temporary:
+            try:
+                ready_temporary.unlink(missing_ok=True)
+            except OSError:
+                traceback.print_exc()
+        # 先禁止新会话并通知订阅停止，避免已在途的拉取请求在清理期间再创建业务进程。
         for subscription in subscriptions:
-            subscription.unsubscribe(timeout=10)
-        sessions.close()
-        lease.close()
+            subscription.event.set()
+        try:
+            sessions.close()
+        finally:
+            try:
+                for subscription in subscriptions:
+                    subscription.unsubscribe(timeout=35)
+            finally:
+                try:
+                    client._restClient.request_session.close()
+                finally:
+                    if lease:
+                        lease.close()
 
 
 if __name__ == '__main__':

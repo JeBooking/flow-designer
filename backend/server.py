@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -12,6 +13,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, unquote
 import uuid
 from flowable_bridge import compile_workflow, deploy, engine_request
+from execution_manager import ExecutionManager
 from reference_files import open_reference_file
 from python_sessions import SessionManager
 
@@ -114,7 +116,38 @@ class Registry:
             return dict(self.projects[project_id])
 
 
-def make_handler(registry):
+def paged_history(path):
+    """保留 Flowable data 协议，超过安全页数时明确失败而非静默丢历史。"""
+    result = None
+    data = []
+    seen = set()
+    for _ in range(1000):
+        page = engine_request(path + '&start=' + str(len(data)) + '&size=200')
+        items = page.get('data')
+        if not isinstance(items, list):
+            raise RuntimeError('Invalid Flowable history page / Flowable 历史分页格式错误')
+        if result is None:
+            result = dict(page)
+        if not items:
+            total = page.get('total')
+            if isinstance(total, int) and len(data) < total:
+                raise RuntimeError('Incomplete Flowable history / Flowable 历史分页未返回完整数据')
+            break
+        signature = json.dumps(items, sort_keys=True)
+        if signature in seen:
+            raise RuntimeError('Flowable history pagination did not advance / Flowable 历史分页未前进')
+        seen.add(signature)
+        data.extend(items)
+        total = page.get('total')
+        if isinstance(total, int) and len(data) >= total:
+            break
+    else:
+        raise RuntimeError('Flowable history exceeds pagination limit / Flowable 历史超过分页安全上限')
+    result.update(data=data, start=0, size=len(data), total=len(data))
+    return result
+
+
+def make_handler(registry, executions):
     class Handler(SimpleHTTPRequestHandler):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, directory=str(ROOT / 'dist'), **kwargs)
@@ -140,6 +173,11 @@ def make_handler(registry):
                 self.reply({'error': 'Origin or host is not allowed'}, 403)
                 return
             route = urlparse(self.path).path
+            if route == '/api/health':
+                engine_url = urlparse(os.environ.get('FLOWABLE_URL', 'http://127.0.0.1:8080'))
+                self.reply({'ok': True, 'service': 'diagnosis-backend',
+                            'flowableUrl': engine_url._replace(netloc=engine_url.netloc.rsplit('@', 1)[-1]).geturl()})
+                return
             if route == '/api/projects':
                 with registry.lock:
                     self.reply({'projects': list(registry.projects.values())})
@@ -150,14 +188,14 @@ def make_handler(registry):
                     self.reply({'error': 'Invalid run ID'}, 400)
                     return
                 try:
-                    failed = engine_request('/process-api/management/deadletter-jobs?processInstanceId=' + run_id + '&size=100')['data']
+                    failed = paged_history('/process-api/management/deadletter-jobs?processInstanceId=' + run_id)['data']
                     for job in failed:
                         if job.get('exceptionMessage'):
                             job['traceback'] = engine_request('/process-api/management/deadletter-jobs/' + job['id'] + '/exception-stacktrace', as_text=True)
                     self.reply({'process': engine_request('/process-api/history/historic-process-instances/' + run_id),
                         'failures': failed,
-                        'variables': engine_request('/process-api/history/historic-variable-instances?processInstanceId=' + run_id + '&size=200'),
-                        'activities': engine_request('/process-api/history/historic-activity-instances?processInstanceId=' + run_id + '&size=200&sort=startTime&order=asc'),
+                        'variables': paged_history('/process-api/history/historic-variable-instances?processInstanceId=' + run_id),
+                        'activities': paged_history('/process-api/history/historic-activity-instances?processInstanceId=' + run_id + '&sort=startTime&order=asc'),
                         'review': engine_request('/diagnosis-api/instances/' + run_id + '/review')})
                 except RuntimeError as error:
                     self.reply({'error': str(error)}, 502)
@@ -201,10 +239,15 @@ def make_handler(registry):
                         raise ValueError('Invalid run ID')
                     result = engine_request('/diagnosis-api/instances/' + parts[3] + '/review', json.dumps(data).encode())
                 elif parts == ['api', 'flowable', 'start']:
-                    compiled = compile_workflow(data['xml'])
                     variables = data.get('variables', {})
                     if not isinstance(variables, dict):
                         raise ValueError('Variables must be an object')
+                    # 在启动协调器和部署之前拒绝不可序列化或非有限数值变量。
+                    json.dumps(variables, allow_nan=False)
+                    compiled = compile_workflow(data['xml'])
+                    executions.ensure_worker(compiled['files']['bindings.json'])
+                    if executions.closing.is_set():
+                        raise RuntimeError('Backend is closing / 后端正在关闭')
                     deployment = deploy(compiled['files']['workflow.bpmn20.xml'])
                     definitions = engine_request('/process-api/repository/process-definitions?deploymentId=' + deployment['id'])
                     definition_id = definitions['data'][0]['id']
@@ -249,11 +292,18 @@ def make_handler(registry):
 
 def create_server(port=8765, registry_file=None, timeout=120, origins=None):
     registry = Registry(registry_file or ROOT / 'backend' / '.local' / 'projects.json', timeout)
-    server = ThreadingHTTPServer(('127.0.0.1', port), make_handler(registry))
+    executions = ExecutionManager(registry, timeout)
+    server = ThreadingHTTPServer(('127.0.0.1', port), make_handler(registry, executions))
     close_server = server.server_close
     def close():
-        registry.close_debug()
-        close_server()
+        # 先禁止新协调器并终止自有业务进程，避免等待 HTTP 线程时遗留后台执行。
+        try:
+            executions.close()
+        finally:
+            try:
+                registry.close_debug()
+            finally:
+                close_server()
     server.server_close = close
     server.allowed_origins = set(origins or []) | {
         f'http://{host}:{p}' for host in ('localhost', '127.0.0.1')
@@ -270,6 +320,9 @@ if __name__ == '__main__':
     args = parser.parse_args()
     server = create_server(args.port, registry_file=args.registry, timeout=args.timeout, origins=args.origin)
     print(f'Python backend: http://127.0.0.1:{server.server_port}/vue-bpmn-designer/', flush=True)
+    def stop(signum, frame):
+        raise SystemExit(0)
+    signal.signal(signal.SIGTERM, stop)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
