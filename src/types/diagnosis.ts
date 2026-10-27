@@ -29,11 +29,14 @@ export interface DiagnosticExample {
 export interface DiagnosisReviewState {
   pending: boolean
   evidence?: unknown
+  inputs?: unknown
+  kind?: DiagnosisKind
+  canRecheck?: boolean
   taskId?: string
   nodeId?: string
   mode?: 'decision' | 'escalation' | 'success'
   name?: string
-  options?: { id: string; name: string }[]
+  options?: { id: string; name: string; paths?: { id: string; name: string; target: string }[] }[]
   instructions?: Partial<
     InvestigationData & { conclusionText: string; actionText: string; detailText: string }
   >

@@ -8,8 +8,10 @@ import { listPythonProjects } from '@/services/pythonProjects'
 import { flowableRequest } from '@/services/flowable'
 import { useExecution } from '@/views/ProcessDesigner/Execution/useExecution'
 import ExecutionProgress from '@/views/ProcessDesigner/Execution/ExecutionProgress.vue'
-import ExecutionValue from '@/views/ProcessDesigner/Execution/ExecutionValue.vue'
-import ReferenceFile from '@/views/ProcessDesigner/Panel/Investigation/ReferenceFile.vue'
+import ExecutionReviewTask from '@/views/ProcessDesigner/Execution/ExecutionReviewTask.vue'
+import ExecutionTaskWindows from '@/views/ProcessDesigner/Execution/ExecutionTaskWindows.vue'
+import ExecutionNodeHistory from '@/views/ProcessDesigner/Execution/ExecutionNodeHistory.vue'
+import ExecutionCanvasOverlays from '@/views/ProcessDesigner/Execution/ExecutionCanvasOverlays.vue'
 
 const props = defineProps<{ modeler: BpmnModeler }>()
 const visible = ref(false)
@@ -142,6 +144,7 @@ function startupVariables(): Record<string, unknown> {
 const {
   runId,
   snapshot,
+  pendingReviews,
   variables: executionVariables,
   status,
   terminal,
@@ -155,55 +158,85 @@ const {
   reloadAfterReview,
 } = useExecution(props.modeler, visible)
 const history = computed(() => (snapshot.value ? JSON.stringify(snapshot.value, null, 2) : ''))
-const review = computed(() => snapshot.value?.review || { pending: false })
-const reviewTarget = ref('')
-const reviewReason = ref('')
-const reviewVariables = ref('{}')
-const reviewNext = ref('')
-const decisionPending = computed(() => review.value.mode === 'decision')
-const successPending = computed(() => review.value.mode === 'success')
+const taskWindows = ref<InstanceType<typeof ExecutionTaskWindows>>()
+const selectedNodeId = ref('')
+const selectedNode = computed(() =>
+  canvasMatches.value && snapshot.value
+    ? nodeViews.value.find((node) => node.id === selectedNodeId.value)
+    : undefined,
+)
+const nodeDialogVisible = computed({
+  get: () => Boolean(selectedNode.value),
+  set: (opened: boolean) => {
+    if (!opened) {
+      selectedNodeId.value = ''
+    }
+  },
+})
+function selectNode(nodeId: string) {
+  if (!canvasMatches.value || !snapshot.value) return
+  const node = nodeViews.value.find((entry) => entry.id === nodeId)
+  if (!node || (node.status !== 'waiting' && node.status !== 'completed')) return
+  if (node.status === 'waiting') {
+    visible.value = false
+    for (const task of pendingReviews.value.filter((entry) => entry.nodeId === nodeId)) {
+      if (task.taskId) taskWindows.value?.open(task.taskId)
+    }
+    return
+  }
+  visible.value = false
+  selectedNodeId.value = nodeId
+}
+watch(
+  [runId, canvasMatches],
+  () => {
+    selectedNodeId.value = ''
+  },
+  { flush: 'sync' },
+)
+watch(
+  selectedNode,
+  (node) => {
+    if (!node) {
+      selectedNodeId.value = ''
+    }
+  },
+  { flush: 'sync' },
+)
 const pythonFailures = computed(() => snapshot.value?.failures || [])
 const previousRunIds = ref<string[]>([])
 const canStart = computed(
   () =>
-    !runId.value || (!review.value.pending && (terminal.value || pythonFailures.value.length > 0)),
+    !pendingReviews.value.length &&
+    (!runId.value || terminal.value || pythonFailures.value.length > 0),
 )
 const restartingFailure = computed(() => Boolean(runId.value) && status.value === 'failed')
 const failures = computed(() => {
   const value = executionVariables.value.diagnosticFailures
   return Array.isArray(value) ? value : []
 })
-const reviewInstructions = computed(() =>
-  [
-    { label: translateUi('详细内容', 'Details'), value: review.value.instructions?.detailText },
-    {
-      label: translateUi('查看什么数据', 'Data to inspect'),
-      value: review.value.instructions?.observation,
-    },
-    {
-      label: translateUi('如何获取数据', 'How to acquire data'),
-      value: review.value.instructions?.acquisition,
-    },
-    {
-      label: translateUi('判断方法', 'Assessment method'),
-      value: review.value.instructions?.assessment,
-    },
-    {
-      label: translateUi('结论内容', 'Conclusion'),
-      value: review.value.instructions?.conclusionText,
-    },
-    { label: translateUi('动作内容', 'Action'), value: review.value.instructions?.actionText },
-  ].filter((item) => item.value),
-)
+
+// 只在出现新任务时让出画布，轮询相同任务不打断用户重新打开的执行面板。
 watch(
-  () => review.value.taskId,
-  () => {
-    reviewTarget.value = ''
-    reviewReason.value = ''
-    reviewVariables.value = '{}'
-    reviewNext.value = review.value.options?.length === 1 ? review.value.options[0].id : ''
+  () =>
+    [
+      runId.value,
+      canvasMatches.value,
+      pendingReviews.value.map((task) => task.taskId).join('\n'),
+    ] as const,
+  ([id, matches, tasks], previous) => {
+    if (!matches || !tasks) return
+    const earlier =
+      previous?.[0] === id && previous[1] ? new Set(previous[2].split('\n')) : new Set<string>()
+    if (tasks.split('\n').some((task) => !earlier.has(task))) visible.value = false
   },
+  { flush: 'sync' },
 )
+function openTask(taskId?: string) {
+  if (!taskId) return
+  visible.value = false
+  taskWindows.value?.open(taskId)
+}
 async function perform(operation: () => Promise<void>) {
   if (busy.value) return
   busy.value = true
@@ -213,6 +246,7 @@ async function perform(operation: () => Promise<void>) {
   } catch (error) {
     if (error === 'cancel' || error === 'close') return
     errorMessage.value = error instanceof Error ? error.message : String(error)
+    ElMessage.error(errorMessage.value)
   } finally {
     busy.value = false
   }
@@ -245,73 +279,6 @@ const start = () => {
   })
 }
 const refresh = () => void loadExecution()
-const submitReview = (action: 'recheck' | 'confirm', successAction?: 'continue' | 'finish') =>
-  perform(async () => {
-    if (successAction) reviewNext.value = successAction
-    if (
-      action === 'confirm' &&
-      (decisionPending.value || successPending.value) &&
-      review.value.options?.length &&
-      !reviewNext.value
-    ) {
-      throw new Error(translateUi('请选择下一步', 'Select the next step'))
-    }
-    if (action === 'recheck' && (!reviewTarget.value || !reviewReason.value.trim())) {
-      throw new Error(
-        translateUi('请选择回退节点并填写原因', 'Select a recheck node and provide a reason'),
-      )
-    }
-    const variables: unknown = action === 'recheck' ? JSON.parse(reviewVariables.value) : {}
-    if (!variables || typeof variables !== 'object' || Array.isArray(variables)) {
-      throw new Error(translateUi('变量必须是 JSON 对象', 'Variables must be a JSON object'))
-    }
-    await ElMessageBox.confirm(
-      action === 'recheck'
-        ? translateUi(
-            '将重新执行选中节点及后续逻辑，可能再次执行机台动作。原记录保留，但不会撤销已经执行的动作。',
-            'The selected node and downstream logic will run again, including possible machine actions. Previous records are retained; completed actions are not undone.',
-          )
-        : successPending.value
-          ? reviewNext.value === 'continue'
-            ? translateUi(
-                '继续执行暂停的其余排查思路。',
-                'Resume the remaining investigation paths.',
-              )
-            : translateUi(
-                '结束本轮排查，保留当前结果和执行记录。',
-                'Finish this investigation and retain its results and history.',
-              )
-          : decisionPending.value
-            ? translateUi(
-                '确认当前选择并继续执行后续节点。',
-                'Confirm this choice and continue to the next node.',
-              )
-            : translateUi(
-                '确认上升后本轮流程结束。',
-                'Confirming escalation ends this process instance.',
-              ),
-      action === 'recheck'
-        ? translateUi('回退重查', 'Recheck an earlier node')
-        : successPending.value
-          ? translateUi('问题已解决', 'Problem solved')
-          : decisionPending.value
-            ? translateUi('确认并继续', 'Confirm and continue')
-            : translateUi('确认上升', 'Confirm escalation'),
-      { type: 'warning' },
-    )
-    await flowableRequest(`review/${encodeURIComponent(runId.value)}`, {
-      action,
-      taskId: review.value.taskId,
-      targetNodeId: reviewTarget.value,
-      reason: reviewReason.value,
-      variables,
-      next: reviewNext.value,
-    })
-    await reloadAfterReview()
-    ElMessage.success(
-      translateUi('操作已完成，执行状态已更新', 'Action completed; execution status updated'),
-    )
-  })
 defineExpose({
   open: () => {
     visible.value = true
@@ -467,97 +434,26 @@ defineExpose({
         :canvas-matches="canvasMatches"
         :loading="executionLoading"
       />
-      <el-card v-if="review.pending" shadow="never">
-        <template #header>{{ $tu('诊断复核', 'Diagnostic review') }}</template>
-        <p>{{ review.name }} ({{ review.nodeId }})</p>
-        <el-space v-if="successPending" wrap>
-          <el-button type="primary" :disabled="busy" @click="submitReview('confirm', 'finish')">
-            {{ $tu('结束排查', 'Finish investigation') }}
-          </el-button>
-          <el-button :disabled="busy" @click="submitReview('confirm', 'continue')">
-            {{ $tu('继续排查其余思路', 'Continue remaining paths') }}
-          </el-button>
-        </el-space>
-        <details v-if="review.evidence != null">
-          <summary>{{ $tu('查看判断依据数据', 'View decision evidence') }}</summary>
-          <ExecutionValue :value="review.evidence" />
-        </details>
-        <template v-for="instruction in reviewInstructions" :key="instruction.label">
-          <p>
-            <strong>{{ instruction.label }}</strong>
-          </p>
-          <p class="execution-results">{{ instruction.value }}</p>
+      <section v-if="pendingReviews.length" class="pending-reviews">
+        <h3>{{ $tu('待处理任务', 'Pending tasks') }} ({{ pendingReviews.length }})</h3>
+        <el-button v-if="canvasMatches" @click="taskWindows?.arrange()">{{
+          $tu('自动排布浮窗', 'Arrange task windows')
+        }}</el-button>
+        <template v-for="task in pendingReviews" :key="task.taskId">
+          <el-button v-if="canvasMatches" @click="openTask(task.taskId)"
+            >{{ task.name || task.nodeId }} · {{ $tu('打开任务', 'Open task') }}</el-button
+          >
+          <el-card v-else shadow="never">
+            <ExecutionReviewTask
+              :run-id="runId"
+              :review="task"
+              :connected="!connectionError"
+              @submitted="reloadAfterReview"
+              @refresh="loadExecution"
+            />
+          </el-card>
         </template>
-        <ReferenceFile
-          v-if="review.instructions?.referenceImage"
-          :value="review.instructions.referenceImage"
-          :name="review.instructions.referenceImageName"
-          readonly
-        />
-        <el-form v-if="decisionPending" label-position="top">
-          <el-form-item v-if="review.options?.length" :label="$tu('下一步', 'Next step')">
-            <el-select v-model="reviewNext" style="width: 100%">
-              <el-option
-                v-for="option in review.options"
-                :key="option.id"
-                :value="option.id"
-                :label="`${option.name} (${option.id})`"
-              />
-            </el-select>
-          </el-form-item>
-          <el-button type="primary" :disabled="busy" @click="submitReview('confirm')">{{
-            $tu('确认并继续', 'Confirm and continue')
-          }}</el-button>
-        </el-form>
-        <template v-if="!successPending">
-          <el-divider />
-          <p v-if="!review.candidates?.length">
-            {{
-              $tu('尚无此前已执行的节点可供回退。', 'No earlier executed nodes are available yet.')
-            }}
-          </p>
-          <el-form label-position="top">
-            <el-form-item
-              :label="$tu('回退到此前已执行的节点', 'Return to an earlier executed node')"
-            >
-              <el-select v-model="reviewTarget" style="width: 100%">
-                <el-option
-                  v-for="candidate in review.candidates || []"
-                  :key="candidate.id"
-                  :value="candidate.id"
-                  :label="`${candidate.name} (${candidate.id})`"
-                />
-              </el-select>
-            </el-form-item>
-            <el-form-item :label="$tu('回退原因', 'Recheck reason')">
-              <el-input v-model="reviewReason" type="textarea" :rows="2" />
-            </el-form-item>
-            <el-form-item
-              :label="$tu('复查输入变量（可选）', 'Updated input variables (optional)')"
-            >
-              <el-input v-model="reviewVariables" type="textarea" :rows="3" />
-            </el-form-item>
-          </el-form>
-          <p>
-            {{
-              $tu(
-                '回退将重新采集和判断，并清理需重算的结果；旧路径与结果保留在复核记录中。',
-                'Rechecking reruns acquisition and diagnosis and clears results that must be recomputed. Previous paths and results remain in review history.',
-              )
-            }}
-          </p>
-          <el-space wrap>
-            <el-button
-              :disabled="busy || !review.candidates?.length"
-              @click="submitReview('recheck')"
-              >{{ $tu('回退重查', 'Recheck') }}</el-button
-            >
-            <el-button v-if="!decisionPending" :disabled="busy" @click="submitReview('confirm')">{{
-              $tu('确认上升并结束', 'Confirm escalation and finish')
-            }}</el-button>
-          </el-space>
-        </template>
-      </el-card>
+      </section>
       <el-alert
         v-if="executionVariables.diagnosticStatus === 'failed'"
         type="error"
@@ -588,9 +484,71 @@ defineExpose({
       </details>
     </template>
   </el-drawer>
+  <ExecutionCanvasOverlays
+    :modeler="modeler"
+    :nodes="nodeViews"
+    :run-id="runId"
+    :enabled="canvasMatches && !!snapshot"
+    @select="selectNode"
+  />
+  <ExecutionTaskWindows
+    ref="taskWindows"
+    :modeler="modeler"
+    :run-id="runId"
+    :reviews="pendingReviews"
+    :enabled="canvasMatches && !!snapshot"
+  >
+    <template #default="{ review: task }">
+      <ExecutionReviewTask
+        :key="task.taskId"
+        :show-heading="false"
+        :run-id="runId"
+        :review="task"
+        :connected="!connectionError"
+        @submitted="reloadAfterReview"
+        @refresh="loadExecution"
+      />
+    </template>
+  </ExecutionTaskWindows>
+  <el-dialog
+    v-model="nodeDialogVisible"
+    :title="$tu('节点执行记录', 'Node execution history')"
+    width="min(680px, calc(100vw - 24px))"
+    append-to-body
+  >
+    <template v-if="selectedNode">
+      <p>{{ $tu('流程实例', 'Process instance') }}: {{ runId }}</p>
+      <p v-if="busy" role="status">{{ $tu('正在处理操作…', 'Processing action…') }}</p>
+      <el-alert
+        v-if="errorMessage"
+        type="error"
+        :title="errorMessage"
+        :closable="false"
+        show-icon
+      />
+      <el-alert
+        v-if="connectionError"
+        type="error"
+        :title="connectionError"
+        :closable="false"
+        show-icon
+      />
+      <ExecutionNodeHistory :node="selectedNode" />
+    </template>
+  </el-dialog>
 </template>
 
 <style scoped>
+.pending-reviews {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  margin-block: 16px;
+}
+.pending-reviews :deep(.el-button) {
+  margin-left: 0;
+}
 .execution-results {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
