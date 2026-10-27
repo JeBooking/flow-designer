@@ -1,4 +1,4 @@
-// 使用编辑器自身的导入器生成执行包；业务工程无需依赖本脚本或 Flowable。
+// 可选调试工具：登记示例工程并生成执行包；普通平台执行时自动准备 worker，无需此步骤。
 import { createRequire } from 'node:module'
 import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -126,9 +126,8 @@ print(json.dumps({'registration': registration_mode, 'projectId': registered['pr
     throw new Error(executed.error?.message || 'Example preparation failed')
   console.log('Prepared / 已准备: ' + output)
   console.log(
-    'Worker: backend/.local/venv/Scripts/python.exe backend/flowable_worker.py "' +
-      path.join(output, 'bindings.json') +
-      '"',
+    'Open the platform, import source.bpmn, and start execution (automatic worker). / ' +
+      '打开平台，导入 source.bpmn 并点击执行，平台会自动准备 worker。',
   )
 } finally {
   if (
