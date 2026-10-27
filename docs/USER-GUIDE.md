@@ -1,382 +1,94 @@
-# Diagnostic Workflow User Guide
+# Diagnostic workflow user guide
 
-[简体中文](USER-GUIDE.zh-CN.md) · [Project overview](../README.md)
+[English](USER-GUIDE.md) | [中文](USER-GUIDE.zh-CN.md)
 
-This guide takes you from an existing Python project to a workflow that calls its functions or object methods. Follow sections 1–6 to complete a real run. Section 7 provides a second complete Python project; section 8 onward explains branching, human decisions, recovery, file storage, and alternative execution.
+Start with your own Python business project. Paths, modules, classes and methods below are placeholders: replace them with real values. The platform neither creates business implementations nor installs business dependencies.
 
-Sections 1–6 use the included device-voltage example. It collects a Python object, checks for low voltage, then restores and verifies the device. All equipment operations in this example are simulated. Once it works, replace the example directory, module, and class with your own project.
+## 1. Responsibilities
 
-## 1. Understand the parts you will run
+The diagram defines dependencies and diagnostic paths. Python interfaces perform acquisition, computation, equipment access and remediation. Flowable owns real scheduling, human waits and history. **Python projects** registers and debugs interfaces; **Diagnostic execution** runs the current diagram. Structural simulation only animates tokens and does not execute Python.
 
-The diagram defines dependencies and execution paths. Python interfaces perform the business work: acquisition, calculation, equipment access, state changes, and remediation. Flowable advances the workflow using node results and stores its progress, waiting states, and history.
+## 2. Prepare once, then start each run
 
-A real run uses four cooperating programs. Keep them running while they are needed:
-
-| Program          | Responsibility                                                               | When to start it                                                 |
-| ---------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| Frontend         | Edit the diagram, bind interfaces, and display results                       | When you open the platform                                       |
-| Local backend    | Register Python projects and provide debugging and execution services        | Before registering a project                                     |
-| Flowable service | Schedule nodes, branches, and human waits                                    | Before running the complete workflow                             |
-| Python worker    | Receive Flowable tasks and call Python in the business project's environment | After exporting the execution bundle, before starting a workflow |
-
-Use **Python projects** to register and debug interfaces, and **Flowable execution** to run the complete diagram. **Start structural simulation** only animates BPMN tokens. It does not execute Python or prove that interfaces and diagnostic rules work.
-
-## 2. Prepare the environment and open the platform
-
-### 2.1 First-time setup
-
-Running from source requires Node.js 22, pnpm, Python 3.9+, Java 21, and Maven 3.9. Install business-specific Python packages in the business project's own interpreter environment.
-
-From this repository's root directory, prepare the frontend dependencies, worker environment, and Java service:
+Prepare Java 21, Maven 3.9, Python 3.9+, Node and pnpm. From the repository root:
 
 ```powershell
 pnpm install
 python -m venv backend/.local/venv
 backend/.local/venv/Scripts/python.exe -m pip install -r backend/requirements-flowable.txt
-mvn -f flowable-runtime/pom.xml package
+cd flowable-runtime
+mvn package
+cd ..
 ```
 
-Reuse existing environments where available. `backend/.local/venv` contains the official Flowable client used by the worker. It can be separate from the business project's virtual environment: the worker reads the registration and uses its interpreter for business calls.
+This builds `flowable-runtime/target/diagnostic-flowable-1.0.0.jar` and installs the official `flowable.external-worker-client==1.0.2`. On non-Windows systems use `backend/.local/venv/bin/python`. Reuse existing environments. Install business dependencies separately in the registered business interpreter. The launcher does not install dependencies or download Java/Python.
 
-### 2.2 Start the editor and local backend
-
-Open two terminals, both in this repository's root directory.
-
-Start the backend in the first terminal:
-
-```powershell
-python backend/server.py
-```
-
-Start the frontend in the second:
+For each run, use:
 
 ```powershell
 pnpm dev
 ```
 
-Open the address printed by Vite. By default, `/api` requests go to `127.0.0.1:8765`. The backend accepts frontend ports 5173 and 5174 by default. For another port, specify the page origin when starting the backend, for example:
+Open `http://127.0.0.1:5173/vue-bpmn-designer/`. The launcher manages the frontend, local backend (8765) and local Flowable (8080). It reuses services only after identity, authentication and configuration checks. Startup failures point to `backend/.local/logs/`. `JAVA_HOME` selects Java and `PYTHON` selects the platform interpreter; otherwise the local venv is preferred before PATH.
 
-```powershell
-python backend/server.py --origin http://localhost:5175
-```
+Flowable defaults to `http://127.0.0.1:8080` with `diagnostic` / `local-demo`. Set `FLOWABLE_USER` and `FLOWABLE_PASSWORD` as needed. An explicitly set `FLOWABLE_URL` connects only to that external engine and never starts a local replacement. A reused backend must use the same engine URL.
 
-Alternatively, run `pnpm build-only`, then open `http://127.0.0.1:8765/vue-bpmn-designer/` through the backend. Vite need not remain running in that case.
+With an existing `dist/index.html`, use `pnpm start` and open `http://127.0.0.1:8765/vue-bpmn-designer/`. Build using `pnpm build`. `pnpm dev:frontend` starts only the frontend for development.
 
-### 2.3 Start Flowable
+## 3. Register your Python project
 
-Open another terminal. From the repository root, enter the Java service directory and start it:
+Open **Python projects** and fill in:
 
-```powershell
-cd flowable-runtime
-java -jar target/diagnostic-flowable-1.0.0.jar
-```
+| Field | Placeholder | Meaning |
+| --- | --- | --- |
+| Project directory | `D:/your-project` | Existing business project root |
+| Entry module | `your_package.api` | Importable module name, not a filename |
+| Interpreter | `D:/your-project/.venv/Scripts/python.exe` | Python with business dependencies installed |
+| Class or factory (optional) | `YourDevice` | Actual class/factory name; leave blank for module functions |
+| Name (optional) | Your equipment diagnosis | A recognizable label |
 
-The default address is `http://127.0.0.1:8080`; the local example credentials are `diagnostic` / `local-demo`. If you change them, the backend and worker must use matching `FLOWABLE_URL`, `FLOWABLE_USER`, and `FLOWABLE_PASSWORD` environment variables.
+Registration neither copies the project nor installs dependencies. Relative paths resolve from the repository root. Imports include the project's `src/`, root and parent; calls use the project root as working directory. Module functions follow `__all__`, or public functions defined in the entry module when it is absent.
 
-You can now register projects and edit diagrams. Start the worker in section 6, after exporting its `bindings.json`.
+Class discovery inspects signatures without creating an instance. Constructor inputs come from same-name startup variables or defaults at runtime. Factories with a return-class annotation also support discovery without invocation. Unannotated factories are temporarily invoked with defaults; add a return-class annotation when required inputs exist.
 
-## 3. Register a Python project and check its interfaces
+## 4. Debug interfaces and bind your diagram
 
-### 3.1 Register the device example
+Fill debug inputs from the real interface signature and call it to check the interpreter, dependencies and equipment connection. Consecutive debug calls share a session; **Reset session** discards objects and results. Debugging calls real business code, so follow equipment procedures. Debug sessions are separate from workflow sessions.
 
-Click **Python projects** in the toolbar and enter:
+Draw your own workflow, or import your saved BPMN, `workflow.json` or project directory. Save current work before importing. Configure diagnostic content, references and Yes/No connections using section 8. On each node select its registered **Python project** and **Call interface**. Module/class entry settings come from registration and need not be repeated per node.
 
-| Field                               | Value for this example             | Meaning                                                                                                |
-| ----------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Project name (optional)             | Device voltage example             | A recognizable display name                                                                            |
-| Project directory                   | `backend/examples/session_project` | Business project root; relative paths start at this repository's root                                  |
-| Entry module                        | `device_session`                   | An importable Python module name, not a file path                                                      |
-| Business object entry (optional)    | `Device`                           | The main business class, configured once when registering the project                                  |
-| Python executable                   | Leave blank                        | Uses the backend interpreter; for your own project, supply its actual virtual-environment `python.exe` |
+Investigations return explicit `True`/`False`, `yes`/`no`, or a dictionary with `next`. Conclusions may contain text only. Actions can take no inputs and return `None`. Final nodes have no business binding.
 
-Click **Register project**. The interface list should contain `ready`, `collect`, `is_low`, `restore`, `verify`, and `restore_and_verify`.
+## 5. Parameters and native objects
 
-Registration does not copy or modify the business project. Paths refer to **the computer running the backend**. A `src/` project layout is supported: the project's `src/`, root, and parent directory are added to the import search path. Business calls use the project root as their working directory.
+Matching uses compatible legacy mappings, same-name startup variables, complete results stored under a node ID matching the parameter, unique same-name upstream dictionary fields, then defaults. Missing or ambiguous values identify the parameter; a signature alone cannot supply data.
 
-### 3.2 Make consecutive calls to check state retention
+For instance, if your project implements `collect()` and `assess(reading)`, name the acquisition node's ID `reading` to supply its complete raw result. These method names illustrate your code, not platform-provided interfaces. Positional-only parameters, async interfaces and no-argument functions are supported.
 
-In the same registered project:
+One workflow's calls to the same project share a persistent isolated Python process and class instance; module functions retain globals too. Workflows are isolated, native references cannot cross project processes, and the business project manages parallel thread safety. Raw objects stay in Python. The UI receives JSON display projections, types and text representations; `repr` is never substituted for the original object in downstream calls.
 
-1. Select `collect`, leave initialization fields blank, and click **Call Python function**. It uses device `M01` and threshold `24`, returning a `Reading` object with voltage `22.6`.
-2. Select and call `restore`. It changes the current device instance's recovery state and returns `None`, displayed as `null`. This is a normal void return.
-3. Select and call `verify`. It collects again on the same instance, obtains voltage `24.5`, and returns `true`.
-4. Click **Reset debug session**, then call `verify` again. The new instance has not been restored, so the result should be `false`.
+## 6. Start the current workflow
 
-These steps establish that imports work, synchronous and asynchronous methods run, consecutive calls reuse the instance, and resetting starts with fresh state.
+1. Open **Diagnostic execution** and check the current diagram's nodes, connections and bindings.
+2. Enter startup inputs from registered class/factory signatures, leaving blanks for defaults. Add name/value rows for extra data. If needed expand advanced initial-variable JSON and enable **Use JSON instead of form**; only JSON is used, without merging the form.
+3. Click **Start execution**. The backend validates the definition, prepares its matching worker automatically, and deploys/starts the process. Normal execution needs no downloaded bundle or manual worker command.
+4. Follow automatically updated canvas states, executed paths and result cards. Handle human waits by confirming, choosing a branch or rechecking. Structural simulation animation is not evidence of real execution.
 
-Input fields come from the Python signature. Numbers, booleans, `null`, arrays, and objects are parsed automatically; other input is text. Enter `""` for an empty string. Leave optional fields blank to preserve Python defaults. You do not enter `self` or the object's internal attributes. Variadic `*args` and `**kwargs` have advanced fields that ordinary calls need not use.
+Each start creates a new instance using the current diagram and does not reuse debug objects. Editing the diagram does not change running instances. States come from actual Flowable execution; distinguish running, human waits, task errors and completed processes.
 
-Do not manually construct the `Reading` required by `is_low` in this single-interface check. The workflow will pass that object in the next section. Copying its displayed text back into a field does not recreate the native object.
+## 7. Inspect results and errors
 
-Debugging calls the selected interface, not the complete diagram, and uses an instance separate from real workflow runs. Switching projects, reloading interfaces, or unregistering closes the corresponding debug session. Calls time out after 120 seconds by default; adjust this with `python backend/server.py --timeout 600`. A timeout closes that session.
+Result cards show business return values. A chart appears only when a result dictionary contains a `chartSvg` string. Returning a file path does not display an image automatically; the platform does not invent business curves as execution results.
 
-### 3.3 Replace the example with your own project
+Raw activity history, variables and exceptions live in the collapsed **Raw execution details**. Expand failure details for the Python traceback and follow the business file/call location. Service logs live in `backend/.local/logs/`; worker logs use `backend/.local/executions/<content-hash>/<launch-uuid>.log`. The directory identifies the execution definition's content hash, and each worker launch has a separate UUID log. A path without a matching branch is a diagnostic failure, distinct from a Python exception.
 
-Suppose `Device` is defined or exported in `D:/equipment/diagnostics/machine/api.py`. Set the project directory to `D:/equipment/diagnostics`, entry module to `machine.api`, business object entry to `Device`, and executable to the interpreter actually used by that project. Configure these entries once during project registration; do not repeat them on individual nodes.
-
-There are three entry styles:
-
-| Existing interface                                              | Business object entry field    | How it is called                                                                 |
-| --------------------------------------------------------------- | ------------------------------ | -------------------------------------------------------------------------------- |
-| Ordinary module functions                                       | Leave blank                    | Call the module's public functions                                               |
-| An existing class, such as `Device`                             | Class name                     | Create an instance per investigation and call its public methods                 |
-| A factory returning a business object, such as `create_session` | Public factory name or path    | Call the factory once per investigation, then call the returned object's methods |
-
-Without `__all__`, function discovery lists public functions defined in the entry module. Use `__all__` to list functions re-exported from other modules. Instance-method signatures omit `self`.
-
-Registering a class inspects its methods without constructing it, so required constructor parameters are supported. A factory with a return-class annotation also supports discovery without being called, as in `create_session(...) -> Device`. A factory without that annotation is called temporarily with defaults to discover its methods. If such a factory has required parameters, add a return-class annotation first.
-
-After changing code or signatures, click **Reload interfaces**. Registrations are stored in `backend/.local/projects.json`. **Unregister (keep files)** removes only the registration, not the business project.
-
-## 4. Import the example workflow and inspect its bindings
-
-Click **Import project directory** and select this repository's `backend/examples/session_project` folder. It includes `workflow.json` and its reference file; the importer generates a layout. Importing replaces the current diagram, so export existing work first.
-
-The example contains one recovery path:
-
-```text
-Start
-  ↓
-Entry investigation: ready ──Yes──→ Acquisition action: collect
-                                            ↓
-                              Low-voltage investigation: is_low
-                                            │ Yes
-                                            ↓
-                                        Conclusion
-                                            ↓
-                             Remediation: restore_and_verify
-                                            ↓
-                                      Problem Solved
-```
-
-Select a node, choose the registered Device voltage example under **Python project**, and select the method below under **Interface to call**. The platform automatically uses the registered `device_session` module and `Device` entry. Nodes no longer have a Session class or factory field. Leave the job topic blank.
-
-Existing workflow bindings are preserved. If the project is marked “not registered,” register the corresponding entry under **Python projects**, then reopen the node's project list to load its interfaces. Clearing the project also clears the node's interface binding; switching projects requires selecting an interface again. These changes support undo, redo, and export.
-
-| Node ID      | Node type            | Interface            | What happens                                                                               |
-| ------------ | -------------------- | -------------------- | ------------------------------------------------------------------------------------------ |
-| `Ready`      | Investigation        | `ready`              | Create `Device` on first use; its `True` result leads to acquisition                       |
-| `reading`    | Investigation Action | `collect`            | Return a native `Reading` object and retain it as this node's result                       |
-| `Check`      | Investigation        | `is_low`             | Receive that original object and test for low voltage                                      |
-| `Conclusion` | Conclusion           | None                 | Record the low-voltage conclusion                                                          |
-| `Repair`     | Remediation          | `restore_and_verify` | Restore the same instance, verify asynchronously, and raise an error if verification fails |
-| `Solved`     | Problem Solved       | None                 | Mark this recovery path complete                                                           |
-
-Bind investigations under **Execution and human decisions**, and action/remediation nodes under **Interface binding**. A text-only conclusion needs no interface. Problem Solved and Escalation nodes do not bind business functions. Select `collect` under **Interface to call**; do not enter a call expression such as `Device.collect()`.
-
-To draw the example manually, use the same node types and bindings. The acquisition node's **General → ID** must be `reading`, matching the parameter in the example's judgment method. Choose your own display names or let details generate them.
-
-This example implements only the low-voltage recovery path. Both investigations have only a Yes group. A No result without a matching successor records a failed path; it does not mean that a normal-voltage success path has been modeled. Add a separate path following the connection rules if you need that outcome.
-
-## 5. Understand parameter and object passing
-
-The central calls in this example are equivalent to:
-
-```python
-device = Device(device_id='M01', threshold=24)
-device.ready()
-reading = device.collect()
-device.is_low(reading)
-# When the judgment succeeds, call async restore_and_verify on this instance.
-```
-
-Nodes selecting the same registered project reuse its business object within an investigation. That object may internally manage sensors, controllers, and other objects; the Python project organizes them without per-node configuration. Existing Python methods maintain its attributes; you do not configure `latest`, `attempts`, or `recovered` again as platform parameters. Another investigation gets its own process and instance.
-
-For inputs declared in a function signature, the platform searches in this order:
-
-1. A same-name startup variable or complete node result. Parameter `reading`, for example, receives the original result of node `reading`.
-2. A unique same-name field in an already executed upstream result dictionary. A `voltage` field can supply a later method's `voltage` parameter.
-3. The function's Python default.
-
-Legacy explicit parameter mappings, when present, take precedence. New workflows do not require parameter code or expressions in nodes. Missing data produces a Python missing-argument error. Multiple same-name field candidates produce an ambiguity error rather than a guessed value.
-
-Original objects remain inside that business project's Python session. Flowable and the UI store a displayable result. Objects that cannot be encoded directly as JSON show their type and textual representation; that text never replaces the original object passed to a later method. Native references cannot cross between different project subprocesses.
-
-An investigation must return an explicit judgment: `True`, `False`, `yes`, `no`, `是`, `否`, or a dictionary with `next`, such as `{'next': 'yes', 'voltage': 22.6}`. English judgments ignore case. A compatible legacy flow-ID result selects that flow's whole group. Numbers and arbitrary objects are not routed using Python truthiness.
-
-Actions can take no inputs and return `None`. Only investigations that choose a branch must provide a judgment. You can bind `async def` methods directly.
-
-## 6. Export the execution bundle and run the whole workflow
-
-### 6.1 Export the bundle
-
-Click **Flowable execution → Export execution bundle**. Extract the download to a fixed directory, such as `D:/exports/device-session`. The three files have different roles:
-
-| File                  | Purpose                                                       |
-| --------------------- | ------------------------------------------------------------- |
-| `source.bpmn`         | Complete snapshot for continuing to edit the original diagram |
-| `workflow.bpmn20.xml` | Executable definition deployed to Flowable                    |
-| `bindings.json`       | Node/interface bindings read by the worker                    |
-
-The worker command below must point to the extracted `bindings.json`. Continue editing with `source.bpmn`, rather than treating the compiled executable definition as the original diagram.
-
-### 6.2 Start the worker
-
-Open another terminal in this repository's root and run:
-
-```powershell
-backend/.local/venv/Scripts/python.exe backend/flowable_worker.py D:/exports/device-session/bindings.json
-```
-
-`Subscribed:` followed by task topics means the worker is listening. It reads `backend/.local/projects.json` by default and uses registered interpreters and working directories for business calls. You need not reinstall business dependencies into the worker environment.
-
-Run one worker for the same execution bundle on the same Flowable service. It can manage multiple investigations at once, each with an independent business process. Duplicate local workers are rejected. Also keep one coordinator across machines: the local lock cannot coordinate different computers.
-
-### 6.3 Supply startup inputs and start
-
-Return to **Flowable execution**. The startup form reads initialization parameters from registered classes or factories. For this example, enter `M01` for `device_id` and `24` for `threshold`, or leave both blank to use `Device` defaults.
-
-Use **Add startup input** for other name/value inputs. Ordinary method parameters may come from upstream results, so they are not all treated as required startup fields. Initialization data generated earlier in the workflow can also be supplied upstream. Startup variables are shared globally by name: entering one value affects all same-name factory parameters, while blank fields preserve each factory's own default.
-
-Click **Deploy and start**. The platform deploys the current diagram and creates a process instance. Recovery state from single-interface debugging does not carry into this workflow.
-
-For compatibility, expand **Advanced: initial variables JSON** and enable **Use JSON instead of the form**. That JSON object then replaces the form inputs; the two sources are not merged. It defaults to `{}`. For built-in diagnostic examples, select an example scenario from the dropdown.
-
-### 6.4 Confirm the result
-
-Click **Refresh execution results**. With default inputs, this example should visit `Ready → reading → Check → Conclusion → Repair → Solved`, then show that the process completed.
-
-**Execution details** contains node results and history. Acquisition shows a display representation of `Reading`. A `null` remediation result is normal. If recovery verification fails—for example, with threshold `30`—`Repair` fails and the workflow does not reach Problem Solved.
-
-After a task error, refresh and expand its failure details to see the original Python traceback, including the business file, call location, and exception. Worker terminal output provides additional context. A result dictionary containing a `chartSvg` string can display a chart; returning a local file path alone does not display an image.
-
-## 7. Second complete example: a cooling system Python project
-
-The voltage walkthrough has one recovery path. This example supplies an independent Python project with two independent investigation methods. It shows native object passing and distinguishes successful recovery, an unmatched path, and a Python task error.
-
-### 7.1 Understand the project
-
-The project is in `backend/examples/cooling_project`. It uses only the Python standard library and runs independently of the platform. All equipment operations are simulated.
-
-| File                           | Responsibility                                                     |
-| ------------------------------ | ------------------------------------------------------------------ |
-| `src/cooling_lab/api.py`       | Expose `CoolingSession` to the platform                            |
-| `src/cooling_lab/session.py`   | Acquisition, judgment, remediation, and verification interfaces    |
-| `src/cooling_lab/simulator.py` | Simulated equipment, fault state, and protected concurrent access  |
-| `src/cooling_lab/models.py`    | Native `Measurement` objects and limit types                       |
-| `src/cooling_lab/charts.py`    | Before/after SVG temperature charts                                |
-| `assets/limits.csv`            | Threshold file actually read by Python and attached as a reference |
-| `assets/scenarios.json`        | Initial state for five scenarios                                   |
-| `run_demo.py`                  | Run the same business interfaces without the platform              |
-| `workflow.json`                | Bound parallel workflow with relative resource paths               |
-
-### 7.2 Run independently, then register it
-
-From the repository root:
-
-```powershell
-python backend/examples/cooling_project/run_demo.py --scenario fan
-```
-
-The default device is `COOL-01`. Its fan speed is too low; restarting recovers temperature from 85 C to 42 C. The terminal prints the result. To save its chart:
-
-```powershell
-python backend/examples/cooling_project/run_demo.py --scenario fan --report backend/examples/cooling_project/output/fan.svg
-```
-
-Once the business project works independently, register it with:
-
-```powershell
-pnpm exec node scripts/prepare-cooling-example.mjs
-```
-
-This command creates the example's own `.venv`, registers it under **Python projects**, and prepares the bound execution bundle. It does not change old examples, the current canvas, or existing runs. If `python` is unavailable, add `--python` followed by an existing interpreter path.
-
-With a running backend it registers through the API; otherwise it saves the default registration file, which becomes visible when the backend starts. The output includes the project ID, actual interpreter, and bundle directory:
-
-| Setting              | Value                                                |
-| -------------------- | ---------------------------------------------------- |
-| Project name         | `Cooling Lab / 冷却系统示例`                         |
-| Project directory    | This repository's `backend/examples/cooling_project` |
-| Entry module         | `cooling_lab.api`                                    |
-| Business object entry | `CoolingSession`                                    |
-| Business interpreter | The full `.venv` path printed by preparation         |
-
-Open **Python projects**, click **Reload projects**, and select this project. Eleven public interfaces should appear. Call `summary` with defaults: temperature is 85 C. In the same debug session, call `restart_fan`, then `summary` again: temperature is 42 C and the repair list contains `restart_fan`. This checks instance reuse and asynchronous calls before running the diagram.
-
-### 7.3 Import and run the workflow
-
-Choose **Import project directory** and select `backend/examples/cooling_project`, saving existing canvas work first. The main relationships are:
-
-```text
-Initial overheat investigation
-  ├─ Yes → air_sample → filter judgment → conclusion → clean → verify/report ─┐
-  ├─ Yes → fan_sample → speed judgment  → conclusion → restart → verify/report ┼→ Problem Solved
-  └─ No  → normal conclusion → normal report ─────────────────────────────────┘
-```
-
-Airflow and fan acquisition are independent siblings under the same Yes group. Each judgment depends on its own acquisition and cannot skip it.
-
-| Node ID                       | Method                          | Key relationship                                        |
-| ----------------------------- | ------------------------------- | ------------------------------------------------------- |
-| `Overheat`                    | `is_overheated`                 | Yes starts both paths; No records a healthy result      |
-| `air_sample`                  | `collect_air`                   | Returns a native `Measurement`                          |
-| `FilterCheck`                 | `filter_is_blocked`             | Parameter `air_sample` receives that original object    |
-| `CleanFilter`, `FilterReport` | `clean_filter`, `report_filter` | Finish cleaning before reacquiring and reporting        |
-| `fan_sample`                  | `collect_fan`                   | Returns the fan path's own native object                |
-| `FanCheck`                    | `fan_is_faulty`                 | Parameter `fan_sample` receives its acquisition object  |
-| `RestartFan`, `FanReport`     | `restart_fan`, `report_fan`     | Await restart before reacquiring; `None` is not failure |
-| `NormalReport`                | `report_healthy`                | Record healthy equipment without repairs                |
-
-Bindings already select `cooling_lab.api` and `CoolingSession`. Repairs and reports keep using this run's device instance; internal state needs no duplicate inputs.
-
-Preparation already exported the bundle, so the first run needs no additional export. Keep the backend, page, and Java service from section 2 running, and start this worker from the repository root:
-
-```powershell
-backend/.local/venv/Scripts/python.exe backend/flowable_worker.py backend/.local/cooling-example-parallel/bindings.json
-```
-
-Open **Flowable execution** and click **Reload startup inputs**. Set `scenario` to `fan` and `device_id` to `COOL-01`, or leave both blank for defaults. Click **Deploy and start**. This creates a new business instance, separate from the debug session you already repaired.
-
-Refresh results. The filter hypothesis should end as unmatched; the fan path restarts the fan, verifies cooling, and reaches Problem Solved. Its chart falls from 85 C to 42 C. The failed sibling does not trigger the fan path again.
-
-### 7.4 Try different outcomes
-
-Start a new workflow with each `scenario`:
-
-| `scenario`  | Initial state                          | Expected parallel outcome                                  |
-| ----------- | -------------------------------------- | ---------------------------------------------------------- |
-| `fan`       | Low fan speed                          | Filter path fails; fan restart succeeds and charts cooling |
-| `filter`    | Blocked filter                         | Fan path fails; cleaning succeeds and charts cooling       |
-| `healthy`   | Normal initial temperature             | Entry takes No; no cleaning or restart                     |
-| `unknown`   | Overheat with normal airflow and speed | Neither path matches; the investigation fails              |
-| `fan_stuck` | Seized fan                             | Restart raises the original exception; no Problem Solved   |
-
-`unknown` means that diagnostic logic found no cause. `fan_stuck` means a business method failed; expand failure details to see the original traceback in `simulator.py`.
-
-Each scenario presets at most one recoverable fault, so resolving one cause is not presented as resolving several simultaneous faults. Real combined faults need a separate verification and recovery strategy.
-
-### 7.5 Run the serial version
-
-After finishing active example runs, prepare serial mode:
-
-```powershell
-pnpm exec node scripts/prepare-cooling-example.mjs --mode serial
-```
-
-Use **Import BPMN or workflow.json** to import `backend/.local/cooling-example-serial/source.bpmn`, then start the matching worker:
-
-```powershell
-backend/.local/venv/Scripts/python.exe backend/flowable_worker.py backend/.local/cooling-example-serial/bindings.json
-```
-
-Changing only the worker while keeping the parallel canvas will not work: the imported diagram and `bindings.json` must match.
-
-With `scenario=fan`, the filter path fails first, then the fan path succeeds. With `scenario=filter`, the first path succeeds and pauses the fan path. **Finish investigation** leaves the fan nodes unexecuted; **Continue remaining paths** starts fan checks without cleaning the filter again.
-
-### 7.6 Change or move the project
-
-`assets/limits.csv` is the file Python actually reads, not a separate display-only copy. After editing it, prepare the bundle and reimport the diagram for new runs to keep its attached reference in sync. Do not expect configuration edits to update an active session automatically.
-
-You can copy the complete project elsewhere or to another computer. Run preparation there again to update the project registration and interpreter path. Portable diagnostic export does not contain Python source or `.venv`; distribute the business project as well.
-
-## 8. Extend the example with more investigation paths
+## 8. Design diagnostic nodes and investigation paths
 
 ### 8.1 Node content and connections
 
 Every diagnostic node has a name and details. New nodes have no default names. Details generate a summary that fits the node dimensions; manual names are preserved, while automatic summaries adjust when resized. **General → Node type** is read-only. For conclusions, a name entered without content is copied into the conclusion content, and content entered without a name generates a name summary.
 
-Investigations also require data to inspect, acquisition instructions, an assessment method, and a reference file. Describe actions and remediation in their details, and state conclusions explicitly. You can export an unfinished draft, although it may not qualify for executable export.
+Investigations also require data to inspect, acquisition instructions, an assessment method, and a reference file. Describe actions and remediation in their details, and state conclusions explicitly. You can export an unfinished draft, although it may not qualify for execution.
 
 The main connection sequence is Start → Investigation; Investigation Action → Investigation; Investigation → Conclusion → Remediation; completed remediation can reach Problem Solved. Investigations cannot connect directly to Remediation or Problem Solved, and Remediation cannot connect directly back to Investigation. Jump represents a handoff whose target must be implemented by the integration; node text alone does not execute another diagram.
 
@@ -407,11 +119,13 @@ Parallel nodes may call methods on one object simultaneously. The business proje
 
 ## 9. Handle human waits, rechecks, and interruptions
 
+For registration, import steps, triggers, and review actions for eight diagrams, see [section 13: automatic decisions and human handoff](#13-examples-automatic-decisions-and-human-handoff) in this guide.
+
 ### 9.1 Request a human decision
 
 Enable **Human decision / confirmation** on an investigation. With no Python interface it waits directly; with an interface it executes that interface before requesting review. This switch belongs only to investigations that make a judgment and choose a branch.
 
-When the workflow waits, refresh **Flowable execution**, inspect the evidence and assessment instructions, select Yes or No, and continue. Escalation also waits for human review. Serial success with remaining paths offers **Finish investigation** and **Continue remaining paths**.
+When the workflow waits, inspect automatically updated **Diagnostic execution**, inspect the evidence and assessment instructions, select Yes or No, and continue. Escalation also waits for human review. Serial success with remaining paths offers **Finish investigation** and **Continue remaining paths**.
 
 ### 9.2 Request human help for unimplemented judgment code
 
@@ -439,9 +153,13 @@ Rechecking does not undo equipment actions or restore an older Python object sta
 
 ### 9.4 Stop, restart, and update
 
+Closing the execution drawer pauses polling; the backend workflow continues. Reopening it resumes monitoring in the same panel. Refreshing the page or recreating the modeler does not restore monitoring of the previous instance. Ctrl+C stops services and workers owned by the launcher; reused external services remain running. Exiting the application and rechecking cannot undo equipment commands already issued. Arrange active equipment and investigations according to business procedures.
+
+After a task reaches dead letter, **Run the current diagram again** asks for confirmation and starts a new instance from the current diagram. It does not cancel the old instance or undo completed equipment actions, and actions may run again. Previous instance IDs remain available in the current panel; record them before refreshing the page or recreating the modeler.
+
 Flowable saves progress and display results, not the entire Python memory. Restarting the worker or business subprocess loses its device instances. Continuing an old workflow then reports session loss; neither `repr` nor historical display data can reconstruct those objects.
 
-Account for active investigations before updating business code. Reload interfaces after editing code and start the updated worker for new runs; restarting loses its current sessions. Changes to bindings, connections, groups, or order also require a new execution bundle. Old instances still need their matching old worker. The worker releases business sessions after observing process completion; unfinished failed processes retain sessions for subsequent handling.
+Account for active investigations before updating business code. Reload interfaces after editing code; starting a new workflow automatically prepares its matching worker. Binding, connection, group or order edits apply to new starts; existing instances retain their definition. Do not terminate their workers merely to update a new diagram. Restarting services loses current sessions. The worker releases business sessions after observing process completion; unfinished failed processes retain sessions for subsequent handling.
 
 ## 10. Save workflows and reference files
 
@@ -451,7 +169,7 @@ Account for active investigations before updating business code. Reload interfac
 | ----------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------ |
 | Diagnostic logic and resources for moving and restoring           | **Export diagnostic project**                    | ZIP containing `workflow.json` and `assets/`     |
 | Complete editing state, including layout, size, colors, and fonts | **Export complete BPMN with layout and styles**  | Full BPMN editor snapshot                        |
-| Deployment to Flowable                                            | **Flowable execution → Export execution bundle** | The three execution files described in section 6 |
+| Run the current diagram on Flowable                               | **Diagnostic execution → Start execution**        | Actual process instance and online results        |
 | Offline Python code for further implementation                    | **Export Python skeleton**                       | Code and resources described in section 11       |
 
 A portable diagnostic project's main definition is version 4 `workflow.json`. It keeps node content, bindings, connections, Yes/No groups, serial order, and investigation mode. It omits layout, dimensions, colors, and fonts. Resources live separately in the directory; JSON records relative paths, embeds no file data, and adds no duplicate BPMN file.
@@ -474,7 +192,7 @@ If business Python code needs the same file, read it from the appropriate projec
 
 ### 11.1 Structural simulation
 
-**Start structural simulation** only animates BPMN tokens. It permits nodes without Python bindings and does not validate functions, parameters, real judgments, or diagnostic serial-success pauses. Use **Flowable execution** to check business behavior.
+**Start structural simulation** only animates BPMN tokens. It permits nodes without Python bindings and does not validate functions, parameters, real judgments, or diagnostic serial-success pauses. Use **Diagnostic execution** to check business behavior.
 
 ### 11.2 Export an offline Python skeleton
 
@@ -508,7 +226,7 @@ The offline skeleton also supports ordinary nested subprocesses and exclusive se
 
 Regenerate into a new directory and migrate implementations by stable node ID to avoid overwriting business code. `node_N` numbering changes with export order.
 
-### 11.3 Other worker and service settings
+### 11.3 Optional operations settings (outside normal use)
 
 | Situation                                              | Configuration                                                                                                                             |
 | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
@@ -532,9 +250,9 @@ Legacy explicit mappings still support `$NodeID.field`, `$variable`, `$` for all
 | Registration cannot import the module   | Project root, module name, interpreter, and dependencies                     | Confirm importability in that interpreter; use a module name, not a file path                    |
 | Required interface is absent            | Public export, re-export, and factory return-class annotation                | Update exports/annotations, then reload interfaces                                               |
 | Missing or ambiguous arguments          | Parameter names, node IDs, startup inputs, and executed results              | Establish a unique source using section 5; signatures alone cannot supply values                 |
-| Animation works but execution does not  | Structural simulation versus actual execution; whether the worker is running | Start a worker for the correct bundle and inspect the real process                               |
-| Automatic tasks remain waiting          | Java service and worker subscriptions                                        | Check `Subscribed:` and the selected `bindings.json`                                             |
-| Worker already exists                   | Duplicate workers for the same bundle                                        | Use the existing coordinator; it supports multiple investigations                                |
+| Animation works but execution does not  | Structural simulation versus actual execution; whether the worker is running | Run pnpm dev and choose Diagnostic execution → Start execution                               |
+| Automatic tasks remain waiting          | Java service state, startup errors and worker logs                                        | Inspect `backend/.local/logs/` and `backend/.local/executions/<content-hash>/<launch-uuid>.log`                                             |
+| Worker already exists                   | Conflicting backends or manually started workers                                        | Keep one backend manager and stop only identified owned conflicts                                |
 | Unexpected routing                      | Explicit judgment value and matching output group                            | Distinguish a normal failed path from a Python task error                                        |
 | Python task fails                       | Original traceback in failure details                                        | Follow its business file and call location; repeating an action can affect equipment again       |
 | Session is lost                         | Worker or business subprocess restart                                        | Handle the actual equipment state, then start a new investigation; history cannot restore memory |
@@ -542,3 +260,99 @@ Legacy explicit mappings still support `$NodeID.field`, `$variable`, `$` for all
 | Recheck did not restore equipment state | Whether recheck was mistaken for undo                                        | Recheck reruns logic; it does not rewind equipment or object state                               |
 
 For lower-level interface and runtime details, see [Python integration](../backend/README.md) and [Flowable technical documentation](../backend/FLOWABLE.md).
+
+## 13. Examples: automatic decisions and human handoff
+
+This independent Python project demonstrates automatic routing, human review, component fallback,
+and an intentional Python failure. It has no factory and requires no third-party business dependencies.
+It uses supplied voltage data; it does not acquire data from or operate equipment.
+
+### 13.1 Preparation and project registration
+
+Complete the platform preparation in the [user guide](#2-prepare-once-then-start-each-run),
+then run `pnpm dev` from the repository root. The launcher manages the required services and workers.
+
+Open **Python projects** and register:
+
+| Field | Value |
+| --- | --- |
+| Project directory | `backend/examples/manual_handling_project` (relative to the repository root) |
+| Entry module | `manual_handling` |
+| Interpreter | The executable path of your local Python 3.9+ interpreter |
+| Class or factory | Leave blank; the entry points are module functions |
+| Name | Any recognizable label, such as `Manual handling examples` |
+
+Register this module even for the manual-only diagram: its later Record action calls
+`record_result()`. The business interpreter does not need the Flowable SDK. The platform worker
+supplies the import path for `diagnostic_components`; do not install it as a third-party dependency.
+
+### 13.2 Import and start
+
+Start with **05-decorator-fallback.bpmn** to see an unimplemented automatic judgment preserve its evidence and request human review.
+
+1. Save your current canvas before importing.
+2. Use the main designer's **Import BPMN or workflow.json** control and select one standalone `.bpmn`
+   file from this project's [diagrams](../backend/examples/manual_handling_project/diagrams/) directory. These files are not entries in an execution
+   example menu. Starting the app does not automatically replace your canvas with an example.
+3. Select Check and inspect its **Python project**, **Call interface**, and **Human decision / confirmation**
+   settings against the table below. Choose the registered project if the local registration has not
+   been associated with the imported binding. Record must use the same project and `record_result()`.
+   Manual-only Check intentionally has no Python binding.
+4. Open **Diagnostic execution**, then click **Start execution**. The default voltage is `21.2` V.
+   To demonstrate the automatic Yes branch, add an extra startup input named `voltage` with the
+   numeric value `24` before starting a new execution. Leave it absent for the default No branch.
+
+The manual-only diagram uses a static 21.2 V example in its node instructions. Its Check makes no
+Python call, so a `voltage` startup input does not change that text or its example evidence.
+
+Every diagram follows Start → Check. Yes goes through Conclusion → Record → Problem Solved;
+No goes to Escalation. `record_result()` is only an example record step: it returns `None` without
+writing files or touching equipment.
+
+### 13.3 Eight diagrams and expected results
+
+The human switch below refers to **Human decision / confirmation** on Check.
+
+| Diagram | Check interface / human switch | Trigger | Expected result |
+| --- | --- | --- | --- |
+| [01-automatic.bpmn](../backend/examples/manual_handling_project/diagrams/01-automatic.bpmn) | `automatic_decision` / off | Returns Yes when `voltage >= 22`, otherwise No | Check routes automatically; `21.2` reaches Escalation, `24` reaches Problem Solved |
+| [02-manual-only.bpmn](../backend/examples/manual_handling_project/diagrams/02-manual-only.bpmn) | No Python interface / on | Check is configured for direct human judgment | Waits for a human Yes/No choice without a Python call at Check |
+| [03-bound-manual.bpmn](../backend/examples/manual_handling_project/diagrams/03-bound-manual.bpmn) | `collect_evidence` / on | Python returns evidence, then the node requests review | Shows evidence and waits for a human Yes/No choice |
+| [04-base-fallback.bpmn](../backend/examples/manual_handling_project/diagrams/04-base-fallback.bpmn) | `base_fallback` / off | `DecisionComponent.decide` is not overridden | Component protocol requests human judgment |
+| [05-decorator-fallback.bpmn](../backend/examples/manual_handling_project/diagrams/05-decorator-fallback.bpmn) | `decorator_fallback` / off | A function wrapped by `@decision` raises `NotImplementedError` | Decorator converts the unimplemented judgment into a human request |
+| [06-explicit-review.bpmn](../backend/examples/manual_handling_project/diagrams/06-explicit-review.bpmn) | `explicit_review` / off | Explicitly returns a human judgment request | Waits for a human Yes/No choice without requiring the node's human switch |
+| [07-ordinary-error.bpmn](../backend/examples/manual_handling_project/diagrams/07-ordinary-error.bpmn) | `ordinary_unimplemented` / off | An ordinary function directly raises `NotImplementedError` | Expected Python execution failure with traceback; no human review occurs |
+| [08-empty-result.bpmn](../backend/examples/manual_handling_project/diagrams/08-empty-result.bpmn) | `empty_decision` / off | The function body uses `pass`, returning `None` | Expected `ValueError`: an investigation must return Yes/No; no human review occurs |
+
+### 13.4 Handle the review card
+
+Human handling appears in the **Diagnostic review** card inside the right-hand **Diagnostic execution**
+drawer. It does not open a separate dialog automatically. If you close the drawer, open it again
+yourself to resume monitoring the current execution.
+
+For diagrams 02–06, read the evidence and reference/assessment instructions. When supplied by Python,
+the default evidence is `voltage: 21.2`, `threshold: 22`, `unit: V`; the manual-only diagram supplies
+its context through the node's instructions. Under **Next step**, select Yes or No, then click
+**Confirm and continue**. The question is whether voltage is at least 22 V, so the default evidence
+supports No. A human can select either branch to inspect its behavior.
+
+- **Yes** continues through Conclusion and Record to Problem Solved.
+- **No** reaches Escalation and waits again. Click **Confirm escalation and finish** to finish this
+  escalation. This second wait also occurs for diagram 01 with its default automatic No result.
+- Diagram 07 should show the Python failure. Expand **Original Python traceback** in the failure
+  details to locate the intentional exception; this is not a successful fallback or a completed review.
+- Diagram 08 should fail with `ValueError` because its investigation returns no branch decision.
+  Inspect its traceback in the same failure details; it must not open a human review.
+
+### 13.5 Boundaries
+
+Only the component protocol turns an unimplemented judgment into human handling. A plain `pass` or
+`None` return does not request human review, as diagram 08 demonstrates. Diagram 03
+waits because its human switch is enabled, not because returning evidence itself implies fallback.
+
+These examples cover investigation judgments. The execution UI currently has no unified form for
+manually entering acquisition results or confirming completion of arbitrary business actions.
+The Yes/No review must not be presented as either of those capabilities. This guide describes the
+expected behavior; it does not claim that the examples have been run on your machine.
+
+For the project files and standalone instructions, see the [example project README](../backend/examples/manual_handling_project/README.md).

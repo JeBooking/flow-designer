@@ -12,9 +12,9 @@
 
 Read the [English user guide](docs/USER-GUIDE.md) / [中文用户手册](docs/USER-GUIDE.zh-CN.md) for existing-project registration, interpreters, discovery, node binding, automatic variable matching, Flowable/workers, human fallback, rechecks, export and troubleshooting.
 
-The [cooling-system project](backend/examples/cooling_project/README.md) includes an independent Python package, a bound workflow, shared CSV resources, and five scenarios. Run `pnpm exec node scripts/prepare-cooling-example.mjs` to create its environment, register it, and prepare the execution bundle.
+Register your own business project through **Python projects**, bind its interfaces on the current diagram, then choose **Diagnostic execution → Start execution**. The backend manages the matching worker automatically; no execution bundle or separate worker command is needed.
 
-**Enable structure simulation** only animates BPMN tokens; it does not call Python. Real execution uses **Flowable Execution** with a separately started worker. Exported Python scaffolds default to manual fallback for unimplemented business logic and do not automatically execute saved external-module bindings.
+**Enable structure simulation** only animates tokens and does not call Python. Offline skeletons are a separate development option: unimplemented logic uses human fallback and saved external bindings are not executed automatically.
 
 ## Online Preview
 
@@ -104,9 +104,6 @@ automatic signature-based parameters: exact workflow variable names, then unique
 upstream results, then function defaults. Missing or ambiguous data produces an explicit error.
 No-argument functions and actions returning `None` are supported; no JSON entry is required.
 Existing explicit mappings remain readable; selecting a new interface clears stale mappings.
-The **Parallel investigations and dependencies** example demonstrates this contract. Legacy examples
-retain migration labels: assign Yes/No and move decisions out of action nodes before execution.
-
 ## Related Project
 
 - If you are interested in a DingTalk-style flow designer: [lowflow-design](https://gitee.com/cai_xiao_feng/lowflow-design)
@@ -141,7 +138,7 @@ pnpm install
 ## 🚀 Scripts
 
 ```bash
-# run dev server (port/options are in vite.config.ts)
+# start frontend, local backend and local Flowable
 pnpm dev
 
 # build for development
@@ -191,15 +188,17 @@ pnpm format
 
 ## Connect existing Python projects
 
-Start `python backend/server.py` and `pnpm dev` in separate terminals. The
-**Python projects** toolbar entry registers a local project directory and its
-importable entry module, lists public functions and calls them in Python.
-Existing projects remain independently maintained; optional interpreter paths
-support their existing virtual environments. See [backend integration guide](backend/README.md)
-for `__all__` exports, the included example and the generic invocation API.
-Optionally register a class or factory such as `Device` to expose its public bound methods. Debug calls share a resettable session. Configure the business object entry once during project registration; nodes select a registered project and interface, with automatic signature matching. Existing workflow entry bindings are preserved. Start the Flowable worker separately with the official client: it reads `backend/.local/projects.json` and runs each project's calls in its registered interpreter and working directory. Each workflow has an isolated persistent Python process, retaining native objects, instance state and ordinary module globals. Flowable stores display projections and execution history. Worker restarts lose active sessions and explicitly fail affected workflows; no automatic checkpoint is provided. See the [native device example](backend/examples/session_project/README.md).
+First prepare Java 21, Maven 3.9, Python 3.9+, frontend dependencies and the official Python client, and build the Flowable JAR; see [environment preparation](backend/FLOWABLE.md). Install business dependencies in their business interpreter beforehand. These preparation steps do not need repeating each run.
 
-Run one worker coordinator for the same execution package/topics on one Flowable service; it handles multiple workflow runs concurrently. Duplicate local workers are rejected. The local lock cannot coordinate hosts, so retain one coordinator across machines too; stateless-function compatibility does not provide shared native objects or horizontal scaling.
+Then use only `pnpm dev` at the repository root to start the frontend, local backend and local Flowable. Open `http://127.0.0.1:5173/vue-bpmn-designer/`, then register your directory, importable module, interpreter and optional class/factory under **Python projects**. Registration neither copies sources nor installs dependencies. Select the project and interface on each node; parameters match signatures automatically.
+
+Choose **Diagnostic execution → Start execution** on your current diagram; the backend prepares the worker. Flowable owns scheduling, human waits and history. The canvas and result cards automatically reflect real node states; raw variables and records live in collapsed details. Charts appear only when business code returns `chartSvg`; the platform does not generate business charts.
+
+Each workflow has a persistent isolated Python process per project, retaining objects, instance state and module globals; Flowable stores display projections. Worker or business process restarts lose sessions, with no automatic checkpoint. Closing the execution drawer pauses polling while the backend workflow continues; reopening it resumes monitoring in the same panel. Refreshing the page or recreating the modeler does not restore monitoring of the previous instance. Exiting the launcher stops its own services and cannot undo equipment actions; reused services remain running.
+
+After a task reaches dead letter, **Run the current diagram again** asks for confirmation before creating a new instance. It does not cancel the old instance or undo completed actions, and actions may run again. Previous instance IDs remain available in the current panel; record them before refreshing or recreating the modeler. Service logs live in `backend/.local/logs/`; worker logs use `backend/.local/executions/<content-hash>/<launch-uuid>.log`.
+
+With an existing production build, use `pnpm start` and visit `http://127.0.0.1:8765/vue-bpmn-designer/`. Use `pnpm dev:frontend` for frontend-only development. See [backend integration](backend/README.md).
 
 ## Export a diagnostic Python project
 
@@ -251,13 +250,6 @@ If this project helps you, sponsorship is welcome.
 
 [Apache-2.0 License](./LICENSE)
 
-# Flowable diagnostic execution
+# Diagnostic execution
 
-Diagnostic nodes can bind external Python module functions. Open **Flowable execution** to
-choose from five examples (temperature, voltage, communication retries, sensor comparison and pressure), export an execution bundle, deploy/start and inspect
-execution results with real Python-generated charts. Flowable schedules the process and the
-official Python client runs the existing projects. See [setup and example](backend/FLOWABLE.md).
-Human decision/confirmation nodes and escalation offer a return to earlier executed nodes
-with preserved history. Python bindings are optional in human mode; bound nodes run Python
-before waiting. Try the **Human decisions and rechecks** example.
-Python decision base classes and decorators automatically request human judgment when business logic is unimplemented, without enabling human mode. Exported skeletons reuse the same component.
+Bind your own Python interfaces on the current diagram, then choose **Diagnostic execution → Start execution**. The backend manages workers; the canvas and results reflect real Flowable execution. Human decisions, escalation review and rechecks preserve history; rechecks can repeat equipment actions. Decision components can explicitly request human fallback. See [current workflow execution](backend/FLOWABLE.md).

@@ -5,15 +5,23 @@ for drawing, binding, execution, human review and offline exports.
 
 ## 启动与登记 / Start and register
 
-在仓库根目录分别启动 / From separate terminals at the repository root:
+先按[首次准备](FLOWABLE.zh-CN.md#首次准备) / [prepare once](FLOWABLE.md#prepare-once)
+安装 pnpm 依赖、准备 Python 3.9+ 虚拟环境和官方客户端，并用 Java 21、Maven 构建引擎 jar。
+启动器不会自动安装依赖。准备好后在仓库根目录运行 / Once prepared, run from the repository root:
 
 ```powershell
-python backend/server.py
 pnpm dev
 ```
 
-打开 Vite 地址，在顶栏选择 **Python 项目**。`/api` 转发至 `127.0.0.1:8765`。
-也可先 `pnpm build-only`，再访问 `http://127.0.0.1:8765/vue-bpmn-designer/`。
+统一启动前端、Python 后端和 Java 引擎；打开打印的地址，在顶栏选择 **Python 项目**。
+`/api` 转发至 `127.0.0.1:8765`。生产环境先构建 `dist/`，再运行 `pnpm start`；
+`pnpm dev:frontend` 仅启动前端。显式设置 `FLOWABLE_URL` 只连接指定外部引擎；复用后端时须匹配同一引擎 URL。
+
+The launcher starts the frontend, Python backend and Java engine. Open the printed address
+and choose **Python projects**. `pnpm start` serves an existing `dist/` build;
+`pnpm dev:frontend` starts only the frontend. An explicit `FLOWABLE_URL` connects to that
+external engine only. A reused backend must report the same engine URL.
+
 登记已有工程目录、可导入模块、可选解释器和工厂；工程保留原目录，依赖须已安装。
 
 Register a local directory, importable module (for example `machine.api`, not a
@@ -38,19 +46,9 @@ function exports, including `__all__`.
 
 ## 连续调试与原生对象 / Debug native objects
 
-可运行的[设备示例](examples/session_project/README.zh-CN.md) / [device example](examples/session_project/README.md):
-
-| 登记字段 / Field                    | 值 / Value                                   |
-| ----------------------------------- | -------------------------------------------- |
-| path                                | `backend/examples/session_project`           |
-| module                              | `device_session`                             |
-| factory                             | `Device`                                     |
-| 调试启动输入 / Debug startup inputs | `{"device_id":"M01","threshold":24}` or `{}` |
-
-按接口签名填写输入，在同一调试会话依次调用 `collect`、`restore`、`verify`。
-初次采集返回 `Reading` 实例，恢复后异步复核返回 `True`；重置会话再采集恢复为初始状态。
-界面只显示对象投影，含 `native`、`pythonType`、`representation` 等信息，`repr` 不代替原始对象。
-内部属性及采集结果由实例保存，无需在每次调用时重复填写。
+按已登记接口的签名填写输入，同一调试会话中的连续调用共享实例和结果。
+“重置会话”丢弃原实例与结果。界面只显示对象投影，含 `native`、`pythonType`、
+`representation` 等信息，`repr` 不代替原始对象；内部属性及原始结果留在 Python 会话中。
 
 Input fields follow the selected signature. Consecutive calls share a debug session;
 **Reset session** discards its instance and results. Native objects stay in Python;
@@ -60,31 +58,39 @@ with `python backend/server.py --timeout 600`; stopping a call cannot undo exter
 
 ## Flowable 执行 / Workflow execution
 
-按[执行说明](FLOWABLE.zh-CN.md) / [execution guide](FLOWABLE.md) 导出绑定并启动 worker：
+打开“诊断执行”，填写启动输入后点击“开始执行”。后端自动编译当前图、准备或复用 worker，
+再部署并启动实例，无需手工导出绑定或启动 worker。详见[执行说明](FLOWABLE.zh-CN.md) / [execution guide](FLOWABLE.md)。
 
-```powershell
-backend/.local/venv/Scripts/python.exe backend/flowable_worker.py C:/exports/bindings.json
-```
+Open **Diagnostic execution**, fill startup inputs and click **Start execution**. The backend
+compiles the current diagram, prepares or reuses its worker, then deploys and starts it.
+No manual binding export or worker launch is required.
 
-worker 所在环境安装 `backend/requirements-flowable.txt`。默认从 `backend/.local/projects.json`
-按模块/工厂选择工程登记，业务子进程使用登记解释器及工作目录。可用 `--registry PATH` 指定登记文件。
-旧模块可用可重复的 `--project PATH` 指定备用根目录，使用 worker 自身解释器。
+默认从 `backend/.local/projects.json` 按模块/工厂选择工程，业务子进程使用登记解释器及工作目录。
+启动表单按登记类/工厂初始化签名生成，可选项留空保留默认值；额外启动数据可添加名称/值行。
+普通方法参数从上游自动匹配。高级初始变量 JSON 默认折叠，开启后替代表单，默认 `{}`。
 
-The worker environment needs the official client. It reads `backend/.local/projects.json`
-by default and matches module/factory registrations; business subprocesses use the
-registered interpreter and working directory. `--registry PATH` selects another
-registry. Repeated `--project PATH` options support unregistered legacy modules with
-the worker's interpreter.
+The worker reads `backend/.local/projects.json` and matches module/factory registrations;
+business subprocesses use the registered interpreter and working directory. Startup fields
+follow initialization signatures and preserve defaults for blank optional values. Add name/value
+rows for extra data, or enable the collapsed advanced JSON option (default `{}`) to replace
+the form. Ordinary method arguments match upstream results automatically.
 
-真实执行抽屉按登记类/工厂的初始化签名生成启动表单，留空采用默认值；额外启动数据可添加名称/值行，
-内置示例从场景下拉框选择。普通方法参数继续从上游自动匹配。高级初始变量 JSON 默认折叠，可开启
-以替代表单（默认 `{}`）。任务失败后刷新 Flowable 执行结果，展开失败详情查看原始 Python traceback。
+结果自动轮询，真实画布节点高亮。结果卡片、数组表格展示返回值，返回 `chartSvg` 时显示图表；
+原始详情默认折叠，失败时可展开查看 Python traceback。关闭抽屉只暂停轮询，不停止业务；
+浏览器刷新或 Modeler 重建不会恢复监控。死信失败可确认重新执行，但旧实例不取消，动作可能重复。
 
-The execution drawer builds startup fields from registered class/factory initialization
-signatures, preserving defaults for blank values. Add name/value rows for extra startup
-data or choose an example scenario from its dropdown. Ordinary method inputs still match
-upstream results. The collapsed advanced JSON option can replace the form (default `{}`).
-Refresh execution results and expand failure details to read an original Python traceback.
+Results update automatically with actual canvas-node highlights, result cards and array tables.
+A returned `chartSvg` displays a chart; raw details stay collapsed and can expose a Python traceback.
+Closing the drawer pauses polling only. Refreshing the browser or recreating the Modeler does not
+restore monitoring. Confirmed reruns after dead-letter failure create a new instance without
+canceling the old one and may repeat actions.
+
+服务日志位于 `backend/.local/logs/`，worker 日志位于 `backend/.local/executions/<hash>/<uuid>.log`。
+退出启动器只停止自有服务及其 worker，不停止复用/外部服务，不会撤销设备动作。
+
+Service logs are under `backend/.local/logs/`; managed worker logs are under
+`backend/.local/executions/<hash>/<uuid>.log`. Exiting the launcher stops only owned services
+and their workers; reused/external services remain running. Equipment actions are not undone.
 
 同一流程的同一工程常驻一个隔离子进程，创建一次工厂实例；普通函数也保留模块全局状态。
 不同流程完全隔离，不同工程间不能直接传递原生对象引用。原始节点结果留在会话，按签名从
@@ -119,6 +125,8 @@ provide shared objects or safe horizontal scaling through competing workers.
 
 ## Platform API
 
+- `GET /api/health`: backend identity and configured `flowableUrl` for launcher reuse validation.
+- `POST /api/flowable/start`: `{ "xml": "...", "variables": {} }`; compiles the current diagram, prepares its worker, deploys and starts it.
 - `GET /api/projects`: registrations and discovered interfaces.
 - `POST /api/projects`: `{ "path": "...", "module": "...", "python": "optional", "factory": "optional", "name": "optional" }`.
 - `POST /api/projects/{id}/refresh`: refresh discovery after code changes.

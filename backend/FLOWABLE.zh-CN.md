@@ -18,99 +18,78 @@ worker 使用 `inspect.signature` 识别参数：兼容旧映射、匹配同名�
 排查返回 `True`/`False`、`yes`/`no` 或 `{"next":"yes"}`；旧连线 ID 选择该线所属的整个分组。
 节点面板无需填写参数语言。
 
-请使用新增“并行排查与依赖”示例。旧示例及下文旧引擎场景脚本须迁移拓扑，原互斥约定不再适用。
 没有分组的排查连线会被拒绝，不根据排列顺序猜测。
-当前离线检查：`python scripts/verify-diagnosis-design.py`、`python scripts/verify-python-bindings.py`、
-`pnpm exec node scripts/verify-code-export.mjs`。
 
 浏览器编辑自定义诊断节点，导出器将它们转换成标准服务任务、排他网关和结束事件。
 Flowable 7.1.0 负责调度；官方 `flowable.external-worker-client==1.0.2` 负责领取任务和提交结果。
 `flowable_worker.py` 只负责调用绑定的 Python 函数，不实现自己的流程引擎。
 
-## 启动环境
+## 首次准备
 
-需要 Java 21、Maven 3.9、Python 3.9+ 和项目原有的 pnpm 环境。
-Java 和 Python 依赖可以预先准备后在内网安装。普通工程师通过浏览器操作。
-
-```powershell
-# 在 flowable-runtime 中运行，数据库保存在当前目录 data/ 下
-mvn package
-java -jar target/diagnostic-flowable-1.0.0.jar
-```
-
-默认服务仅监听 `127.0.0.1:8080`，认证为 `diagnostic / local-demo`，用于本机示例。
-实际使用时通过环境变量 `FLOWABLE_USER`、`FLOWABLE_PASSWORD` 配置账号密码。
-Python 客户端和代理服务使用相同环境变量及 `FLOWABLE_URL`（默认 `http://127.0.0.1:8080`）。
-不要在本机示例之外直接暴露默认配置；需要内网部署时配置地址、访问控制与数据库。
-
-在仓库根目录另开终端：
+需要 Java 21、Maven 3.9+、Python 3.9+ 和项目原有的 Node.js/pnpm 环境。
+在仓库根目录安装依赖并构建本地引擎：
 
 ```powershell
+pnpm install
 python -m venv backend/.local/venv
 backend/.local/venv/Scripts/python.exe -m pip install -r backend/requirements-flowable.txt
-python backend/server.py
+mvn -f flowable-runtime/pom.xml package
 ```
 
-再运行 `pnpm dev`，打开编辑器。正式构建也可由 Python 服务提供 `dist/`。
+业务依赖安装在该工程登记的解释器环境。启动器只检查环境，不会自动安装依赖或构建 Java jar。
+Linux/macOS 将 `backend/.local/venv/Scripts/python.exe` 替换为 `backend/.local/venv/bin/python`。
+Java 引擎代码升级后需重新构建 jar，再重启自有服务。
 
-## 运行完整示例
+本地引擎默认监听 `127.0.0.1:8080`，认证为 `diagnostic / local-demo`，H2 数据库保存在
+`flowable-runtime/data/`。通过 `FLOWABLE_USER`、`FLOWABLE_PASSWORD` 配置账号密码，
+Python 代理和 worker 使用相同设置。需要对本机以外提供服务时，应配置访问控制与合适的数据库。
 
-1. 点击“Flowable 执行”，选择诊断示例，再点击“载入诊断示例”。会替换画布，先导出需要保留的图。
-2. 点击“导出执行包”，解压，得到 `source.bpmn`、`workflow.bpmn20.xml`、`bindings.json`。
-   前者用于继续编辑，后者是引擎执行定义；不使用引擎定义替换原始图。
-3. 在仓库根目录运行：
+## 日常执行
 
-   ```powershell
-   backend/.local/venv/Scripts/python.exe backend/flowable_worker.py C:/path/to/bindings.json --project backend/examples/diagnostic_demo
-   ```
+在仓库根目录运行：
 
-4. 在执行抽屉的下拉框选择示例场景，如 `recover`。启动表单自动显示登记会话类/工厂的初始化参数，留空使用默认值；其他启动数据可添加名称/值行。点击“部署并启动”。高级初始变量 JSON 默认折叠，开启后可替代表单，例如 `{"scenario":"recover"}`。
-5. 点击“刷新执行结果”，查看实际经过的节点、变量和 Python 生成的温度图。
-   SVG 文件位于 `backend/examples/diagnostic_demo/output/`。
+```powershell
+pnpm dev
+```
 
-示例包含全部八类诊断节点：排查、排查动作、结论、处置措施、深度诊断、跳转、问题解决、上升。
-它使用模拟温度数据执行真实阈值判断并生成真实 SVG；风扇自检和恢复动作明确为模拟，不控制机台。
+启动器统一启动前端、Python 后端和本地 Java 引擎。打开终端打印的编辑器地址，默认是
+`http://127.0.0.1:5173/vue-bpmn-designer/`。已有服务通过身份和健康检查后可复用，
+复用后端还必须报告相同的 Flowable URL。显式配置 `FLOWABLE_URL` 时只连接指定外部引擎，
+不会另外启动本地 Java 引擎；默认地址为 `http://127.0.0.1:8080`。
 
-界面提供六张可独立执行的示例图；载入后可用“示例场景”下拉框填写相应的初始变量。
-各图共享 `diagnostic_demo` 工程，执行时仍需使用该图导出的 `bindings.json`。
+生产运行先用 `pnpm build` 准备 `dist/`，再执行 `pnpm start`；生产启动要求已有构建产物。
+`pnpm dev:frontend` 只启动 Vite，供已单独管理其他服务的场景使用。
 
-| 示例图         | 场景                                                 | 验证重点                                     |
-| -------------- | ---------------------------------------------------- | -------------------------------------------- |
-| 温度综合诊断   | recover / normal / action / escalate / severe / jump | 八类节点及所有结果分支                       |
-| 电源电压诊断   | recover / normal / severe                            | 下限判断、恢复成功与失败                     |
-| 通信重试诊断   | recover / normal / offline                           | 异步接口、排查→动作→排查的循环；最多三次     |
-| 双传感器对比   | sensor-a / sensor-b / normal / severe                | 多个排查支路互斥执行，汇合后不读取未执行支路 |
-| 压力处置与交接 | stable / leak / unknown                              | 连续处置的顺序、深度分析及跳转交接           |
+1. 在“Python 项目”登记已有业务工程，在当前流程图节点上选择对应接口。
+2. 打开“诊断执行”，填写类/工厂所需的初始化输入；可选输入留空保留 Python 默认值。
+   额外启动数据可添加名称/值行。高级初始变量 JSON 默认折叠，开启后替代表单，默认 `{}`。
+   普通方法参数继续从上游结果自动匹配。
+3. 点击“开始执行”。后端编译当前图，经 `execution_manager.py` 准备或复用对应 worker，
+   再部署并启动实例。浏览器执行不需要先导出执行包或手工启动 worker。
+4. 执行结果自动更新，真实执行、等待和失败节点会在画布高亮。结果卡片展示对象字段，数组以表格呈现；
+   返回 `chartSvg` 时显示图表。原始执行详情默认折叠，按需展开；失败详情可查看可用的原始 Python traceback。
+5. 遇到人工判断或上升复核时，在同一抽屉完成确认或回退，具体规则见下文。
 
-这些图的采样数据与机台动作均为模拟；绘图、数值计算和流程执行为真实运行。
-回访同一节点时，结果变量更新为最新值；执行记录保留每次经过节点的信息。
-纯诊断图的分支为排他路由，因此合流不要求等待其它支路；普通 BPMN 并行流程仍保持原有汇合校验。
+关闭抽屉只暂停轮询，不停止流程和业务代码；同一编辑器会话重新打开可继续监控。
+浏览器刷新或 Modeler 重建不会恢复当前实例监控，请保留实例 ID 供排查。
+死信失败后可确认“重新执行当前流程”：这会创建新实例，不取消旧实例，机台动作可能重复执行。
 
-| scenario | 路径                                              |
-| -------- | ------------------------------------------------- |
-| normal   | 排查正常 → 结论 → 处置确认无需复位 → 问题解决     |
-| recover  | 排查异常 → 结论 → 恢复措施 → 问题解决             |
-| action   | 排查 → 排查动作 → 再排查 → 结论 → 处置 → 问题解决 |
-| escalate | 排查 → 结论 → 处置 → 深度诊断 → 上升              |
-| severe   | 排查 → 结论 → 处置 → 上升                         |
-| jump     | 排查 → 结论 → 处置 → 跳转交接                     |
-
-跳转函数记录 `handoff_requested` 及目标链路；不假装已执行目标链路。
-跳转任务成功后允许本实例交接结束。接入实际项目时由对应业务函数实现目标链路交接。
+启动器及服务日志位于 `backend/.local/logs/`，托管 worker 日志位于
+`backend/.local/executions/<hash>/<uuid>.log`。退出启动器只停止它启动的服务及其托管 worker，
+复用服务和外部服务继续运行。停止服务不会撤销设备动作，重新启动也不会恢复原生会话。
 
 ## 上升复核与回退重查
 
-新导出的执行流程到达“上升”时不会立即结束，而是进入 Flowable 人工复核任务。
+编译后的执行流程到达“上升”时不会立即结束，而是进入 Flowable 人工复核任务。
 画布中的“上升”仍然是最终节点；编译器在引擎定义里插入等待复核步骤。
-只有点击“确认上升并结束”才到达真正的结束事件。“问题解决”仍然直接结束。
-更新后需重新构建并启动 Java 服务，重新导出执行包并启动对应的 worker；已有旧版本实例不改变行为。
+只有点击“确认上升并结束”才到达真正的结束事件。到达“问题解决”时，串行模式若仍有待执行思路，
+会暂停等待选择结束或继续；并行模式成功不取消其他已启动支路。
+Java 引擎升级后需重新构建 jar、重启服务，再从当前图开始新执行；已有旧版本实例不改变行为。
 
-1. 在执行抽屉点击“刷新执行结果”，出现“已到达上升，等待人工复核”。
-2. 选择此前实际执行过的节点，填写回退原因。
-3. 可选填写复查输入变量，例如传感器示例从 `{"scenario":"severe"}` 改为 `{"scenario":"sensor-b"}`。
-   这表示更换模拟采样条件；真实工程通常在重新调用采集接口时获得新数据。
-4. 点击“回退重查”。Flowable 在同一实例中返回所选节点，Python 重新执行该节点及后续路径。
-5. 如果重查后仍上升，可以继续复核；如果确认无法恢复，点击“确认上升并结束”。
+1. 自动监控显示等待人工复核，并在复核卡片标明上升节点后，选择此前实际执行过的节点，填写回退原因。
+2. 可选修改业务输入变量，真实工程通常在重新调用采集接口时获得新数据。
+3. 点击“回退重查”。Flowable 在同一实例中返回所选节点，Python 重新执行该节点及后续路径。
+4. 如果重查后仍上升，可以继续复核；如果确认无法恢复，点击“确认上升并结束”。
 
 回退不是撤销：不会恢复机台状态，也不会删除原诊断路径。后续机台动作可能再次执行。
 输入相同、代码相同的确定性算法可能给出相同判断；回退本身不会自动纠正算法。
@@ -134,11 +113,7 @@ python backend/server.py
 所有这些等待入口以及上升复核均提供回退，可选择此前实际执行过的排查、结论或动作节点。
 当前节点和未执行节点不能作为回退目标；首个节点会提示暂无可回退节点。
 回退到人工节点时会再次等待；若该节点绑定 Python，则先重新运行 Python。
-本次不包含运行中自动节点的暂停介入；“问题解决”仍立即结束。
-
-示例列表新增“人工判断与回退”：电压绘图后确认 → 纯人工结论确认 → 模拟处置后人工选择解决或上升。
-无需到达上升即可从结论或处置节点回退。示例中的机台动作仍为模拟动作。
-每次回退均保留历史、清理待重算结果；动作可能重复执行，不会撤销之前已发生的机台动作。
+本次不包含运行中自动节点的暂停介入；“问题解决”遵循前述串行成功暂停与并行支路规则。
 
 执行接口保持 `/review`，GET 的 `mode` 区分 `decision` 与 `escalation`，
 人工节点返回说明、参考图与 `options`（出线 ID 和名称）。POST `action: confirm` 时，多出线必须传 `next`。
@@ -146,7 +121,7 @@ Python 的 `next` 在人工模式中只是建议，可以省略；实际路由�
 确认后节点结果中的 `next` 更新为实际选择并带有 `humanConfirmed: true`，原始结果保存在复核记录。
 对象结果的其他字段保持不变；非对象结果包装在 `data` 中，纯人工节点生成确认结果。
 新增配置保存为 `flowable:humanDecision`，支持撤销、重做和 XML 导入导出。
-升级后重建并重启 Java/Python 服务，重新导出执行包并启动对应 worker；已部署实例保持原行为。
+升级后重启相关服务，并从当前图开始新执行；已部署实例保持原行为。
 编译后的配置存储在 `flowable:diagnosticExecution` 扩展元素，避免流程说明 2000 字符限制。
 
 ## 接入自己的工程
@@ -163,10 +138,9 @@ Python 的 `next` 在人工模式中只是建议，可以省略；实际路由�
 动作允许返回 `None`，排查应返回明确是/否：`True`/`False`、`yes`/`no` 或含 `next` 的字典。
 旧出口连线 ID 选择其所属整个分组；不以任意对象的真假性推测分支。最终节点不绑定业务逻辑。
 
-用装有官方客户端的环境启动 worker。默认读取 `backend/.local/projects.json`，按模块/工厂选登记，
-业务子进程使用登记解释器及工程工作目录。`--registry PATH` 可指定其他登记文件。
-旧的未登记模块仍可用可重复的 `--project PATH` 提供备用根目录，此时使用 worker 自身解释器。
-业务依赖安装在实际执行该工程的解释器环境。
+托管 worker 使用已准备的官方客户端环境。默认读取 `backend/.local/projects.json`，按模块/工厂选登记，
+业务子进程使用登记解释器及工程工作目录。业务依赖安装在实际执行该工程的解释器环境。
+手工 CLI 参数见下方可选运维说明。
 
 同一流程访问同一工程时共享一个常驻隔离 Python 子进程，工厂实例只创建一次，普通函数也保留模块
 全局状态；不同流程完全隔离。原始结果在 Python 内按节点 ID 保存，可为任意 Python 对象。
@@ -174,8 +148,7 @@ Flowable 仅保存可 JSON 化的展示投影，需要时带 `native`、`pythonT
 `repr` 展示不会当成原对象传给后续方法。原生引用不能跨工程子进程共享。同一实例上的并行方法须由
 业务工程管理线程安全。分支调度、人工等待及历史仍由 Flowable 负责，没有新增另一套流程引擎。
 
-可按[设备会话示例](examples/session_project/README.zh-CN.md) 完成采集、判断、恢复和异步复核，
-直接保留原生采集对象。调试连续调用共享会话，“重置会话”重新开始；真实流程的回退则在当前实例上
+接口调试的连续调用共享会话，“重置会话”重新开始；真实流程的回退则在当前实例上
 重跑方法，不回滚内部状态。worker 观察到流程结束后释放会话，失败会话保留供检查。
 没有自动检查点：worker/子进程重启会丢失会话，旧流程继续时明确报会话丢失，不会静默重建实例。
 历史及展示投影不能还原原始对象。离线骨架仍按原来的补业务/人工兜底规则运行，不自动执行图上 binding。
@@ -184,12 +157,13 @@ Flowable 仅保存可 JSON 化的展示投影，需要时带 `native`、`pythonT
 多次排查。本机单例租约会明确拒绝重复订阅；该锁不能跨机器，因此不同机器间也须保持单协调器。
 兼容普通无状态函数不代表多个竞争 worker 可以共享原生对象或安全水平扩容。
 
-Python 任务失败后，在 Flowable 执行中刷新结果并展开失败详情，可查看原始 Python traceback；
+Python 任务失败后，执行结果自动更新，展开失败详情可查看原始 Python traceback；
 worker 日志可补充上下文。
 
 工作主题默认使用节点 ID，导出时加入流程 ID 和执行定义摘要，避免不同图的同名任务混用函数。
 移动节点、修改说明文字或 XML/参数 JSON 重新格式化不会改变主题。
-同一张图内主题不得重复。连线、绑定或参数修改后，应重新导出并启动对应的 worker；旧实例仍需旧 worker。
+同一张图内主题不得重复。连线、绑定或参数修改后，从当前图开始新执行，后端会准备对应 worker；
+旧实例仍需原 worker 和原生会话。
 原图中的条件表达式和默认分支会在导出时明确拒绝；自动模式使用 Python 的 `next`，人工模式使用人工选择。
 不要同时让配置不同的 worker 订阅同一组主题。
 
@@ -198,9 +172,7 @@ worker 日志可补充上下文。
 外部任务失败、超时重领可能造成重复调用，真实机台操作函数须按业务需要保证幂等。
 桌面绘图函数若要求主线程或交互桌面，应在业务入口中启动独立桌面进程；官方客户端回调运行在线程中。
 
-## 验证
-
-### 判断组件自动转人工
+## 判断组件自动转人工
 
 `backend/diagnostic_components.py` 提供可复用的 Python 判断组件。Flowable 只接收等待请求、保存状态和继续执行，不判断业务逻辑是否实现。所有绑定 Python 的非最终节点都支持此协议，无需开启“人工判断／确认”；该开关用于额外要求人工复核自动结果。
 
@@ -221,27 +193,19 @@ def diagnose_with_decorator(data):
 
 接口应直接返回请求对象，不要自行转成 JSON。请求携带数据与可选说明，不阻塞 worker 等待人工输入。说明留空时沿用流程图中的诊断方法；参考图和后继选项仍来自流程图。可选 `options` 必须与全部后继连线 ID 一致。界面展示依据数据和图表，允许选择分支或回退；回退同时清理失效的请求。
 
-worker 已提供该模块的导入路径，业务工程正常导入即可；独立运行业务工程时应将 `backend` 加入 Python 导入路径。导出的代码骨架包含同一模块，由命令行界面收集人工选择。示例接口见 `backend/examples/diagnostic_demo/diagnostic_demo/decisions.py`。
+worker 已提供该模块的导入路径，业务工程正常导入即可；独立运行业务工程时应将 `backend` 加入 Python 导入路径。导出的代码骨架包含同一模块，由命令行界面收集人工选择。
 
-升级后需重新导出、部署执行包并启动对应 worker；已有实例继续使用原版本 worker。组件独立验证与真实引擎验证（关闭人工开关，验证结论/处置节点的等待、图表依据、分支和回退）：
+组件升级后使用更新的服务和 worker 开始新执行；已有实例仍需原版本 worker 和原生会话。
+
+## 可选的手工 worker 运维
+
+在托管浏览器流程以外的运维场景，可以给 worker 显式传入已准备的绑定清单。
+不要为托管 worker 已占用的主题另开竞争 worker：
 
 ```powershell
-backend/.local/venv/Scripts/python.exe scripts/verify-decision-components.py
-backend/.local/venv/Scripts/python.exe scripts/verify-component-decisions.py
+backend/.local/venv/Scripts/python.exe backend/flowable_worker.py C:/exports/bindings.json
 ```
 
-```powershell
-python scripts/verify-flowable.py --unit-only
-# Flowable 已启动时，使用装有官方客户端的解释器
-backend/.local/venv/Scripts/python.exe scripts/verify-flowable.py
-backend/.local/venv/Scripts/python.exe scripts/verify-diagnostic-examples.py
-node scripts/verify-diagnostic-lint.mjs
-backend/.local/venv/Scripts/python.exe scripts/verify-diagnostic-review.py
-backend/.local/venv/Scripts/python.exe scripts/verify-human-decisions.py
-```
-
-第二条验证真实引擎、官方客户端、六种路径、路由互斥、判断结果与生成 SVG。
-第三条运行四张自动图的十三种场景；第四条验证六图的全部规则、XML 往返和普通 BPMN 汇合规则。
-复核脚本验证等待、连续回退、局部重查、A/B 分支旧结果隔离、非法/过期请求及最终确认。
-原示例验证脚本会显式确认上升后检查结束状态。
-人工判断脚本验证首次等待、纯人工节点、分支选择、回退至结论及动作、旧结果清理和审计。
+`--registry PATH` 指定登记文件，可重复的 `--project PATH` 为未登记旧模块指定备用目录，
+此时使用 worker 自身解释器。手工启动同样受前述单协调器、原生会话与重启边界限制，
+不是“开始执行”的前置步骤。
