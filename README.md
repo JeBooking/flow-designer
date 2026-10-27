@@ -8,11 +8,13 @@
 
 ---
 
-## User guide
+## Documentation
 
-Read the [English user guide](docs/USER-GUIDE.md) / [中文用户手册](docs/USER-GUIDE.zh-CN.md) for existing-project registration, interpreters, discovery, node binding, automatic variable matching, Flowable/workers, human fallback, rechecks, export and troubleshooting.
+This README provides a project overview and development notes. For complete operating instructions, use the [English user guide](docs/USER-GUIDE.md) / [中文用户手册](docs/USER-GUIDE.zh-CN.md), covering existing-project registration, interpreters, discovery, node binding, automatic variable matching, execution, human fallback, rechecks, export and troubleshooting. See [Chapter 14: connecting the cooling system project](docs/USER-GUIDE.md#14-example-connecting-the-cooling-system-project) for a complete example.
 
 Register your own business project through **Python projects**, bind its interfaces on the current diagram, then choose **Diagnostic execution → Start execution**. The backend manages the matching worker automatically; no execution bundle or separate worker command is needed.
+
+The [backend README](backend/README.md) and READMEs under `backend/examples/` supplement the guide with backend and standalone-project details. Running an example's `run_demo.py`, compiling an execution bundle, or starting a worker manually is optional and is not a prerequisite for execution through the platform.
 
 **Enable structure simulation** only animates tokens and does not call Python. Offline skeletons are a separate development option: unimplemented logic uses human fallback and saved external bindings are not executed automatically.
 
@@ -137,6 +139,8 @@ pnpm install
 
 ## 🚀 Scripts
 
+Complete the [first-time environment preparation](docs/USER-GUIDE.md#2-prepare-once-then-start-each-run) before starting the full application.
+
 ```bash
 # start frontend, local backend and local Flowable
 pnpm dev
@@ -147,13 +151,16 @@ pnpm build:dev
 # build for testing
 pnpm build:test
 
-# build for production (with type checking)
+# Vite production build (without type checking)
 pnpm build:prod
-# or
+# type check and build for production
 pnpm build
 
-# preview local build
+# preview frontend build only (not the full diagnostic application)
 pnpm preview
+
+# start the full production application with an existing dist build
+pnpm start
 
 # type check
 pnpm type-check
@@ -194,7 +201,11 @@ Then use only `pnpm dev` at the repository root to start the frontend, local bac
 
 Choose **Diagnostic execution → Start execution** on your current diagram; the backend prepares the worker. Flowable owns scheduling, human waits and history. The canvas and result cards automatically reflect real node states; raw variables and records live in collapsed details. Charts appear only when business code returns `chartSvg`; the platform does not generate business charts.
 
-Each workflow has a persistent isolated Python process per project, retaining objects, instance state and module globals; Flowable stores display projections. Worker or business process restarts lose sessions, with no automatic checkpoint. Closing the execution drawer pauses polling while the backend workflow continues; reopening it resumes monitoring in the same panel. Refreshing the page or recreating the modeler does not restore monitoring of the previous instance. Exiting the launcher stops its own services and cannot undo equipment actions; reused services remain running.
+Pending human tasks automatically expand into floating windows connected to their nodes by curves and retract when completed. Each task keeps its own inputs and errors. Drag the title or use arrow keys (Shift for larger steps), and use automatic layout or restore automatic positioning as needed. Collapsing a window does not complete it; reopen it from the node's pending button. Narrow screens use a pending-card rail. Windows show full node instructions, references and evidence. Choose one Yes/No group, then optionally select a subset of its paths; all are selected by default. Path subsets require a newly compiled deployment. Rechecking is disabled while multiple parallel human tasks are pending because it clears shared results; handle the other tasks first. See the [user guide](docs/USER-GUIDE.md) for details.
+
+Node history for new executions preserves each call's actual inputs (including defaults), factory initialization inputs when applicable, returned evidence/results, deployed instructions and reference files, branch and errors. Human records preserve the context available at the time, evidence, references and choice; context is distinguished from actual function arguments. Reruns do not overwrite earlier records. Old instances or missing fields show **Not recorded**, without reconstructed snapshots. Python local intermediate variables must be returned in the result structure or `HumanDecisionRequest.data` to be retained, such as the manual-handling example's `voltage`, `threshold` and `unit` evidence.
+
+Each workflow has a persistent isolated Python process per project, retaining objects, instance state and module globals; Flowable stores display projections. Worker or business process restarts lose sessions, with no automatic checkpoint. Closing the execution drawer keeps monitoring the current instance and updating its canvas prompts until the process ends; completed-node prompts remain available afterward. Editing or importing a diagram hides canvas prompts for the previous instance. Refreshing the page or recreating the modeler does not restore monitoring of that instance. Exiting the launcher stops its own services and cannot undo equipment actions; reused services remain running.
 
 After a task reaches dead letter, **Run the current diagram again** asks for confirmation before creating a new instance. It does not cancel the old instance or undo completed actions, and actions may run again. Previous instance IDs remain available in the current panel; record them before refreshing or recreating the modeler. Service logs live in `backend/.local/logs/`; worker logs use `backend/.local/executions/<content-hash>/<launch-uuid>.log`.
 

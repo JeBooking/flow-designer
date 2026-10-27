@@ -2,7 +2,9 @@
 
 [English](USER-GUIDE.md) | [中文](USER-GUIDE.zh-CN.md)
 
-Start with your own Python business project. Paths, modules, classes and methods below are placeholders: replace them with real values. The platform neither creates business implementations nor installs business dependencies.
+This is the complete user operation manual. The root [README](../README.md) provides the project overview and installation/development entry points; individual example READMEs provide supplementary engineering details. After the first-time environment preparation in section 2, the main path is `pnpm dev` → register a Python project → bind its interfaces → start execution in the UI.
+
+Start with your own Python business project. General integration steps use placeholder paths, modules, classes and methods: replace them with real values. The example chapters use actual projects in this repository. The platform neither creates business implementations nor installs business dependencies.
 
 ## 1. Responsibilities
 
@@ -76,6 +78,12 @@ One workflow's calls to the same project share a persistent isolated Python proc
 
 Each start creates a new instance using the current diagram and does not reuse debug objects. Editing the diagram does not change running instances. States come from actual Flowable execution; distinguish running, human waits, task errors and completed processes.
 
+Pending human tasks automatically expand into floating windows connected to their nodes by curves and retract on completion. Each task keeps its own inputs and errors. Drag a window title or focus it and use arrow keys (Shift for larger steps). Use automatic layout or restore automatic positioning when needed. Collapsing a window does not complete its task; reopen it from the node's orange pending button. Narrow screens arrange pending cards in a rail. Windows show the full node instructions, references and evidence. Closing the execution drawer keeps monitoring the current instance.
+
+Click a node's green completion check to view that node's history, including each occurrence's start, end and duration. New executions also save each call's actual function inputs, including defaults, factory initialization inputs when applicable, returned evidence/results, deployed instructions and reference files, selected branch and errors. Human records save the context available at the time, evidence, references and choice; this context is distinct from actual function arguments. Reruns do not overwrite earlier records. Old instances or missing fields show **Not recorded**; missing snapshots are not reconstructed. Editing or importing a diagram hides canvas prompts for the previous instance.
+
+Local intermediate variables that Python code does not return cannot be captured automatically. Return collected values, reference values and assessment evidence in the result structure or `HumanDecisionRequest.data` to retain them. The manual-handling example's `voltage`, `threshold` and `unit` are such evidence.
+
 ## 7. Inspect results and errors
 
 Result cards show business return values. A chart appears only when a result dictionary contains a `chartSvg` string. Returning a file path does not display an image automatically; the platform does not invent business curves as execution results.
@@ -125,7 +133,7 @@ For registration, import steps, triggers, and review actions for eight diagrams,
 
 Enable **Human decision / confirmation** on an investigation. With no Python interface it waits directly; with an interface it executes that interface before requesting review. This switch belongs only to investigations that make a judgment and choose a branch.
 
-When the workflow waits, inspect automatically updated **Diagnostic execution**, inspect the evidence and assessment instructions, select Yes or No, and continue. Escalation also waits for human review. Serial success with remaining paths offers **Finish investigation** and **Continue remaining paths**.
+When the workflow waits, read the floating window's full instructions, references and evidence. Select one Yes/No group, then check the paths to follow within that group; all paths in the group are selected by default. You cannot combine paths across Yes and No. A group without successors keeps the existing failed-path behavior. Path subsets require a newly compiled deployment; automatic decisions still follow their entire matching group. Escalation also waits for human review. Serial success with remaining paths offers **Finish investigation** and **Continue remaining paths**.
 
 ### 9.2 Request human help for unimplemented judgment code
 
@@ -149,11 +157,13 @@ The worker supplies the import path for `diagnostic_components`. Add this reposi
 
 During an investigation or escalation human wait, select a **previously executed node**, provide a reason and optional recheck input variables, then click **Recheck**. The system retains previous history, results, and the reason; it clears results requiring recomputation and runs again from the selected node.
 
+Rechecking is disabled while multiple parallel human reviews are pending because it clears shared results and could affect another task's evidence. Handle the other human tasks first. Rechecking targets the selected task; it does not undo physical actions.
+
 Rechecking does not undo equipment actions or restore an older Python object state. It reruns methods on the current instance, and actions may occur again. The current node, unvisited nodes, and completed instances are not arbitrary recheck targets. Running automatic tasks do not expose this intervention. At a serial-success pause, choose continue or finish rather than recheck.
 
 ### 9.4 Stop, restart, and update
 
-Closing the execution drawer pauses polling; the backend workflow continues. Reopening it resumes monitoring in the same panel. Refreshing the page or recreating the modeler does not restore monitoring of the previous instance. Ctrl+C stops services and workers owned by the launcher; reused external services remain running. Exiting the application and rechecking cannot undo equipment commands already issued. Arrange active equipment and investigations according to business procedures.
+Closing the execution drawer keeps monitoring the current instance and updating its canvas prompts until the process ends; completed-node prompts remain available afterward. Refreshing the page or recreating the modeler does not restore monitoring of the previous instance. Ctrl+C stops services and workers owned by the launcher; reused external services remain running. Exiting the application and rechecking cannot undo equipment commands already issued. Arrange active equipment and investigations according to business procedures.
 
 After a task reaches dead letter, **Run the current diagram again** asks for confirmation and starts a new instance from the current diagram. It does not cancel the old instance or undo completed equipment actions, and actions may run again. Previous instance IDs remain available in the current panel; record them before refreshing the page or recreating the modeler.
 
@@ -324,15 +334,19 @@ The human switch below refers to **Human decision / confirmation** on Check.
 | [07-ordinary-error.bpmn](../backend/examples/manual_handling_project/diagrams/07-ordinary-error.bpmn) | `ordinary_unimplemented` / off | An ordinary function directly raises `NotImplementedError` | Expected Python execution failure with traceback; no human review occurs |
 | [08-empty-result.bpmn](../backend/examples/manual_handling_project/diagrams/08-empty-result.bpmn) | `empty_decision` / off | The function body uses `pass`, returning `None` | Expected `ValueError`: an investigation must return Yes/No; no human review occurs |
 
-### 13.4 Handle the review card
+### 13.4 Handle the floating review window
 
-Human handling appears in the **Diagnostic review** card inside the right-hand **Diagnostic execution**
-drawer. It does not open a separate dialog automatically. If you close the drawer, open it again
-yourself to resume monitoring the current execution.
+Each pending task automatically expands from its node into a floating window with a curved connector.
+Multiple windows keep independent inputs and errors. Completing a task retracts its window; collapsing
+it leaves the task pending, and the node's orange pending button reopens it. Drag the title or use arrow
+keys (Shift for larger steps); automatic layout and restored automatic positioning are available.
+Narrow screens use a pending-card rail. Closing the drawer keeps monitoring the current execution.
 
 For diagrams 02–06, read the evidence and reference/assessment instructions. When supplied by Python,
 the default evidence is `voltage: 21.2`, `threshold: 22`, `unit: V`; the manual-only diagram supplies
-its context through the node's instructions. Under **Next step**, select Yes or No, then click
+its context through the node's instructions. Read the full instructions, references and evidence,
+select one Yes/No group, and optionally check a subset of that group's paths (all selected by default
+in newly compiled deployments), then click
 **Confirm and continue**. The question is whether voltage is at least 22 V, so the default evidence
 supports No. A human can select either branch to inspect its behavior.
 
@@ -356,3 +370,69 @@ The Yes/No review must not be presented as either of those capabilities. This gu
 expected behavior; it does not claim that the examples have been run on your machine.
 
 For the project files and standalone instructions, see the [example project README](../backend/examples/manual_handling_project/README.md).
+
+## 14. Example: connecting the cooling system project
+
+This standard-library Python project simulates a cooling system, including measurements, fault
+assessment, remediation and temperature reports. It does not operate real equipment. After the
+platform preparation and startup, the following steps use the UI throughout.
+
+### 14.1 Prepare and register the business project
+
+Complete [section 2](#2-prepare-once-then-start-each-run), then run `pnpm dev` from the repository
+root and open the displayed page. First-time platform environment preparation is still required.
+
+Open **Python projects** and register:
+
+| Field | Value |
+| --- | --- |
+| Project directory | `backend/examples/cooling_project` (relative to the repository root) |
+| Entry module | `cooling_lab.api` |
+| Interpreter | Executable path of an existing local Python 3.9+ interpreter |
+| Class or factory | `CoolingSession` |
+| Name | A recognizable label, such as `Cooling system` |
+
+The business project uses only the Python standard library; creating a separate venv for it is
+optional. This does not replace the platform dependencies prepared in section 2. Registration
+provides the interpreter and business entry; importing the workflow is a separate operation and
+does not automatically register a Python project.
+
+### 14.2 Import, check bindings, and execute
+
+1. Save the current diagram. Choose **Import project directory** and select the entire
+   `backend/examples/cooling_project` directory containing `workflow.json` and `assets/`.
+   Select the directory rather than only the JSON file: reference paths such as
+   `assets/limits.csv` need the accompanying directory to resolve their contents.
+2. Select bound nodes and check **Python project** and **Interface to call**. The workflow already
+   contains `cooling_lab.api`, `CoolingSession` and method bindings, such as
+   `Overheat → is_overheated`, `air_sample → collect_air`, and `FanReport → report_fan`.
+   Confirm that they match the registered project; conclusions and Problem Solved need no interface.
+3. Open **Diagnostic execution**. Keep the constructor defaults `scenario=fan` and
+   `device_id=COOL-01`, then click **Start execution**. The backend automatically prepares the
+   matching worker and starts the current diagram. No preparation script or manual backend/worker
+   command is needed for these UI steps.
+4. Follow the canvas paths and result cards. In the default parallel mode, the fan path performs
+   remediation and verification; the filter path has no matching fault and ends independently.
+   The fan report's `chartSvg` displays the temperature change from 85 °C to 42 °C.
+   Click green completion checks to inspect each node's execution records, including inputs,
+   returned evidence and references where recorded. Expand **Raw execution details** for the
+   complete process snapshot, activity history and variables; section 6 explains record boundaries.
+
+### 14.3 Try serial mode and update references
+
+Select the process by clicking the blank canvas, then choose **Investigation mode → Serial** in
+the process properties. In **Diagnostic execution**, set `scenario` to `filter` and start a new
+instance. The imported connection order tries the filter path first. After successful verification,
+remaining paths pause: choose **Finish investigation** to finish or **Continue remaining paths**
+to investigate the fan path. Mode and input changes do not alter an already running instance.
+Each scenario presets at most one recoverable fault; this example does not combine multiple faults.
+
+Python reads the real `assets/limits.csv`, while the diagram retains its imported reference copy.
+After editing a reference, reimport the project directory or select the updated reference file on
+the affected nodes, then start a new instance so the displayed reference and business file agree.
+
+`run_demo.py` and `scripts/prepare-cooling-example.mjs` are optional engineering tools, not
+prerequisites for this UI walkthrough. Independent Python execution and helper-script details are
+in the [cooling project README](../backend/examples/cooling_project/README.md). Portable diagnostic
+export contains the workflow and resources, not Python source, interpreters or local registrations;
+move the complete business project and register it again when changing machines.
