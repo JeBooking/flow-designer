@@ -1,0 +1,84 @@
+<?xml version='1.0' encoding='utf-8'?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:flowable="http://flowable.org/bpmn" id="Definitions_ManualHandling_OrdinaryError" targetNamespace="http://diagnosis.local/examples/manual-handling" exporter="manual-handling-examples-generator" exporterVersion="1">
+  <bpmn:process id="ManualHandling_OrdinaryError" name="普通函数失败 / Ordinary function failure" isExecutable="false" flowable:diagnosisMode="serial">
+    <bpmn:startEvent id="Start" name="开始 / Start" flowable:detailText="仅进入当前案例的单个排查。 / Enter this case's single investigation.">
+      <bpmn:outgoing>Start_Check</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:task id="Check" name="电压 ≥ 22 V？&#10;Voltage ≥ 22 V?" flowable:detailText="预期失败：普通函数主动抛出 NotImplementedError，执行应报错，不能自动转人工或继续。 / Expected failure: an ordinary function raises NotImplementedError. Execution must fail without automatic human review or continuation." flowable:diagnosisKind="investigation" flowable:humanDecision="false" flowable:observation="观察示例电压是否达到 22 V；默认 21.2 V，单位 V。 / Observe whether the example voltage reaches 22 V; default: 21.2 V." flowable:acquisition="只使用示例输入，不读取设备。Python 函数默认使用 21.2 V；启动输入中的同名 voltage 可覆盖默认值，例如 voltage=24。 / Use example input only, without reading equipment. Python defaults to 21.2 V; the matching voltage start input overrides this default, for example voltage=24." flowable:assessment="电压 ≥ 22 V 选是（yes），进入结论；电压 &lt; 22 V 选否（no），进入上升。默认 21.2 V 对应否。预期失败：普通函数主动抛出 NotImplementedError，执行应报错，不能自动转人工或继续。 / Expected failure: an ordinary function raises NotImplementedError. Execution must fail without automatic human review or continuation. / Select yes for voltage ≥ 22 V to reach the conclusion; select no for voltage &lt; 22 V to escalate. The default 21.2 V corresponds to no." flowable:referenceImage="data:text/plain;base64,55S15Y6L5Y+C6ICDIC8gVm9sdGFnZSByZWZlcmVuY2UK5qCH5YeG77ya55S15Y6LID49IDIyIFYg6K+36YCJ5oup5piv77yIeWVz77yJ77yb55S15Y6LIDwgMjIgViDor7fpgInmi6nlkKbvvIhub++8ieOAggpSdWxlOiBzZWxlY3QgeWVzIGZvciB2b2x0YWdlID49IDIyIFY7IHNlbGVjdCBubyBmb3Igdm9sdGFnZSA8IDIyIFYuCum7mOiupOekuuS+i+ivgeaNruS4uiAyMS4yIFbvvJvlkK/liqjovpPlhaXmlLnlj5jml7bmjInlrp7pmYXov5Tlm57or4Hmja7liKTmlq3vvIzkurrlt6XmjqXnrqHml7bor7fmoLjlr7nlkI7noa7orqTjgIIKVGhlIGRlZmF1bHQgZXhhbXBsZSBldmlkZW5jZSBpcyAyMS4yIFY7IGlmIHN0YXJ0IGlucHV0IGNoYW5nZXMsIGRlY2lkZSBmcm9tIHRoZSBhY3R1YWwgcmV0dXJuZWQgZXZpZGVuY2UgYW5kIHJldmlldyBpdCBiZWZvcmUgY29uZmlybWluZyBodW1hbiBzZWxlY3Rpb24uCuaJgOacieWAvOWdh+S4uuekuuS+i+i+k+WFpe+8m+a1geeoi+S4jeivu+WPluaIluaOp+WItuiuvuWkh+OAggpBbGwgdmFsdWVzIGFyZSBleGFtcGxlIGlucHV0czsgdGhpcyB3b3JrZmxvdyBuZWl0aGVyIHJlYWRzIG5vciBjb250cm9scyBlcXVpcG1lbnQuCg==" flowable:referenceImageName="reference.txt" flowable:pythonModule="manual_handling" flowable:pythonFunction="ordinary_unimplemented" flowable:pythonArguments="{}">
+      <bpmn:incoming>Start_Check</bpmn:incoming>
+      <bpmn:outgoing>Check_Yes</bpmn:outgoing>
+      <bpmn:outgoing>Check_No</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Conclusion" name="电压达标&#10;Voltage meets threshold" flowable:detailText="是分支：电压大于或等于 22 V，形成文字结论；本节点不执行 Python 或人工判断。 / Yes branch: voltage is at least 22 V. This text conclusion runs no Python or human decision." flowable:diagnosisKind="conclusion" flowable:conclusionText="是分支：电压大于或等于 22 V，形成文字结论；本节点不执行 Python 或人工判断。 / Yes branch: voltage is at least 22 V. This text conclusion runs no Python or human decision.">
+      <bpmn:incoming>Check_Yes</bpmn:incoming>
+      <bpmn:outgoing>Conclusion_Record</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Record" name="记录示例结果&#10;Record example result" flowable:detailText="仅进入示例记录步骤，record_result() 返回 None；不写文件、不触设备。 / Run the example recording step only: record_result() returns None without file or device I/O." flowable:diagnosisKind="remediation" flowable:pythonModule="manual_handling" flowable:pythonFunction="record_result" flowable:pythonArguments="{}">
+      <bpmn:incoming>Conclusion_Record</bpmn:incoming>
+      <bpmn:outgoing>Record_Solved</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Solved" name="问题解决&#10;Problem solved" flowable:detailText="示例是分支已完成；不表示已修复任何实际设备。 / The example yes branch is complete; no actual equipment repair is implied." flowable:diagnosisKind="problemSolved">
+      <bpmn:incoming>Record_Solved</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:task id="Escalation" name="上升处理&#10;Escalation" flowable:detailText="否分支：电压低于 22 V，将证据交给上级复核；此节点是最终节点。 / No branch: voltage is below 22 V. Hand the evidence to escalation review at this terminal node." flowable:diagnosisKind="escalation">
+      <bpmn:incoming>Check_No</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Start_Check" sourceRef="Start" targetRef="Check" />
+    <bpmn:sequenceFlow id="Check_Yes" sourceRef="Check" targetRef="Conclusion" name="yes" flowable:diagnosisBranch="yes" flowable:diagnosisOrder="0" />
+    <bpmn:sequenceFlow id="Check_No" sourceRef="Check" targetRef="Escalation" name="no" flowable:diagnosisBranch="no" flowable:diagnosisOrder="1" />
+    <bpmn:sequenceFlow id="Conclusion_Record" sourceRef="Conclusion" targetRef="Record" />
+    <bpmn:sequenceFlow id="Record_Solved" sourceRef="Record" targetRef="Solved" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="ManualHandling_OrdinaryError_diagram">
+    <bpmndi:BPMNPlane id="ManualHandling_OrdinaryError_plane" bpmnElement="ManualHandling_OrdinaryError">
+      <bpmndi:BPMNShape id="Start_di" bpmnElement="Start">
+        <dc:Bounds x="70" y="162" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="48" y="205" width="80" height="22" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Check_di" bpmnElement="Check">
+        <dc:Bounds x="180" y="130" width="220" height="100" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Conclusion_di" bpmnElement="Conclusion">
+        <dc:Bounds x="490" y="130" width="220" height="100" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Record_di" bpmnElement="Record">
+        <dc:Bounds x="790" y="130" width="220" height="100" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Solved_di" bpmnElement="Solved">
+        <dc:Bounds x="1090" y="130" width="220" height="100" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Escalation_di" bpmnElement="Escalation">
+        <dc:Bounds x="490" y="350" width="220" height="100" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Start_Check_di" bpmnElement="Start_Check">
+        <di:waypoint x="106" y="180" />
+        <di:waypoint x="180" y="180" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Check_Yes_di" bpmnElement="Check_Yes">
+        <di:waypoint x="400" y="180" />
+        <di:waypoint x="490" y="180" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="405" y="148" width="80" height="22" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Check_No_di" bpmnElement="Check_No">
+        <di:waypoint x="290" y="230" />
+        <di:waypoint x="290" y="400" />
+        <di:waypoint x="490" y="400" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="300" y="285" width="80" height="22" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Conclusion_Record_di" bpmnElement="Conclusion_Record">
+        <di:waypoint x="710" y="180" />
+        <di:waypoint x="790" y="180" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Record_Solved_di" bpmnElement="Record_Solved">
+        <di:waypoint x="1010" y="180" />
+        <di:waypoint x="1090" y="180" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
