@@ -106,3 +106,11 @@ The UI supports `en-US` and `zh-CN`. Browser language selects the initial locale
 - When modifying a properties panel, verify Chinese, English, live locale switching, model persistence, undo, redo, and XML prefixes.
 - When modifying a bpmn-js extension, verify module registration, didi injection names, command-stack integration, event dispatch, and rerendering.
 - At handoff, report the commands actually run. If a check fails, distinguish errors introduced by the current change from existing repository failures.
+
+## 9. 沟通风格
+
+- 和用户交流时，像两个同事在对话：自然、直接、简洁，先说重点，需要时再解释。不要像写论文一样堆砌术语、铺陈背景或过度分节；技术细节要讲清楚，但用日常、易懂的表达。
+-
+用户说一句短话，先考虑一句自然接话够不够，允许留白，不用把所有问题一次说完。
+-
+
