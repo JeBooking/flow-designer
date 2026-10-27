@@ -16,14 +16,10 @@ Prepare Java 21, Maven 3.9, Python 3.9+, Node and pnpm. From the repository root
 
 ```powershell
 pnpm install
-python -m venv backend/.local/venv
-backend/.local/venv/Scripts/python.exe -m pip install -r backend/requirements-flowable.txt
-cd flowable-runtime
-mvn package
-cd ..
+mvn -f flowable-runtime/pom.xml package
 ```
 
-This builds `flowable-runtime/target/diagnostic-flowable-1.0.0.jar` and installs the official `flowable.external-worker-client==1.0.2`. On non-Windows systems use `backend/.local/venv/bin/python`. Reuse existing environments. Install business dependencies separately in the registered business interpreter. The launcher does not install dependencies or download Java/Python.
+This builds `flowable-runtime/target/diagnostic-flowable-1.0.0.jar`. On first startup, the launcher creates `backend/.local/venv` and installs the official `flowable.external-worker-client==1.0.2` and its dependencies from the requirements file. Later starts check versions, imports and dependency consistency without reinstalling a ready environment. Installation requires Python package index access and respects proxy and `PIP_INDEX_URL` settings. Failures display errors and retain logs; fix the cause and restart to retry. Install business dependencies separately in the registered business interpreter. The launcher does not download Java/Python, build the Java JAR or install frontend dependencies. The current Flowable client requires platform Python 3.9+; removing the version check does not add 3.7 support.
 
 For each run, use:
 
@@ -31,7 +27,7 @@ For each run, use:
 pnpm dev
 ```
 
-Open `http://127.0.0.1:5173/vue-bpmn-designer/`. The launcher manages the frontend, local backend (8765) and local Flowable (8080). It reuses services only after identity, authentication and configuration checks. Startup failures point to `backend/.local/logs/`. `JAVA_HOME` selects Java and `PYTHON` selects the platform interpreter; otherwise the local venv is preferred before PATH.
+Open `http://127.0.0.1:5173/vue-bpmn-designer/`. The launcher manages the frontend, local backend (8765) and local Flowable (8080). It reuses services only after identity, authentication and configuration checks. Startup failures point to `backend/.local/logs/`. `JAVA_HOME` selects Java. To create the project Python environment, `PYTHON` selects a base interpreter path; otherwise PATH is searched, with the Python launcher also tried on Windows. An existing usable project environment takes precedence. Platform dependencies are installed only in the project environment. Unusable migrated environments are backed up to `backend/.local/venv.backup-<timestamp>` before rebuilding; also update business paths and interpreters for the new machine. Reusing a healthy Python backend skips local setup.
 
 Flowable defaults to `http://127.0.0.1:8080` with `diagnostic` / `local-demo`. Set `FLOWABLE_USER` and `FLOWABLE_PASSWORD` as needed. An explicitly set `FLOWABLE_URL` connects only to that external engine and never starts a local replacement. A reused backend must use the same engine URL.
 

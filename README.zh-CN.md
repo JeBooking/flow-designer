@@ -154,7 +154,7 @@ pnpm format
 
 ## 接入已有 Python 工程
 
-首次准备 Java 21、Maven 3.9、Python 3.9+、前端依赖、官方 Python 客户端，并构建 Flowable JAR，见[环境准备](backend/FLOWABLE.zh-CN.md)。业务依赖须预先装在业务解释器中，首次准备无需每次重复。
+首次准备 Java 21、Maven 3.9、Python 3.9+、前端依赖，并构建 Flowable JAR，见[环境准备](backend/FLOWABLE.zh-CN.md)。启动器会自动创建项目专用 Python 环境并安装平台依赖，后续就绪时直接复用；不会向系统 Python 中安装依赖。业务依赖仍须预先装在业务解释器中。平台暂不支持 Python 3.7。
 
 以后只需在仓库根目录运行 `pnpm dev`，统一启动前端、本机后端与本地 Flowable。打开 `http://127.0.0.1:5173/vue-bpmn-designer/`，在 **Python 项目** 登记自己的工程目录、可导入模块、解释器及可选类或工厂。登记不复制源码或安装依赖。节点选择工程和接口，参数按签名自动匹配。
 

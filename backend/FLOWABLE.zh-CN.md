@@ -31,13 +31,23 @@ Flowable 7.1.0 负责调度；官方 `flowable.external-worker-client==1.0.2` �
 
 ```powershell
 pnpm install
-python -m venv backend/.local/venv
-backend/.local/venv/Scripts/python.exe -m pip install -r backend/requirements-flowable.txt
 mvn -f flowable-runtime/pom.xml package
 ```
 
-业务依赖安装在该工程登记的解释器环境。启动器只检查环境，不会自动安装依赖或构建 Java jar。
-Linux/macOS 将 `backend/.local/venv/Scripts/python.exe` 替换为 `backend/.local/venv/bin/python`。
+首次运行 `pnpm dev` 或 `pnpm start` 时，启动器自动创建 `backend/.local/venv`，
+并按 `backend/requirements-flowable.txt` 安装平台依赖。后续启动检查版本、导入和依赖完整性，
+已就绪时直接复用，不重复安装。安装需要访问 Python 软件源；支持已有代理和 `PIP_INDEX_URL` 配置。
+失败时终端显示错误，完整记录在 `backend/.local/logs/python-*.log`，解决原因后重新启动即可。
+
+平台仍需 Python 3.9+，当前 Flowable 客户端不能直接运行于 Python 3.7。
+创建环境时默认在 PATH 中查找 Python；Windows 也尝试 Python launcher。
+可先设置 `$env:PYTHON = 'C:\Path\To\python.exe'` 指定创建环境的基础解释器；
+已有可用的项目环境优先复用。此设置不会向基础解释器中安装依赖。
+迁移后失效的项目环境会备份为 `backend/.local/venv.backup-<时间戳>`，再自动重建。
+不要把旧机器的虚拟环境当作可移植运行环境；业务工程的路径与解释器也须适配新机器。
+
+业务依赖仍安装在该工程登记的解释器环境，启动器不自动安装业务依赖、下载 Python/Java、
+安装前端依赖或构建 Java jar。复用已通过检查的 Python 后端时，跳过本地 Python 环境准备。
 Java 引擎代码升级后需重新构建 jar，再重启自有服务。
 
 本地引擎默认监听 `127.0.0.1:8080`，认证为 `diagnostic / local-demo`，H2 数据库保存在

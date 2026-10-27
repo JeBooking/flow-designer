@@ -16,14 +16,10 @@
 
 ```powershell
 pnpm install
-python -m venv backend/.local/venv
-backend/.local/venv/Scripts/python.exe -m pip install -r backend/requirements-flowable.txt
-cd flowable-runtime
-mvn package
-cd ..
+mvn -f flowable-runtime/pom.xml package
 ```
 
-这一步构建 `flowable-runtime/target/diagnostic-flowable-1.0.0.jar` 并安装官方 `flowable.external-worker-client==1.0.2`。非 Windows 环境使用 `backend/.local/venv/bin/python`。已有环境可复用。业务依赖应单独装在业务项目解释器中，启动器不会安装依赖、下载 Java 或 Python。
+这一步构建 `flowable-runtime/target/diagnostic-flowable-1.0.0.jar`。首次启动时，启动器自动创建 `backend/.local/venv` 并按依赖清单安装官方 `flowable.external-worker-client==1.0.2` 及其依赖。后续检查版本、导入和依赖完整性，已就绪时不重复安装。安装需要访问 Python 软件源，支持代理和 `PIP_INDEX_URL`；安装失败会显示错误并保留日志，解决后重新启动即可。业务依赖仍应单独装在业务项目解释器中。启动器不会下载 Java 或 Python，也不会构建 Java JAR 或安装前端依赖。当前 Flowable 客户端要求平台使用 Python 3.9+，不能只去掉版本检查来支持 3.7。
 
 每次运行只需：
 
@@ -31,7 +27,7 @@ cd ..
 pnpm dev
 ```
 
-打开 `http://127.0.0.1:5173/vue-bpmn-designer/`。启动器统一管理前端、本机后端（8765）和本地 Flowable（8080），仅复用通过身份、认证与配置一致性检查的服务；启动失败查看 `backend/.local/logs/`。`JAVA_HOME` 可指定 Java，`PYTHON` 可指定平台解释器，否则优先本地 venv，再检查 PATH。
+打开 `http://127.0.0.1:5173/vue-bpmn-designer/`。启动器统一管理前端、本机后端（8765）和本地 Flowable（8080），仅复用通过身份、认证与配置一致性检查的服务；启动失败查看 `backend/.local/logs/`。`JAVA_HOME` 可指定 Java。创建项目 Python 环境时，`PYTHON` 可指定基础解释器路径，否则从 PATH 查找（Windows 也尝试 Python launcher）；已有可用的项目环境优先复用。平台依赖只装入项目环境。迁移后失效的环境会先备份为 `backend/.local/venv.backup-<时间戳>` 再重建；业务工程路径与解释器路径也须对应新电脑调整。复用已有 Python 后端时跳过本地环境准备。
 
 默认 Flowable 地址为 `http://127.0.0.1:8080`，账号 `diagnostic`、密码 `local-demo`。可设置 `FLOWABLE_USER`、`FLOWABLE_PASSWORD`。明确设置 `FLOWABLE_URL` 时只连接该外部引擎，不会另起本地替代；复用后端必须使用相同引擎地址。
 

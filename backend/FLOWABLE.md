@@ -35,15 +35,27 @@ From the repository root, install dependencies and build the local runtime:
 
 ```powershell
 pnpm install
-python -m venv backend/.local/venv
-backend/.local/venv/Scripts/python.exe -m pip install -r backend/requirements-flowable.txt
 mvn -f flowable-runtime/pom.xml package
 ```
 
-Install business-project dependencies in the interpreter registered for that project.
-The launcher checks the environment; it does not install dependencies or build the Java jar.
-On Linux/macOS, replace `backend/.local/venv/Scripts/python.exe` with
-`backend/.local/venv/bin/python`.
+On the first `pnpm dev` or `pnpm start`, the launcher creates `backend/.local/venv`
+and installs platform dependencies from `backend/requirements-flowable.txt`. Later starts
+check versions, imports and dependency consistency, reusing a ready environment without
+reinstalling. Installation requires Python package index access and respects existing proxy
+and `PIP_INDEX_URL` settings. Errors appear in the terminal and in
+`backend/.local/logs/python-*.log`; fix the cause and restart to retry.
+
+The platform still requires Python 3.9+: the current Flowable client cannot run directly on 3.7.
+Environment creation searches PATH and also tries the Python launcher on Windows.
+Set `$env:PYTHON = 'C:\Path\To\python.exe'` to select the base interpreter for creation;
+an existing usable project environment takes precedence. No packages are installed into the
+base interpreter. Unusable environments after migration are backed up to
+`backend/.local/venv.backup-<timestamp>` before rebuilding. Do not treat a copied virtual
+environment as portable; update registered business paths and interpreters for the new machine.
+
+Install business dependencies in the interpreter registered for that project. The launcher
+does not install business dependencies, download Python/Java, install frontend dependencies
+or build the Java jar. Reusing a validated Python backend skips local Python setup.
 Rebuild the jar after Java runtime changes, then restart the owned services.
 
 The local runtime binds to `127.0.0.1:8080` with `diagnostic / local-demo` and stores its H2

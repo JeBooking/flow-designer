@@ -195,7 +195,7 @@ pnpm format
 
 ## Connect existing Python projects
 
-First prepare Java 21, Maven 3.9, Python 3.9+, frontend dependencies and the official Python client, and build the Flowable JAR; see [environment preparation](backend/FLOWABLE.md). Install business dependencies in their business interpreter beforehand. These preparation steps do not need repeating each run.
+First prepare Java 21, Maven 3.9, Python 3.9+, frontend dependencies, and build the Flowable JAR; see [environment preparation](backend/FLOWABLE.md). The launcher automatically creates a project Python environment and installs platform dependencies, then reuses it when ready without installing packages into the system Python. Install business dependencies in their business interpreter beforehand. Python 3.7 is not currently supported by the platform.
 
 Then use only `pnpm dev` at the repository root to start the frontend, local backend and local Flowable. Open `http://127.0.0.1:5173/vue-bpmn-designer/`, then register your directory, importable module, interpreter and optional class/factory under **Python projects**. Registration neither copies sources nor installs dependencies. Select the project and interface on each node; parameters match signatures automatically.
 

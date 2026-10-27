@@ -1,5 +1,15 @@
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, openSync, closeSync, appendFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  openSync,
+  closeSync,
+  appendFileSync,
+  readFileSync,
+  writeFileSync,
+  renameSync,
+  unlinkSync,
+} from 'node:fs'
 import { createConnection } from 'node:net'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -130,25 +140,35 @@ function shutdown(code) {
 process.on('SIGINT', () => void shutdown(130))
 process.on('SIGTERM', () => void shutdown(143))
 
-async function checkCommand(name, command, args) {
-  const entry = launch(name, command, args, { essential: false, echo: true })
+async function checkCommand(name, command, args, { timeout = 15000, echo = true } = {}) {
+  const entry = launch(name, command, args, { essential: false, echo })
   let output = ''
-  entry.child.stdout.on('data', (chunk) => (output += chunk))
-  entry.child.stderr.on('data', (chunk) => (output += chunk))
+  // 静默检查仍写日志；需要返回值的命令才通过管道收集输出。
+  entry.child.stdout?.on('data', (chunk) => (output += chunk))
+  entry.child.stderr?.on('data', (chunk) => (output += chunk))
   return new Promise((resolve, reject) => {
+    let settled = false
+    let timeoutError
     const timer = setTimeout(() => {
-      void terminate(entry)
-      reject(new Error(`依赖检查超时 / Dependency check timed out: ${entry.logPath}`))
-    }, 15000)
+      timeoutError = new Error(`命令执行超时 / Command timed out: ${entry.logPath}`)
+      // 先停止安装进程再释放环境锁，避免下次启动与未结束的 pip 同时写入。
+      void terminate(entry).then(() => finish(timeoutError))
+    }, timeout)
     const finish = (error) => {
+      if (settled) return
+      settled = true
       clearTimeout(timer)
       children.delete(entry)
-      if (error) reject(error)
+      if (timeoutError || error) reject(timeoutError || error)
       else resolve(output)
     }
-    entry.child.once('error', finish)
+    entry.child.once('error', (error) =>
+      finish(new Error(`${error.message}\n日志 / Log: ${entry.logPath}`)),
+    )
     entry.child.once('close', (code) =>
-      finish(code === 0 ? null : new Error(`依赖检查失败 / Check failed: ${entry.logPath}`)),
+      finish(
+        code === 0 ? null : new Error(`命令执行失败 / Command failed (${code}): ${entry.logPath}`),
+      ),
     )
   })
 }
@@ -217,36 +237,190 @@ async function waitHealthy(name, health, timeout) {
 }
 
 async function pythonCommand() {
-  const local = join(
-    root,
-    'backend',
-    '.local',
-    'venv',
-    windows ? 'Scripts/python.exe' : 'bin/python',
-  )
+  const directory = join(root, 'backend', '.local', 'venv')
+  const local = join(directory, windows ? 'Scripts/python.exe' : 'bin/python')
+  const requirements = join(root, 'backend', 'requirements-flowable.txt')
+  requireFile(requirements, '请恢复 Python 依赖清单 / Restore backend/requirements-flowable.txt')
+  const release = acquirePythonSetupLock()
+  try {
+    let usable = false
+    if (existsSync(local)) {
+      try {
+        await checkCommand(
+          'python-check',
+          local,
+          [
+            '-I',
+            '-c',
+            'import os, sys; assert sys.version_info >= (3, 9), "Python 3.9+ required"; ' +
+              'assert sys.prefix != sys.base_prefix and ' +
+              'os.path.normcase(os.path.realpath(sys.prefix)) == ' +
+              'os.path.normcase(os.path.realpath(sys.argv[1])), "Invalid project virtual environment"',
+            directory,
+          ],
+          { echo: false },
+        )
+        usable = true
+      } catch {
+        assertRunning()
+      }
+    }
+    if (!usable) {
+      const base = await findPython()
+      if (existsSync(directory)) {
+        // 迁移或中断创建留下的环境可能包含旧机器路径，保留备份后重新创建。
+        const backup = `${directory}.backup-${Date.now()}`
+        renameSync(directory, backup)
+        log(`原 Python 环境已备份 / Previous Python environment backed up: ${backup}`)
+      }
+      log('首次准备：创建项目 Python 环境 / First setup: creating project Python environment...')
+      try {
+        await checkCommand('python-setup', base, ['-I', '-m', 'venv', directory], {
+          timeout: 120000,
+        })
+      } catch (error) {
+        throw new Error(
+          `无法创建 Python 虚拟环境，请确认所选 Python 提供 venv/ensurepip / ` +
+            `Cannot create virtual environment; ensure the selected Python includes venv/ensurepip.\n${error.message}`,
+        )
+      }
+    }
+    if (!(await pythonDependenciesReady(local, requirements))) {
+      log(
+        '正在安装平台 Python 依赖（需要软件源连接） / Installing platform Python dependencies (package index access required)...',
+      )
+      try {
+        await checkCommand('python-pip-check', local, ['-I', '-m', 'pip', '--version'], {
+          echo: false,
+        })
+      } catch {
+        assertRunning()
+        await checkCommand('python-ensurepip', local, ['-I', '-m', 'ensurepip'], {
+          timeout: 120000,
+        })
+      }
+      try {
+        await checkCommand(
+          'python-install',
+          local,
+          [
+            '-I',
+            '-m',
+            'pip',
+            'install',
+            '--require-virtualenv',
+            '--disable-pip-version-check',
+            '-r',
+            requirements,
+          ],
+          { timeout: 600000 },
+        )
+      } catch (error) {
+        throw new Error(
+          `Python 依赖安装失败，请查看上方错误并检查网络、代理或 PIP_INDEX_URL 后重新启动 / ` +
+            `Python dependency installation failed; check the output, network, proxy or PIP_INDEX_URL and restart.\n${error.message}`,
+        )
+      }
+      if (!(await pythonDependenciesReady(local, requirements))) {
+        throw new Error(
+          `安装后 Python 依赖检查仍失败 / Python dependencies still fail validation after installation.\n` +
+            `日志 / Logs: ${join(logDirectory, 'python-dependencies.log')}`,
+        )
+      }
+    }
+    log(`平台 Python 环境已就绪 / Platform Python environment ready: ${local}`)
+    return local
+  } finally {
+    release()
+  }
+}
+
+function acquirePythonSetupLock() {
+  const path = join(root, 'backend', '.local', 'python-setup.lock')
+  try {
+    const owner = JSON.parse(readFileSync(path, 'utf8'))
+    if (!Number.isInteger(owner.pid) || owner.pid <= 0) throw new Error('Invalid setup lock')
+    try {
+      process.kill(owner.pid, 0)
+    } catch (error) {
+      if (error.code !== 'ESRCH') throw error
+      unlinkSync(path)
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      throw new Error(
+        `无法读取 Python 环境准备锁，请确认没有其他安装进程后移除此文件 / ` +
+          `Cannot read Python setup lock; remove this file only after confirming no other setup is running.\n${path}\n${error.message}`,
+      )
+    }
+  }
+  let descriptor
+  try {
+    descriptor = openSync(path, 'wx')
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error
+    throw new Error(
+      `另一个启动器正在准备 Python 环境，请等待其完成 / ` +
+        `Another launcher is preparing Python; wait for it to finish.\n${path}`,
+    )
+  }
+  try {
+    writeFileSync(descriptor, JSON.stringify({ pid: process.pid }))
+  } finally {
+    closeSync(descriptor)
+  }
+  return () => unlinkSync(path)
+}
+
+async function pythonDependenciesReady(python, requirements) {
+  try {
+    await checkCommand(
+      'python-dependencies',
+      python,
+      [
+        '-I',
+        '-c',
+        'import sys; from pathlib import Path; from importlib.metadata import version; ' +
+          'requirements = Path(sys.argv[1]).read_text(encoding="utf-8").splitlines(); ' +
+          'pins = [line.strip().split("==") for line in requirements if line.strip() and not line.lstrip().startswith("#")]; ' +
+          'assert all(version(name) == expected for name, expected in pins), "Dependency version mismatch"; ' +
+          'from flowable.external_worker_client import ExternalWorkerClient',
+        requirements,
+      ],
+      { echo: false },
+    )
+    await checkCommand('python-dependencies', python, ['-I', '-m', 'pip', 'check'], { echo: false })
+    return true
+  } catch {
+    assertRunning()
+    return false
+  }
+}
+
+async function findPython() {
   const candidates = process.env.PYTHON
     ? [process.env.PYTHON]
-    : existsSync(local)
-      ? [local]
-      : windows
-        ? ['python', 'py']
-        : ['python3', 'python']
+    : windows
+      ? ['python', 'py']
+      : ['python3', 'python']
   for (const command of candidates) {
     try {
-      await checkCommand('python-check', command, [
+      const output = await checkCommand('python-check', command, [
+        ...(command === 'py' ? ['-3'] : []),
+        '-I',
         '-c',
-        'import sys; assert sys.version_info >= (3, 9), "Python 3.9+ required"; from flowable.external_worker_client import ExternalWorkerClient; print(sys.executable)',
+        'import json, sys; assert sys.version_info >= (3, 9), "Python 3.9+ required"; print(json.dumps(sys.executable))',
       ])
-      return command
+      return JSON.parse(output.trim())
     } catch {
       assertRunning()
     }
   }
   throw new Error(
-    `需要 Python 3.9+ 与 Flowable SDK / Python 3.9+ and Flowable SDK required.\n` +
-      `首次准备环境 / Prepare once: python -m venv backend/.local/venv; ` +
-      `use its Python with -m pip install -r backend/requirements-flowable.txt\n` +
-      `可设置 PYTHON 为解释器路径 / Set PYTHON to the interpreter path.\n日志 / Log: ${join(logDirectory, 'python-check.log')}`,
+    `未找到可用的 Python 3.9+，请先安装 Python / No usable Python 3.9+ found; install Python first.\n` +
+      `可设置 PYTHON 为创建项目环境所用的解释器路径；平台依赖将自动安装 / ` +
+      `Set PYTHON to the interpreter path used to create the project environment; platform dependencies install automatically.\n` +
+      `日志 / Log: ${join(logDirectory, 'python-check.log')}`,
   )
 }
 
@@ -306,7 +480,6 @@ async function main() {
       `8080 服务未通过 Flowable 认证健康检查 / Flowable check failed on port 8080: ${engine.reason}`,
     )
   }
-  const python = backend.healthy ? null : await pythonCommand()
   let java
   const jar = join(root, 'flowable-runtime', 'target', 'diagnostic-flowable-1.0.0.jar')
   if (!engine.healthy && !explicitFlowable) {
@@ -327,6 +500,7 @@ async function main() {
       )
     }
   }
+  const python = backend.healthy ? null : await pythonCommand()
   if (engine.healthy) log('复用已认证 Flowable / Reusing authenticated Flowable')
   else if (explicitFlowable) {
     log('等待指定 Flowable / Waiting for configured Flowable...')
