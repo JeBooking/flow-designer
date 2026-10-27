@@ -72,8 +72,8 @@ const mockVisible = customRef<boolean>((track, trigger) => {
       if (toggleMode?._active)
         ElMessage.info(
           translateUi(
-            '结构模拟仅演示令牌沿连线移动，不调用 Python 或机台动作。运行绑定模块请使用“Flowable 执行”。',
-            'Structural simulation only animates tokens along connections; it does not call Python or machine actions. Use Flowable execution to run bound modules.',
+            '结构模拟仅演示令牌沿连线移动，不调用 Python 或机台动作。运行绑定模块请使用“诊断执行”。',
+            'Structural simulation only animates tokens along connections; it does not call Python or machine actions. Use Diagnostic execution to run bound modules.',
           ),
         )
       trigger()
@@ -385,7 +385,12 @@ defineExpose({
 <template>
   <el-container class="design-container">
     <PythonProjects ref="pythonProjectsRef" />
-    <FlowableExecution v-if="modeler" ref="flowableRef" :modeler="modeler" />
+    <FlowableExecution
+      v-if="modeler"
+      :key="modelerRevision"
+      ref="flowableRef"
+      :modeler="modeler"
+    />
     <input
       ref="fileRef"
       accept=".xml,.bpmn,.json"
@@ -405,7 +410,7 @@ defineExpose({
       <el-text tag="b" size="large" class="design-title">{{ $t('ui.title') }}</el-text>
       <div class="header-actions" role="toolbar" :aria-label="$tu('编辑器设置', 'Editor settings')">
         <el-button @click="flowableRef?.open()">{{
-          $tu('Flowable 执行', 'Flowable execution')
+          $tu('诊断执行', 'Diagnostic execution')
         }}</el-button>
         <el-button @click="pythonProjectsRef?.open()">
           {{ $tu('Python 项目', 'Python projects') }}

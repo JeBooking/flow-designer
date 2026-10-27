@@ -11,8 +11,8 @@ export async function flowableRequest<T>(path: string, body?: unknown): Promise<
   } catch {
     throw new Error(
       translateUi(
-        '无法访问执行服务，请运行 python backend/server.py',
-        'Execution service unavailable. Start python backend/server.py.',
+        '执行服务暂不可用，请检查服务状态后重试',
+        'Execution service is unavailable. Check its status and retry.',
       ),
     )
   }
