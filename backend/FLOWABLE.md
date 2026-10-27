@@ -82,11 +82,27 @@ separately managed services.
    the canvas. Result cards show object fields and array tables; a returned `chartSvg`
    displays a chart. Raw execution details stay collapsed until expanded. Failure details
    include the original Python traceback when available.
-5. Complete any human decision or escalation review in the same drawer; the rules below
-   explain confirmation and rechecking.
+5. Pending human tasks automatically expand from their nodes into floating windows connected by
+   curves, each retaining independent inputs and errors. Completion retracts the window. Drag the
+   title or use arrow keys (Shift for larger steps), or use automatic layout / restore automatic
+   positioning. Collapsing is not completion: the node's orange pending button reopens it. Narrow
+   screens use a pending-card rail. Windows show full instructions, references and evidence.
+   A node's green completion check opens its history with each occurrence's
+   start, end and duration. New executions save each call's actual inputs (including defaults),
+   factory initialization inputs when applicable, returned evidence/results, deployed instructions
+   and reference files, selected branch and errors. Human records save the context available at
+   the time, evidence, references and choice; context is distinguished from actual function arguments.
+   Reruns preserve earlier records. Old instances or missing fields show **Not recorded**;
+   missing snapshots are not reconstructed.
 
-Closing the drawer pauses polling only; it does not stop the workflow or business code.
-Reopening it within the same editor session resumes monitoring. A browser refresh or
+Python local intermediate variables that are not returned cannot be captured automatically.
+Return collected values, reference values and assessment evidence in the result structure or
+`HumanDecisionRequest.data`. The manual-handling example's `voltage`, `threshold` and `unit`
+are evidence provided this way.
+
+Closing the drawer keeps monitoring the current instance and updating its canvas prompts until
+the process ends; completed-node prompts remain available afterward. Editing or importing a
+diagram hides canvas prompts for the previous instance. A browser refresh or
 Modeler recreation does not restore the monitored instance. Keep the instance ID for
 operational investigation. A dead-letter failure can be acknowledged to **Run the current
 diagram again**; this creates a new instance, does not cancel the old one, and may repeat
@@ -118,8 +134,12 @@ variable `diagnosticReviews`, visible in execution details. Activity history ret
 Cleanup, audit recording and state change share a transaction. Unvisited targets, stale review
 tasks and attempts to overwrite results, routing or audit variables are rejected.
 
-The authenticated Java endpoint `GET /diagnosis-api/instances/{id}/review` returns pending
-status and eligible nodes. `POST` accepts `action` (`recheck` or `confirm`) and the current
+The authenticated Java endpoint `GET /diagnosis-api/instances/{id}/review/tasks` returns all pending
+reviews as `{tasks: [...]}`, ordered by creation time and task ID; `/review` retains the first task
+for compatibility. History responses expose `pendingReviews` and the compatible first `review`.
+Each task includes eligible recheck nodes and `canRecheck`. With multiple parallel human tasks,
+rechecking is disabled because cleanup affects shared results; handle the other tasks first.
+`POST /review` accepts `action` (`recheck` or `confirm`) and the current
 `taskId`; rechecking also requires `targetNodeId` and `reason`, with optional input `variables`.
 Ended instances cannot be rechecked.
 
@@ -128,18 +148,24 @@ Ended instances cannot be rechecked.
 Enable **Human decision / confirmation** under **Execution and human decisions** on a
 non-final diagnostic node. Without a Python binding it waits immediately. With a binding,
 it first runs acquisition, plotting or actions, then waits for the human decision.
-Multiple outgoing flows require an explicit choice; a single successor offers confirmation.
+Choose one Yes/No group. Paths within that group default to all selected and can be checked as a subset.
 Every human wait, including escalation, offers a return to an earlier executed investigation,
 conclusion or action. Unvisited nodes and the current node are excluded; the first node shows
 that no earlier target exists. Returning to a manual node waits again; a bound node reruns Python first.
 Interrupting running automatic nodes is outside this change. Problem solved follows the serial
 success-pause and parallel-path rules above.
 
-The existing `/review` API returns `mode` (`decision` or `escalation`), instructions, a reference
-image and `options` (outgoing flow IDs and names). POST `action: confirm` requires `next` for
-multiple options. Python's `next` is optional advisory data in human mode. Confirmation updates
+Review responses include `mode`, full instructions, references, evidence, business context `inputs`,
+and `selectionMode: single`. Decision `options` retain Yes/No IDs and names, each with
+`paths: [{id: flowId, name: targetName, target: nodeId}]`. POST `action: confirm` uses `next: yes|no`
+and optional `selectedFlowIds`. Omitting the subset selects all paths in that group; duplicates,
+foreign-group IDs and empty selections for a group with paths are rejected. Groups with no paths
+retain the failed-path behavior. This requires a newly compiled deployment (format version 8);
+automatic decisions keep the entire matching group. Python's `next` is optional advisory data in human mode. Confirmation updates
 the node result's `next`, adds `humanConfirmed: true`, and audits the original result. Other object
-fields remain intact; non-object results are wrapped in `data`. Manual-only nodes get a confirmation result.
+fields remain intact; non-object results are wrapped in `data`. Results and audit records also retain
+`selectedFlowIds`. Manual-only nodes get a confirmation result. Task identity is checked against the
+active task and instance; stale or conflicting submissions return HTTP 409.
 `flowable:humanDecision` persists through undo/redo and XML round-trips. After upgrading,
 restart the relevant services and start a new execution; existing deployments retain their behavior.
 Compiled metadata uses a `flowable:diagnosticExecution` extension to avoid the 2000-character

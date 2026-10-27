@@ -61,11 +61,32 @@ The human switch below refers to **Human decision / confirmation** on Check.
 | [07-ordinary-error.bpmn](diagrams/07-ordinary-error.bpmn) | `ordinary_unimplemented` / off | An ordinary function directly raises `NotImplementedError` | Expected Python execution failure with traceback; no human review occurs |
 | [08-empty-result.bpmn](diagrams/08-empty-result.bpmn) | `empty_decision` / off | The function body uses `pass`, returning `None` | Expected `ValueError`: an investigation must return Yes/No; no human review occurs |
 
-## Handle the review card
+## Handle the floating review window
 
-Human handling appears in the **Diagnostic review** card inside the right-hand **Diagnostic execution**
-drawer. It does not open a separate dialog automatically. If you close the drawer, open it again
-yourself to resume monitoring the current execution.
+Each pending task automatically expands from its node into a floating window connected by a curve,
+with independent inputs and errors. Completing the task retracts its window. Drag the title or focus
+it and use arrow keys (Shift for larger steps); use automatic layout or restore automatic positioning
+as needed. Collapsing leaves the task pending; the node's orange pending button reopens it. Narrow
+screens use a pending-card rail. Closing the drawer keeps monitoring the current instance; completed
+node prompts remain available afterward.
+
+Windows show full instructions, references and evidence. Choose one Yes/No group, then optionally
+check a subset of paths within that group; all are selected by default. Subsets require a newly
+compiled deployment. A group without successors still records a failed path. Rechecking is disabled
+while multiple parallel human tasks wait because it clears shared results; handle the other tasks first.
+
+Click a node's green completion check to view its history, including each occurrence's start, end
+and duration. New executions save each call's actual inputs (including defaults), factory initialization
+inputs when applicable, returned evidence/results, deployed instructions and reference files, selected
+branch and errors. Human records save the context available at the time, evidence, references and choice;
+context is distinguished from actual function arguments. Reruns preserve earlier records. Old instances
+or missing fields show **Not recorded**; missing snapshots are not reconstructed. Editing or importing
+a diagram hides canvas prompts for the previous instance. Refreshing the page or recreating the modeler
+does not restore monitoring of that instance.
+
+Python local intermediate variables that are not returned cannot be captured automatically. Return
+collected values, reference values and assessment evidence in the result structure or
+`HumanDecisionRequest.data` to retain them; `voltage`, `threshold` and `unit` below are such evidence.
 
 For diagrams 02–06, read the evidence and reference/assessment instructions. When supplied by Python,
 the default evidence is `voltage: 21.2`, `threshold: 22`, `unit: V`; the manual-only diagram supplies

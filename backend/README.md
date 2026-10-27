@@ -76,14 +76,46 @@ rows for extra data, or enable the collapsed advanced JSON option (default `{}`)
 the form. Ordinary method arguments match upstream results automatically.
 
 结果自动轮询，真实画布节点高亮。结果卡片、数组表格展示返回值，返回 `chartSvg` 时显示图表；
-原始详情默认折叠，失败时可展开查看 Python traceback。关闭抽屉只暂停轮询，不停止业务；
+原始详情默认折叠，失败时可展开查看 Python traceback。关闭抽屉后继续监控当前实例并更新画布提示，
+直到流程结束，结束后保留已完成节点的提示；改图或导入图会隐藏旧实例的画布提示。
 浏览器刷新或 Modeler 重建不会恢复监控。死信失败可确认重新执行，但旧实例不取消，动作可能重复。
 
 Results update automatically with actual canvas-node highlights, result cards and array tables.
 A returned `chartSvg` displays a chart; raw details stay collapsed and can expose a Python traceback.
-Closing the drawer pauses polling only. Refreshing the browser or recreating the Modeler does not
+Closing the drawer keeps monitoring the current instance and updating its canvas prompts until the
+process ends; completed-node prompts remain available afterward. Editing or importing a diagram hides
+canvas prompts for the previous instance. Refreshing the browser or recreating the Modeler does not
 restore monitoring. Confirmed reruns after dead-letter failure create a new instance without
 canceling the old one and may repeat actions.
+
+人工待办自动从节点展开浮动窗口，曲线连接节点，完成后收回；各任务独立保留输入和错误。
+可拖动标题或用方向键移动（Shift 加大步长），支持自动排布与恢复自动定位。收起不代表完成，
+点击节点待处理按钮可重开；窄屏使用待办卡片轨道。窗口保留完整说明、参考与依据。
+“是／否”组单选，组内路径默认全选，也可勾选子集；此执行语义需要新编译部署。
+并行多待办时禁用回退，避免清理共享结果影响其他任务；请先处理其余人工任务。
+
+Pending human tasks automatically expand into floating windows connected to nodes by curves and retract
+on completion. Each task retains its own inputs and errors. Drag the title or use arrow keys (Shift for
+larger steps); automatic layout and restored automatic positioning are available. Collapsing does not
+complete a task: reopen it from its node's pending button. Narrow screens use a pending-card rail.
+Windows show full instructions, references and evidence. Choose one Yes/No group; its paths default to
+all selected and allow a subset in newly compiled deployments. Rechecking is disabled with multiple
+parallel pending reviews because it clears shared results; handle the other human tasks first.
+
+新执行的节点历史逐次保存函数实际输入（含默认值）、实例初始化输入（配置工厂时）、返回的依据／结果、
+部署时的说明和参考文件、分支及错误。人工记录保存当时可用上下文、依据、参考和选择；该上下文与函数
+实际参数分别标记。重跑保留此前记录。旧实例或缺失字段显示“未记录”，不会补造快照。Python 脚本未返回
+的局部中间变量无法自动获取；需通过返回结构或 `HumanDecisionRequest.data` 提供采集值、参考值和判断依据，
+例如人工处理示例中的 `voltage`、`threshold`、`unit`。
+
+Node history for new executions saves each call's actual inputs (including defaults), factory
+initialization inputs when applicable, returned evidence/results, deployed instructions and reference
+files, branch and errors. Human records save the context available at the time, evidence, references
+and choice; context is distinguished from actual function arguments. Reruns preserve earlier records.
+Old instances or missing fields show **Not recorded**; missing snapshots are not reconstructed.
+Python local intermediate variables that are not returned cannot be captured automatically. Provide
+collected values, reference values and assessment evidence in the result structure or
+`HumanDecisionRequest.data`, such as the manual-handling example's `voltage`, `threshold` and `unit`.
 
 服务日志位于 `backend/.local/logs/`，worker 日志位于 `backend/.local/executions/<hash>/<uuid>.log`。
 退出启动器只停止自有服务及其 worker，不停止复用/外部服务，不会撤销设备动作。
