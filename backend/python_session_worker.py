@@ -6,7 +6,8 @@ import sys
 import traceback
 
 from diagnostic_components import HumanDecisionRequest
-from python_runtime import NativeRuntime, decision_branch, display_value, member, public_members
+from python_runtime import (NativeRuntime, decision_branch, display_value, member,
+                            new_execution_trace, public_members)
 
 
 def main():
@@ -18,6 +19,7 @@ def main():
     def respond(request_file):
         source = Path(request_file)
         request = json.loads(source.read_text(encoding='utf-8'))
+        trace = None
         try:
             if request.get('operation') == 'debug':
                 owner = runtime.target(project['module'], project.get('factory', ''), request.get('inputs', {}))
@@ -33,11 +35,13 @@ def main():
                             'representation': 'json' if payload is value else 'repr'}
             else:
                 binding = request['binding']
-                result = runtime.execute(binding, request['variables'])
+                trace = request.get('trace') or new_execution_trace(binding)
+                result = runtime.execute(binding, request['variables'], trace)
                 requested = isinstance(result, HumanDecisionRequest)
                 manual = requested or bool(binding.get('humanDecision'))
                 response = {'ok': True, 'result': display_value(result.data if requested else result),
-                            'human': manual, 'request': {'instructions': result.instructions} if requested else {}}
+                            'human': manual, 'request': {'instructions': result.instructions} if requested else {},
+                            'trace': trace}
                 if not manual and (binding.get('kind') == 'investigation' or binding.get('branches')):
                     response['route'] = decision_branch(result, binding)
                 elif not manual and not binding.get('kind') and len(binding.get('outgoing', [])) > 1:
@@ -45,6 +49,8 @@ def main():
         except BaseException as error:
             response = {'ok': False, 'error': f'{type(error).__name__}: {error}',
                         'traceback': traceback.format_exc()}
+            if trace is not None:
+                response['trace'] = trace
         destination = source.with_suffix('.result')
         temporary = source.with_suffix('.tmp')
         temporary.write_text(json.dumps(response, ensure_ascii=False), encoding='utf-8')

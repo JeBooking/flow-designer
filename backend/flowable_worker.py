@@ -12,7 +12,8 @@ import time
 import traceback
 import uuid
 
-from python_runtime import NativeRuntime, automatic_arguments, decision_branch, resolve
+from python_runtime import (NativeRuntime, automatic_arguments, decision_branch,
+                            new_execution_trace, resolve, trace_time)
 from python_sessions import SessionManager, project_key
 from worker_lease import WorkerLease
 
@@ -50,7 +51,24 @@ def select_project(binding, projects, registered):
 
 def make_callback(binding, sessions=None, project=None, checkpoint=None):
     def callback(job, builder):
+        trace = new_execution_trace(binding)
+        job_id = getattr(job, 'id', None) or getattr(job, 'job_id', None)
+        if job_id is not None:
+            trace['jobId'] = str(job_id)
+        trace_name = 'executionTrace_' + trace['id']
         variables = {variable.name: variable.value for variable in job.variables}
+
+        def save_failed_trace():
+            # 保存失败不能掩盖业务异常，也不能重新执行已经发生的设备动作。
+            try:
+                if checkpoint is None:
+                    raise RuntimeError('Execution trace checkpoint is unavailable')
+                checkpoint(job.process_instance_id, trace_name, trace)
+            except Exception:
+                print('Failed to persist execution trace ' + trace_name,
+                      file=sys.stderr, flush=True)
+                traceback.print_exc()
+
         try:
             if sessions is None or project is None:
                 raise RuntimeError('Python session manager is required')
@@ -59,14 +77,22 @@ def make_callback(binding, sessions=None, project=None, checkpoint=None):
             if checkpoint and not variables.get(marker):
                 # 调用业务前保存归属，首次节点抛异常后重启也不能静默重造对象。
                 checkpoint(job.process_instance_id, marker, session.id)
-            response = session.call({'binding': binding, 'variables': variables})
+            response = session.call({'binding': binding, 'variables': variables, 'trace': trace})
+            trace.update(response.get('trace', {}))
             for stream in ('stdout', 'stderr'):
                 if response.get(stream):
                     print(response[stream], end='', file=sys.stderr if stream == 'stderr' else sys.stdout, flush=True)
             if not response['ok']:
+                trace.update(status='failed', error=response['error'], traceback=response['traceback'])
+                trace.setdefault('endedAt', trace_time())
+                save_failed_trace()
                 return (builder.failure().error_message(binding['nodeId'] + ': ' + response['error'])
                         .error_details(response['traceback']).retries(0))
+            trace.setdefault('endedAt', trace_time())
+            trace.setdefault('status', 'waiting' if response['human'] else 'completed')
             success = builder.success().variable_json(binding['nodeId'], response['result'])
+            success.variable_json('selectedRoutes_' + binding['nodeId'], None)
+            success.variable_json(trace_name, trace)
             success.variable_string(marker, session.id)
             success.variable_boolean('human_' + binding['nodeId'], response['human'])
             success.variable_json('request_' + binding['nodeId'], response['request'])
@@ -78,6 +104,11 @@ def make_callback(binding, sessions=None, project=None, checkpoint=None):
         except Exception as error:
             details = traceback.format_exc()
             print(details, file=sys.stderr, flush=True)
+            # 引擎结果构建失败不代表模块调用失败，保留会话已经确定的调用状态。
+            if 'status' not in trace:
+                trace.update(status='failed', error=f'{type(error).__name__}: {error}', traceback=details)
+            trace.setdefault('endedAt', trace_time())
+            save_failed_trace()
             return (builder.failure().error_message(binding['nodeId'] + ': ' + str(error))
                     .error_details(details).retries(0))
     return callback
@@ -164,10 +195,11 @@ def main():
     def stop(signum, frame):
         raise SystemExit(0)
     signal.signal(signal.SIGTERM, stop)
-    def checkpoint(run_id, marker, session_id):
+    def checkpoint(run_id, marker, value):
         from flowable_bridge import engine_request
         engine_request('/process-api/runtime/process-instances/' + run_id + '/variables',
-                       json.dumps([{'name': marker, 'type': 'string', 'value': session_id}]).encode())
+                       json.dumps([{'name': marker, 'type': 'json' if isinstance(value, dict) else 'string',
+                                    'value': value}]).encode())
     try:
         automatic = {topic: binding for topic, binding in manifest['bindings'].items() if binding.get('module')}
         lease = WorkerLease(host, automatic)

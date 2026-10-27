@@ -1,15 +1,52 @@
 """单次排查的原生 Python 状态；只在进程通信边界生成展示数据。"""
 import asyncio
+from datetime import datetime, timezone
 import importlib
 import inspect
 import json
 import threading
 import typing
+import traceback
+import uuid
 
 from diagnostic_components import HumanDecisionRequest
 
 
+def business_variables(variables):
+    return {key: value for key, value in variables.items()
+            if not key.startswith(('executionTrace_', 'selectedRoutes_'))}
+
+
+def trace_time():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def freeze_display(value):
+    # JSON 往返切断引用，防止业务函数后续修改原生对象时改写历史展示。
+    return json.loads(json.dumps(display_value(value), ensure_ascii=False, allow_nan=False))
+
+
+def call_inputs(function, args, kwargs):
+    try:
+        bound = inspect.signature(function).bind_partial(*args, **kwargs)
+        bound.apply_defaults()
+        return freeze_display(dict(bound.arguments))
+    except TypeError:
+        # 无效实参也保留原样，调用错误由原函数产生，保持已有错误信息。
+        return freeze_display({'args': args, 'kwargs': kwargs})
+
+
+def new_execution_trace(binding):
+    trace = {'version': 1, 'id': uuid.uuid4().hex, 'nodeId': binding.get('nodeId', ''),
+             'startedAt': trace_time(), 'call': {key: binding.get(key, '')
+                                              for key in ('module', 'factory', 'function')}}
+    if isinstance(binding.get('instructions'), dict):
+        trace['instructions'] = freeze_display(binding['instructions'])
+    return trace
+
+
 def resolve(value, variables):
+    variables = business_variables(variables)
     if isinstance(value, str) and value.startswith('$'):
         if value.startswith('$$'):
             return value[1:]
@@ -28,6 +65,7 @@ def resolve(value, variables):
 
 def automatic_arguments(function, explicit, variables):
     """遵守 Python 签名和默认值；只有数据来源唯一时才自动传入。"""
+    variables = business_variables(variables)
     parameters = inspect.signature(function).parameters
     values = dict(explicit)
     for name, parameter in parameters.items():
@@ -152,6 +190,7 @@ def display_value(value, seen=None, depth=0):
 class NativeRuntime:
     def __init__(self):
         self.instances = {}
+        self.factory_inputs = {}
         self.results = {}
         self.lock = threading.RLock()
         self.loop = asyncio.new_event_loop()
@@ -165,7 +204,7 @@ class NativeRuntime:
             return await value
         return asyncio.run_coroutine_threadsafe(await_value(), self.loop).result()
 
-    def target(self, module_name, factory, variables):
+    def target(self, module_name, factory, variables, trace=None):
         module = importlib.import_module(module_name)
         if not factory:
             return module
@@ -174,7 +213,14 @@ class NativeRuntime:
             if key not in self.instances:
                 create = member(module, factory)
                 args, kwargs = automatic_arguments(create, {}, variables)
+                initial_inputs = call_inputs(create, args, kwargs)
+                if trace is not None:
+                    trace['factoryInputs'] = initial_inputs
                 self.instances[key] = self.wait(create(*args, **kwargs))
+                self.factory_inputs[key] = initial_inputs
+            if trace is not None:
+                # 复用实例只能引用创建时输入；本轮变量不能冒充最初的构造参数。
+                trace['factoryInputs'] = freeze_display(self.factory_inputs[key])
             return self.instances[key]
 
     def discover(self, module_name, factory='', inputs=None):
@@ -199,25 +245,49 @@ class NativeRuntime:
         return {'interfaces': interfaces, 'initParameters': initial,
                 'moduleFile': str(module.__file__)}
 
-    def execute(self, binding, variables):
+    def execute(self, binding, variables, trace=None):
+        if trace is None:
+            trace = new_execution_trace(binding)
+        elif not trace.get('id'):
+            trace.update(new_execution_trace(binding))
+        try:
+            return self._execute(binding, variables, trace)
+        except BaseException as error:
+            trace.update(status='failed', error=f'{type(error).__name__}: {error}',
+                         traceback=traceback.format_exc())
+            raise
+        finally:
+            trace['endedAt'] = trace_time()
+
+    def _execute(self, binding, variables, trace):
         with self.lock:
-            values = {**variables, **{key: value for key, value in self.results.items() if key in variables}}
-        owner = self.target(binding['module'], binding.get('factory', ''), values)
+            values = business_variables({**variables, **{key: value for key, value in self.results.items()
+                                                        if key in variables}})
+        owner = self.target(binding['module'], binding.get('factory', ''), values, trace)
         function = member(owner, binding['function'])
-        args, kwargs = automatic_arguments(function, resolve(binding.get('kwargs', {}), values), values)
+        explicit = resolve(binding.get('kwargs', {}), values)
+        trace['inputs'] = freeze_display(explicit)
+        args, kwargs = automatic_arguments(function, explicit, values)
+        trace['inputs'] = call_inputs(function, args, kwargs)
         result = self.wait(function(*args, **kwargs))
+        trace['evidence'] = freeze_display(result.data if isinstance(result, HumanDecisionRequest) else result)
+        if not isinstance(result, HumanDecisionRequest):
+            trace['result'] = freeze_display(trace['evidence'])
         if isinstance(result, HumanDecisionRequest):
             if not isinstance(result.instructions, str):
                 raise ValueError('Human decision instructions must be text')
+            trace['judgmentInstructions'] = result.instructions
             if binding.get('kind') and binding['kind'] != 'investigation':
                 raise ValueError('Only investigations can request judgment / 只有排查节点可请求判断')
             if result.options and set(result.options) not in (set(binding.get('outgoing', [])), {'yes', 'no'}):
                 raise ValueError('Human decision options must match outgoing flow IDs')
         elif (binding.get('kind') == 'investigation' or binding.get('branches')) and not binding.get('humanDecision'):
-            decision_branch(result, binding)
+            trace['route'] = decision_branch(result, binding)
         elif not binding.get('kind') and len(binding.get('outgoing', [])) > 1 and not binding.get('humanDecision'):
             if not isinstance(result, dict) or result.get('next') not in binding['outgoing']:
                 raise ValueError('Branch function must return {"next": "outgoing flow ID", ...}')
+            trace['route'] = result['next']
+        trace['status'] = 'waiting' if isinstance(result, HumanDecisionRequest) or binding.get('humanDecision') else 'completed'
         if binding.get('nodeId'):
             with self.lock:
                 self.results[binding['nodeId']] = result.data if isinstance(result, HumanDecisionRequest) else result
