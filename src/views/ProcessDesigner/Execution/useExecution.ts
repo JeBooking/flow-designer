@@ -7,11 +7,112 @@ import { getBusinessObject, is } from 'bpmn-js/lib/util/ModelUtil'
 import { flowableRequest } from '@/services/flowable'
 import type {
   ExecutionHistory,
+  ExecutionInstructions,
   ExecutionNode,
   ExecutionNodeStatus,
   ExecutionNodeView,
   ExecutionStatus,
+  ExecutionTrace,
+  ExecutionReview,
 } from '@/types/flowableExecution'
+
+function parseStoredJson(value: unknown): unknown {
+  if (typeof value !== 'string') return value
+  try {
+    return JSON.parse(value)
+  } catch {
+    return undefined
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined
+}
+
+function parseInstructions(value: unknown): ExecutionInstructions | undefined {
+  if (!isRecord(value)) return undefined
+  return {
+    observation: optionalString(value.observation),
+    acquisition: optionalString(value.acquisition),
+    assessment: optionalString(value.assessment),
+    referenceImage: optionalString(value.referenceImage),
+    referenceImageName: optionalString(value.referenceImageName),
+    detailText: optionalString(value.detailText),
+    conclusionText: optionalString(value.conclusionText),
+    actionText: optionalString(value.actionText),
+  }
+}
+
+function parseTrace(value: unknown): ExecutionTrace | undefined {
+  const entry = parseStoredJson(value)
+  if (
+    !isRecord(entry) ||
+    entry.version !== 1 ||
+    typeof entry.id !== 'string' ||
+    !entry.id ||
+    typeof entry.nodeId !== 'string' ||
+    !entry.nodeId ||
+    typeof entry.startedAt !== 'string' ||
+    typeof entry.endedAt !== 'string' ||
+    (entry.status !== 'completed' && entry.status !== 'waiting' && entry.status !== 'failed')
+  )
+    return undefined
+  return {
+    version: 1,
+    id: entry.id,
+    nodeId: entry.nodeId,
+    jobId: optionalString(entry.jobId),
+    startedAt: entry.startedAt,
+    endedAt: entry.endedAt,
+    status: entry.status,
+    inputs: entry.inputs,
+    ...(Object.prototype.hasOwnProperty.call(entry, 'factoryInputs')
+      ? { factoryInputs: entry.factoryInputs }
+      : {}),
+    evidence: entry.evidence,
+    result: entry.result,
+    route: entry.route,
+    instructions: parseInstructions(entry.instructions),
+    judgmentInstructions: optionalString(entry.judgmentInstructions),
+    error: entry.error,
+    traceback: optionalString(entry.traceback),
+    call: isRecord(entry.call)
+      ? {
+          module: optionalString(entry.call.module),
+          factory: optionalString(entry.call.factory),
+          function: optionalString(entry.call.function),
+        }
+      : undefined,
+  }
+}
+
+function parseReviews(value: unknown): ExecutionReview[] {
+  const entries = parseStoredJson(value)
+  if (!Array.isArray(entries)) return []
+  return entries.filter(isRecord).map((entry) => ({
+    nodeId: optionalString(entry.nodeId),
+    taskId: optionalString(entry.taskId),
+    from: optionalString(entry.from),
+    action: optionalString(entry.action),
+    time: optionalString(entry.time),
+    next: entry.next,
+    selectedFlowIds: Array.isArray(entry.selectedFlowIds)
+      ? entry.selectedFlowIds.filter((id): id is string => typeof id === 'string')
+      : undefined,
+    reason: entry.reason,
+    target: entry.target,
+    previousResult: entry.previousResult,
+    clearedResults: entry.clearedResults,
+    inputChanges: entry.inputChanges,
+    inputs: entry.inputs,
+    evidence: entry.evidence,
+    instructions: parseInstructions(entry.instructions),
+  }))
+}
 
 export function useExecution(modeler: Modeler, visible: Ref<boolean>) {
   const runId = ref('')
@@ -36,9 +137,14 @@ export function useExecution(modeler: Modeler, visible: Ref<boolean>) {
       ),
     ),
   )
+  const pendingReviews = computed(
+    () =>
+      snapshot.value?.pendingReviews ??
+      (snapshot.value?.review.pending ? [snapshot.value.review] : []),
+  )
   const status = computed<ExecutionStatus>(() => {
     if (!snapshot.value) return 'loading'
-    if (snapshot.value.review.pending) return 'waiting'
+    if (pendingReviews.value.length) return 'waiting'
     if (variables.value.diagnosticStatus === 'failed' || snapshot.value.failures?.length)
       return 'failed'
     if (variables.value.diagnosticStatus === 'paused') return 'paused'
@@ -47,9 +153,17 @@ export function useExecution(modeler: Modeler, visible: Ref<boolean>) {
   })
   // 并行支路仍可能继续运行；deadletter 只表示异常，不能代表引擎实例已结束。
   const terminal = computed(() => Boolean(snapshot.value?.process.endTime))
+  const traces = computed(() =>
+    Object.entries(variables.value).flatMap(([name, value]) => {
+      if (!name.startsWith('executionTrace_')) return []
+      const trace = parseTrace(value)
+      return trace ? [trace] : []
+    }),
+  )
+  const reviews = computed(() => parseReviews(variables.value.diagnosticReviews))
   const nodeViews = computed<ExecutionNodeView[]>(() =>
     nodes.value.map((node) => {
-      // 引擎可能返回同一节点的多轮记录；仅最新一轮决定当前标记，完整经过保留供查看。
+      // 同一节点可能有并行或重复执行记录；仍有活动未结束时不能显示完成。
       const occurrences = (snapshot.value?.activities.data || [])
         .filter((activity) => activity.activityId === node.id)
         .map((activity, index) => ({ activity, index }))
@@ -59,22 +173,23 @@ export function useExecution(modeler: Modeler, visible: Ref<boolean>) {
           return Number.isFinite(delta) && delta !== 0 ? delta : a.index - b.index
         })
         .map(({ activity }) => activity)
-      const latest = occurrences[occurrences.length - 1]
-      let state: ExecutionNodeStatus = latest?.endTime
-        ? 'completed'
-        : latest?.startTime
-          ? 'active'
+      let state: ExecutionNodeStatus = occurrences.some((activity) => !activity.endTime)
+        ? 'active'
+        : occurrences.length
+          ? 'completed'
           : 'idle'
       if (snapshot.value?.failures?.some((failure) => failure.activityId === node.id))
         state = 'failed'
-      if (snapshot.value?.review.pending && snapshot.value.review.nodeId === node.id)
-        state = 'waiting'
+      if (pendingReviews.value.some((review) => review.nodeId === node.id)) state = 'waiting'
       return {
         ...node,
         status: state,
         occurrences,
         hasResult: Object.prototype.hasOwnProperty.call(variables.value, node.id),
         result: variables.value[node.id],
+        traces: traces.value.filter((trace) => trace.nodeId === node.id),
+        // 旧协议的 from 就是来源节点；缺少来源的人工记录不能猜测归属。
+        reviews: reviews.value.filter((review) => (review.nodeId || review.from) === node.id),
       }
     }),
   )
@@ -86,7 +201,7 @@ export function useExecution(modeler: Modeler, visible: Ref<boolean>) {
   }
   function renderMarkers() {
     clearMarkers()
-    if (!visible.value || !canvasMatches.value) return
+    if (!canvasMatches.value) return
     nodeViews.value.forEach((node) => {
       if (node.status === 'idle' || !registry.get(node.id)) return
       const marker = `execution-${node.status}`
@@ -102,12 +217,14 @@ export function useExecution(modeler: Modeler, visible: Ref<boolean>) {
   }
   function schedule() {
     if (timer) clearTimeout(timer)
-    if (disposed || !visible.value || !runId.value || terminal.value) return
+    timer = undefined
+    if (disposed || !runId.value || terminal.value) return
     timer = setTimeout(() => void load(), 1500)
   }
   async function load() {
-    if (!runId.value || disposed || !visible.value || loading.value) return
+    if (!runId.value || disposed || loading.value) return
     if (timer) clearTimeout(timer)
+    timer = undefined
     const id = runId.value
     const token = generation
     const sequence = ++requestSequence
@@ -152,9 +269,7 @@ export function useExecution(modeler: Modeler, visible: Ref<boolean>) {
   }
   async function reloadAfterReview() {
     stop()
-    snapshot.value = undefined
-    connectionError.value = ''
-    clearMarkers()
+    // 保留其余并行任务的窗口实例和草稿，直到最新快照替换旧状态。
     await load()
   }
   function changed() {
@@ -169,9 +284,6 @@ export function useExecution(modeler: Modeler, visible: Ref<boolean>) {
     if (opened) {
       renderMarkers()
       void load()
-    } else {
-      stop()
-      clearMarkers()
     }
   })
   onBeforeUnmount(() => {
@@ -183,6 +295,7 @@ export function useExecution(modeler: Modeler, visible: Ref<boolean>) {
   return {
     runId,
     snapshot,
+    pendingReviews,
     variables,
     status,
     terminal,

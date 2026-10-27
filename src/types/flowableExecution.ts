@@ -27,6 +27,7 @@ export interface ExecutionHistory {
   activities: { data: ExecutionActivity[] }
   variables: { data: { variable?: { name?: string; value?: unknown } }[] }
   review: DiagnosisReviewState
+  pendingReviews?: DiagnosisReviewState[]
   failures?: ExecutionFailure[]
 }
 export interface ExecutionNodeView extends ExecutionNode {
@@ -34,4 +35,46 @@ export interface ExecutionNodeView extends ExecutionNode {
   occurrences: ExecutionActivity[]
   hasResult: boolean
   result: unknown
+  traces?: ExecutionTrace[]
+  reviews?: ExecutionReview[]
+}
+
+export type ExecutionInstructions = NonNullable<DiagnosisReviewState['instructions']>
+
+export interface ExecutionTrace {
+  version: 1
+  id: string
+  nodeId: string
+  jobId?: string
+  startedAt: string
+  endedAt: string
+  status: 'completed' | 'waiting' | 'failed'
+  inputs?: unknown
+  factoryInputs?: unknown
+  evidence?: unknown
+  result?: unknown
+  route?: unknown
+  instructions?: ExecutionInstructions
+  judgmentInstructions?: string
+  error?: unknown
+  traceback?: string
+  call?: { module?: string; factory?: string; function?: string }
+}
+
+export interface ExecutionReview {
+  nodeId?: string
+  taskId?: string
+  from?: string
+  action?: string
+  time?: string
+  next?: unknown
+  selectedFlowIds?: string[]
+  reason?: unknown
+  target?: unknown
+  previousResult?: unknown
+  clearedResults?: unknown
+  inputChanges?: unknown
+  inputs?: unknown
+  evidence?: unknown
+  instructions?: ExecutionInstructions
 }
