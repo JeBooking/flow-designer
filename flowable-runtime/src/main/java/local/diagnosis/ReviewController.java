@@ -2,14 +2,18 @@ package local.diagnosis;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import org.flowable.common.engine.api.FlowableObjectNotFoundException;
+import org.flowable.common.engine.api.FlowableOptimisticLockingException;
 import org.flowable.engine.HistoryService;
 import org.flowable.engine.RepositoryService;
 import org.flowable.engine.RuntimeService;
@@ -18,6 +22,8 @@ import org.flowable.engine.history.HistoricActivityInstance;
 import org.flowable.engine.runtime.ProcessInstance;
 import org.flowable.task.api.Task;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
@@ -41,7 +47,7 @@ public class ReviewController {
     }
 
     public record ReviewRequest(String action, String taskId, String targetNodeId, String reason,
-                                Map<String, Object> variables, String next) {}
+                                Map<String, Object> variables, String next, List<String> selectedFlowIds) {}
 
     private JsonNode metadata(ProcessInstance instance) {
         var process = repository.getBpmnModel(instance.getProcessDefinitionId()).getMainProcess();
@@ -66,10 +72,12 @@ public class ReviewController {
         return result;
     }
 
-    private Task reviewTask(String instanceId, JsonNode metadata) {
+    private List<Task> reviewTasks(String instanceId, JsonNode metadata) {
         List<Task> pending = tasks.createTaskQuery().processInstanceId(instanceId).active().list();
         return pending.stream().filter(task -> metadata.path("reviews").has(task.getTaskDefinitionKey()))
-            .findFirst().orElse(null);
+            .sorted(Comparator.comparing(Task::getCreateTime, Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(Task::getId))
+            .toList();
     }
 
     private List<HistoricActivityInstance> visits(String instanceId) {
@@ -84,39 +92,86 @@ public class ReviewController {
             .asText(visit.getActivityId());
     }
 
+    private ObjectNode instructions(JsonNode review, Object componentRequest) {
+        ObjectNode result = review.path("instructions").isObject()
+            ? ((ObjectNode) review.path("instructions")).deepCopy() : json.createObjectNode();
+        JsonNode request = json.valueToTree(componentRequest);
+        if (!request.path("instructions").asText().isBlank()) {
+            result.put("assessment", request.path("instructions").asText());
+        }
+        return result;
+    }
+
+    private boolean internalVariable(String key) {
+        return key.startsWith("executionTrace_") || key.startsWith("diagnostic")
+            || key.startsWith("pythonSession_") || key.startsWith("route_")
+            || key.startsWith("human_") || key.startsWith("request_")
+            || key.startsWith("selectedRoutes_");
+    }
+
+    private JsonNode inputs(Map<String, Object> variables) {
+        Map<String, Object> context = new LinkedHashMap<>();
+        variables.forEach((key, value) -> {
+            if (!internalVariable(key)) context.put(key, value);
+        });
+        // 这是人工决策时可见的业务上下文，不代表 Python 函数实际收到的参数。
+        return json.valueToTree(context);
+    }
+
     @GetMapping
     @Transactional(readOnly = true)
     public Map<String, Object> get(@PathVariable String instanceId) {
+        List<Map<String, Object>> pending = pendingReviews(instanceId);
+        return pending.isEmpty() ? Map.of("pending", false) : pending.get(0);
+    }
+
+    @GetMapping("/tasks")
+    @Transactional(readOnly = true)
+    public Map<String, Object> getTasks(@PathVariable String instanceId) {
+        return Map.of("tasks", pendingReviews(instanceId));
+    }
+
+    private List<Map<String, Object>> pendingReviews(String instanceId) {
         ProcessInstance instance = runtime.createProcessInstanceQuery().processInstanceId(instanceId).singleResult();
-        if (instance == null) return Map.of("pending", false);
+        if (instance == null) return List.of();
         JsonNode metadata = metadata(instance);
-        Task task = reviewTask(instanceId, metadata);
-        if (task == null) return Map.of("pending", false);
+        List<Task> pending = reviewTasks(instanceId, metadata);
+        if (pending.isEmpty()) return List.of();
+        Map<String, Object> variables = runtime.getVariables(instanceId);
+        List<HistoricActivityInstance> visits = visits(instanceId);
+        boolean canRecheck = !"parallel".equals(metadata.path("mode").asText()) || pending.size() == 1;
+        return pending.stream().map(task -> reviewState(task, metadata, variables, visits, canRecheck)).toList();
+    }
+
+    private Map<String, Object> reviewState(Task task, JsonNode metadata,
+                                           Map<String, Object> variables,
+                                           List<HistoricActivityInstance> visits, boolean canRecheck) {
         Map<String, JsonNode> bindings = bindings(metadata);
         JsonNode review = metadata.path("reviews").path(task.getTaskDefinitionKey());
         String currentNode = review.path("nodeId").asText();
-        var instructions = review.path("instructions").isObject()
-            ? ((com.fasterxml.jackson.databind.node.ObjectNode) review.path("instructions")).deepCopy()
-            : json.createObjectNode();
-        Object componentRequest = runtime.getVariable(instanceId, "request_" + currentNode);
-        if (componentRequest instanceof JsonNode request && !request.path("instructions").asText().isBlank()) {
-            instructions.put("assessment", request.path("instructions").asText());
-        }
+        ObjectNode instructions = instructions(review, variables.get("request_" + currentNode));
         Map<String, Object> candidates = new LinkedHashMap<>();
-        for (HistoricActivityInstance visit : visits(instanceId)) {
+        for (HistoricActivityInstance visit : visits) {
             String id = nodeId(visit, metadata);
             if (bindings.containsKey(id) && !id.equals(currentNode)) {
                 candidates.putIfAbsent(id, Map.of("id", id,
                     "name", visit.getActivityName() == null ? id : visit.getActivityName()));
             }
         }
-        return Map.of("pending", true, "taskId", task.getId(),
-            "nodeId", currentNode, "mode", review.path("mode").asText("escalation"),
-            "name", review.path("name").asText(task.getName()),
-            "options", review.path("options").isArray() ? review.path("options") : json.createArrayNode(),
-            "instructions", instructions,
-            "evidence", json.valueToTree(runtime.getVariable(instanceId, currentNode)),
-            "candidates", new ArrayList<>(candidates.values()));
+        Map<String, Object> state = new LinkedHashMap<>();
+        state.put("pending", true);
+        state.put("taskId", task.getId());
+        state.put("nodeId", currentNode);
+        state.put("mode", review.path("mode").asText("escalation"));
+        state.put("name", review.path("name").asText(task.getName()));
+        state.put("selectionMode", "single");
+        state.put("canRecheck", canRecheck);
+        state.put("options", review.path("options").isArray() ? review.path("options") : json.createArrayNode());
+        state.put("instructions", instructions);
+        state.put("evidence", json.valueToTree(variables.get(currentNode)));
+        state.put("inputs", inputs(variables));
+        state.put("candidates", new ArrayList<>(candidates.values()));
+        return state;
     }
 
     @PostMapping
@@ -125,13 +180,22 @@ public class ReviewController {
         ProcessInstance instance = runtime.createProcessInstanceQuery().processInstanceId(instanceId).singleResult();
         if (instance == null) throw new ResponseStatusException(HttpStatus.CONFLICT, "Process has ended / 流程已结束");
         JsonNode metadata = metadata(instance);
-        Task task = reviewTask(instanceId, metadata);
-        if (task == null) throw new ResponseStatusException(HttpStatus.CONFLICT, "No pending review / 当前不在复核状态");
-        if (!task.getId().equals(request.taskId())) {
+        if (request.taskId() == null || request.taskId().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Review task is required; refresh first / 缺少复核任务，请先刷新");
+        }
+        Task task = tasks.createTaskQuery().processInstanceId(instanceId)
+            .taskId(request.taskId()).active().singleResult();
+        if (task == null || !metadata.path("reviews").has(task.getTaskDefinitionKey())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Review changed; refresh first / 复核状态已变更，请先刷新");
         }
         if (!"confirm".equals(request.action()) && !"recheck".equals(request.action())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown review action / 未知复核动作");
+        }
+        // 现有重查会清理全局业务结果，多个人工分支等待时不能破坏其他窗口的决策依据。
+        if ("recheck".equals(request.action()) && "parallel".equals(metadata.path("mode").asText())
+            && reviewTasks(instanceId, metadata).size() > 1) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "Complete the other pending reviews before rechecking / 请先处理其余人工任务，再发起重查");
         }
         Map<String, JsonNode> bindings = bindings(metadata);
         JsonNode review = metadata.path("reviews").path(task.getTaskDefinitionKey());
@@ -143,6 +207,12 @@ public class ReviewController {
         record.put("action", request.action());
         record.put("time", Instant.now().toString());
         record.put("from", task.getTaskDefinitionKey());
+        record.put("nodeId", currentNode);
+        record.put("taskId", task.getId());
+        // 必须在回退清理或人工覆盖结果之前冻结依据，避免后续模型变化改写历史。
+        record.put("inputs", inputs(variables));
+        record.put("evidence", json.valueToTree(variables.get(currentNode)));
+        record.put("instructions", instructions(review, variables.get("request_" + currentNode)));
         record.put("reason", request.reason() == null ? "" : request.reason().trim());
         if ("recheck".equals(request.action()) && "success".equals(review.path("mode").asText())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Success review supports continue or finish / 成功后请选择继续或结束排查");
@@ -169,12 +239,12 @@ public class ReviewController {
                     cleared.add("route_" + nodeId);
                     cleared.add("human_" + nodeId);
                     cleared.add("request_" + nodeId);
+                    cleared.add("selectedRoutes_" + nodeId);
                 }
             }
             Map<String, Object> changes = request.variables() == null ? Map.of() : request.variables();
             for (String key : changes.keySet()) {
-                if (bindings.containsKey(key) || key.startsWith("route_") || key.startsWith("diagnostic")
-                    || key.startsWith("human_") || key.startsWith("request_") || key.startsWith("pythonSession_")) {
+                if (bindings.containsKey(key) || internalVariable(key)) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot overwrite execution results or audit fields / 不可覆盖执行结果和复核记录");
                 }
             }
@@ -183,9 +253,9 @@ public class ReviewController {
             Map<String, Object> previousInputs = new LinkedHashMap<>();
             for (String key : changes.keySet()) previousInputs.put(key, variables.get(key));
             record.put("target", request.targetNodeId());
-            record.put("clearedResults", snapshot);
-            record.put("previousInputs", previousInputs);
-            record.put("inputChanges", changes);
+            record.put("clearedResults", json.valueToTree(snapshot));
+            record.put("previousInputs", json.valueToTree(previousInputs));
+            record.put("inputChanges", json.valueToTree(changes));
             // 清理、记录与状态变更在同一事务中完成，worker 无法领取到半更新的重查任务。
             runtime.removeVariables(instanceId, cleared);
             changes.forEach((key, value) -> runtime.setVariable(instanceId, key, json.valueToTree(value)));
@@ -194,7 +264,7 @@ public class ReviewController {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Choose continue or finish / 请选择继续或结束排查");
             }
             record.put("next", request.next());
-            record.put("remainingQueue", variables.get("diagnosticQueue"));
+            record.put("remainingQueue", json.valueToTree(variables.get("diagnosticQueue")));
             runtime.setVariable(instanceId, "diagnosticContinue", "continue".equals(request.next()));
         } else if ("decision".equals(review.path("mode").asText())) {
             List<String> options = new ArrayList<>();
@@ -205,10 +275,31 @@ public class ReviewController {
                 (options.isEmpty() && next != null && !next.isBlank())) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Choose a valid outgoing option / 请选择有效的后继选项");
             }
+            Set<String> allowedFlowIds = new LinkedHashSet<>();
+            for (JsonNode edge : metadata.path("nodes").path(currentNode).path("outgoing")) {
+                if (edge.path("branch").asText().equals(next)) allowedFlowIds.add(edge.path("id").asText());
+            }
+            // 旧客户端未传子集时保留整组语义；显式选择必须属于当前是/否分组。
+            List<String> selectedFlowIds = request.selectedFlowIds() == null
+                ? new ArrayList<>(allowedFlowIds) : request.selectedFlowIds();
+            Set<String> uniqueFlowIds = new LinkedHashSet<>(selectedFlowIds);
+            if (uniqueFlowIds.size() != selectedFlowIds.size()
+                || !allowedFlowIds.containsAll(uniqueFlowIds)
+                || !allowedFlowIds.isEmpty() && selectedFlowIds.isEmpty()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Choose one or more unique paths from the selected branch / 请在所选是或否分组内选择至少一条不重复的后续思路");
+            }
+            ObjectNode selectedRoutes = json.createObjectNode();
+            selectedFlowIds.forEach(flowId -> selectedRoutes.put(flowId, true));
+            boolean parallel = "parallel".equals(metadata.path("mode").asText());
+            // 并行 token 可能复用同一原节点，分支选择必须跟随当前 execution，避免互相覆盖。
+            if (parallel) runtime.setVariableLocal(task.getExecutionId(), "selectedRoutes_" + currentNode, selectedRoutes);
+            else runtime.setVariable(instanceId, "selectedRoutes_" + currentNode, selectedRoutes);
             // 保留 Python 原始建议用于追溯；当前节点结果的 next 与人工实际选择保持一致。
             Object previousResult = variables.get(currentNode);
-            record.put("previousResult", previousResult);
+            record.put("previousResult", json.valueToTree(previousResult));
             record.put("next", next);
+            record.put("selectedFlowIds", List.copyOf(selectedFlowIds));
             var result = previousResult instanceof JsonNode value && value.isObject()
                 ? ((com.fasterxml.jackson.databind.node.ObjectNode) value).deepCopy()
                 : json.createObjectNode();
@@ -217,8 +308,12 @@ public class ReviewController {
             }
             if (next != null) result.put("next", next);
             result.put("humanConfirmed", true);
+            result.set("selectedFlowIds", json.valueToTree(selectedFlowIds));
             runtime.setVariable(instanceId, currentNode, result);
-            if (options.size() > 1) runtime.setVariable(instanceId, "route_" + currentNode, next);
+            if (options.size() > 1) {
+                if (parallel) runtime.setVariableLocal(task.getExecutionId(), "route_" + currentNode, next);
+                else runtime.setVariable(instanceId, "route_" + currentNode, next);
+            }
         }
         List<Object> records = new ArrayList<>();
         Object existing = variables.get("diagnosticReviews");
@@ -229,8 +324,16 @@ public class ReviewController {
             tasks.complete(task.getId());
         } else {
             runtime.createChangeActivityStateBuilder().processInstanceId(instanceId)
-                .moveActivityIdTo(task.getTaskDefinitionKey(), request.targetNodeId()).changeState();
+                .moveExecutionToActivityId(task.getExecutionId(), request.targetNodeId()).changeState();
         }
         return Map.of("ok", true, "action", request.action());
+    }
+
+    // 提交与事务提交阶段都可能遇到并行更新；交由 MVC 在事务回滚后统一返回可刷新重试的状态。
+    @ExceptionHandler({FlowableOptimisticLockingException.class, OptimisticLockingFailureException.class,
+        FlowableObjectNotFoundException.class})
+    public ResponseEntity<Map<String, Object>> reviewConflict(Exception error) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("ok", false,
+            "error", "Review changed during submission; refresh and retry / 提交期间复核状态已变更，请刷新后重试"));
     }
 }

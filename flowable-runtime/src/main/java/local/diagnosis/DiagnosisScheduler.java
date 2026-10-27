@@ -44,6 +44,14 @@ public class DiagnosisScheduler implements JavaDelegate, ExecutionListener {
         JsonNode node = manifest.path("nodes").path(nodeId);
         boolean serial = "serial".equals(manifest.path("mode").asText());
         if ("visit".equals(action)) {
+            if (serial) {
+                execution.removeVariableLocal("selectedRoutes_" + nodeId);
+                execution.removeVariableLocal("route_" + nodeId);
+            } else {
+                // null 占位屏蔽祖先旧值，让 worker 的 setVariable 更新本 token，避免污染兄弟分支。
+                execution.setVariableLocal("selectedRoutes_" + nodeId, null);
+                execution.setVariableLocal("route_" + nodeId, null);
+            }
             JsonNode previous = JSON.valueToTree(execution.getVariable("diagnosticSteps"));
             int steps = previous == null ? 1 : previous.asInt() + 1;
             JsonNode limit = JSON.valueToTree(execution.getVariable("diagnosticMaxSteps"));
@@ -107,8 +115,11 @@ public class DiagnosisScheduler implements JavaDelegate, ExecutionListener {
         } else {
             ArrayNode targets = JSON.createArrayNode();
             String branch = String.valueOf(execution.getVariable("route_" + nodeId));
+            JsonNode selectedRoutes = JSON.valueToTree(execution.getVariable("selectedRoutes_" + nodeId));
             for (JsonNode edge : node.path("outgoing")) {
-                if (!"investigation".equals(kind) || edge.path("branch").asText().equals(branch)) {
+                if (!"investigation".equals(kind) || edge.path("branch").asText().equals(branch)
+                    && (selectedRoutes == null || selectedRoutes.isNull()
+                        || selectedRoutes.has(edge.path("id").asText()))) {
                     ObjectNode entry = JSON.createObjectNode();
                     entry.put("node", edge.path("target").asText());
                     entry.set("path", array(execution.getVariable("diagnosticPath")));

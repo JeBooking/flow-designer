@@ -10,6 +10,7 @@ import sys
 import tempfile
 import threading
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from urllib.error import HTTPError
 from urllib.parse import urlparse, unquote
 import uuid
 from flowable_bridge import compile_workflow, deploy, engine_request
@@ -192,11 +193,13 @@ def make_handler(registry, executions):
                     for job in failed:
                         if job.get('exceptionMessage'):
                             job['traceback'] = engine_request('/process-api/management/deadletter-jobs/' + job['id'] + '/exception-stacktrace', as_text=True)
+                    pending_reviews = engine_request('/diagnosis-api/instances/' + run_id + '/review/tasks')['tasks']
                     self.reply({'process': engine_request('/process-api/history/historic-process-instances/' + run_id),
                         'failures': failed,
                         'variables': paged_history('/process-api/history/historic-variable-instances?processInstanceId=' + run_id),
                         'activities': paged_history('/process-api/history/historic-activity-instances?processInstanceId=' + run_id + '&sort=startTime&order=asc'),
-                        'review': engine_request('/diagnosis-api/instances/' + run_id + '/review')})
+                        'pendingReviews': pending_reviews,
+                        'review': pending_reviews[0] if pending_reviews else {'pending': False}})
                 except RuntimeError as error:
                     self.reply({'error': str(error)}, 502)
                 return
@@ -237,7 +240,14 @@ def make_handler(registry, executions):
                 elif len(parts) == 4 and parts[:2] == ['api', 'flowable'] and parts[2] == 'review':
                     if not re.fullmatch(r'[A-Za-z0-9_-]+', parts[3]):
                         raise ValueError('Invalid run ID')
-                    result = engine_request('/diagnosis-api/instances/' + parts[3] + '/review', json.dumps(data).encode())
+                    try:
+                        result = engine_request('/diagnosis-api/instances/' + parts[3] + '/review', json.dumps(data).encode())
+                    except RuntimeError as error:
+                        # 保留引擎的冲突状态，界面才能刷新已结束或被其他窗口提交的任务。
+                        if isinstance(error.__cause__, HTTPError) and error.__cause__.code == 409:
+                            self.reply({'ok': False, 'error': str(error)}, 409)
+                            return
+                        raise
                 elif parts == ['api', 'flowable', 'start']:
                     variables = data.get('variables', {})
                     if not isinstance(variables, dict):

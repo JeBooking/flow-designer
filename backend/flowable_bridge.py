@@ -28,6 +28,20 @@ KINDS = {'investigation', 'investigationAction', 'conclusion', 'remediation',
          'deepDiagnosis', 'jump', 'problemSolved', 'escalation'}
 
 
+def node_instructions(node):
+    return {field: node.get(f(field), '') for field in
+        ('observation', 'acquisition', 'assessment', 'referenceImage', 'referenceImageName',
+         'detailText', 'conclusionText', 'actionText')}
+
+
+def decision_options(manifest, node_id):
+    return [{'id': branch, 'name': name, 'paths': [
+        {'id': edge['id'], 'name': manifest['nodes'][edge['target']]['name'],
+         'target': edge['target']}
+        for edge in manifest['nodes'][node_id]['outgoing'] if edge['branch'] == branch]}
+        for branch, name in [('yes', '是 / Yes'), ('no', '否 / No')]]
+
+
 def delegate_fields(element, source, operation):
     extensions = element if element.tag == f('executionListener') else element.find(b('extensionElements'))
     if extensions is None:
@@ -43,9 +57,7 @@ def serial_workflow(xml, manifest):
     process = root.find(b('process'))
     originals = {element.get('id'): element for element in process
                  if element.tag in (b('task'), b('startEvent'))}
-    instructions = {node_id: {field: node.get(f(field), '') for field in
-        ('observation', 'acquisition', 'assessment', 'referenceImage', 'referenceImageName', 'detailText')}
-        for node_id, node in originals.items()}
+    instructions = {node_id: node_instructions(node) for node_id, node in originals.items()}
     for element in list(process):
         if element.tag not in (b('task'), b('startEvent'), b('documentation'), b('extensionElements')):
             process.remove(element)
@@ -60,6 +72,8 @@ def serial_workflow(xml, manifest):
     ET.SubElement(process, b('endEvent'), {'id': end_id})
     manifest['endId'] = end_id
     bindings = {binding['nodeId']: (topic, binding) for topic, binding in manifest['bindings'].items()}
+    instructions.update({node_id: binding['instructions']
+        for node_id, (_, binding) in bindings.items()})
     manifest['reviews'] = {}
     destinations = []
     def connect(source, target, condition=None):
@@ -99,13 +113,14 @@ def serial_workflow(xml, manifest):
             info['successReview'] = review_id
             ET.SubElement(process, b('userTask'), {'id': review_id, 'name': info['name']})
             manifest['reviews'][review_id] = {'nodeId': node_id, 'mode': 'success', 'name': info['name'],
-                'instructions': {'detailText': info['detailText']},
+                'instructions': {**instructions[node_id], 'detailText': info['detailText']},
                 'options': [{'id': 'continue', 'name': '继续排查 / Continue'}, {'id': 'finish', 'name': '结束排查 / Finish'}]}
             destinations.append(review_id)
             connect(review_id, dispatcher(node_id, 'resume'))
         elif kind == 'escalation':
             node.tag = b('userTask')
-            manifest['reviews'][node_id] = {'nodeId': node_id, 'mode': 'escalation', 'name': info['name']}
+            manifest['reviews'][node_id] = {'nodeId': node_id, 'mode': 'escalation', 'name': info['name'],
+                'instructions': {**instructions[node_id], 'detailText': info['detailText']}}
         else:
             topic, binding = bindings[node_id]
             has_python, human = bool(binding['module']), binding['humanDecision']
@@ -116,7 +131,7 @@ def serial_workflow(xml, manifest):
             if kind == 'investigation':
                 review_id = unique(node_id + '_review') if has_python else node_id
                 manifest['reviews'][review_id] = {'nodeId': node_id, 'mode': 'decision', 'name': info['name'],
-                    'options': [{'id': 'yes', 'name': '是 / Yes'}, {'id': 'no', 'name': '否 / No'}]}
+                    'selectionMode': 'single', 'options': decision_options(manifest, node_id)}
                 manifest['reviews'][review_id]['instructions'] = instructions[node_id]
                 if has_python:
                     ET.SubElement(process, b('userTask'), {'id': review_id, 'name': info['name'] + ' / Human decision'})
@@ -152,7 +167,7 @@ def compile_workflow(xml):
     mode = process.get(f('diagnosisMode'), 'parallel')
     if mode not in ('parallel', 'serial'):
         raise ValueError('Invalid diagnosis mode / 无效排查模式')
-    signature = {'formatVersion': 7, 'processId': process_id, 'mode': mode, 'nodes': [], 'flows': []}
+    signature = {'formatVersion': 8, 'processId': process_id, 'mode': mode, 'nodes': [], 'flows': []}
     executable_elements = [e for e in process if e.tag in (b('task'), b('startEvent'), b('sequenceFlow'))]
     execution_ids = [e.get('id') for e in executable_elements]
     if any(not value for value in execution_ids) or len(set(execution_ids)) != len(execution_ids):
@@ -280,7 +295,8 @@ def compile_workflow(xml):
                 ET.SubElement(process, b('sequenceFlow'), {'id': new_id(node_id + '_confirm'),
                     'sourceRef': review_id, 'targetRef': node_id})
                 manifest['reviews'][review_id] = {'nodeId': node_id, 'name': manifest['nodes'][node_id]['name'],
-                    'instructions': {'detailText': manifest['nodes'][node_id]['detailText']}}
+                    'instructions': {**node_instructions(node),
+                        'detailText': manifest['nodes'][node_id]['detailText']}}
             else:
                 node.tag = b('endEvent')
         elif kind == 'jump' and not outgoing:
@@ -320,6 +336,7 @@ def compile_workflow(xml):
                 'factory': factory,
                 'kwargs': kwargs, 'outgoing': sorted(e.get('id') for e in outgoing), 'kind': kind,
                 'humanDecision': human, 'branches': branches, 'mode': mode,
+                'instructions': node_instructions(node),
                 'detailText': manifest['nodes'][node_id]['detailText']}
             node.tag = b('serviceTask') if has_python else b('userTask') if human else b('task')
             if has_python:
@@ -351,9 +368,8 @@ def compile_workflow(xml):
                     continuation_id = review_id
                 manifest['reviews'][review_id] = {'nodeId': node_id, 'mode': 'decision',
                     'name': node.get('name') or node_id,
-                    'instructions': {field: node.get(f(field), '') for field in
-                        ('observation', 'acquisition', 'assessment', 'referenceImage', 'referenceImageName', 'detailText', 'conclusionText', 'actionText')},
-                    'options': [{'id': 'yes', 'name': '是 / Yes'}, {'id': 'no', 'name': '否 / No'}]}
+                    'instructions': node_instructions(node),
+                    'selectionMode': 'single', 'options': decision_options(manifest, node_id)}
             if len(outgoing) > 1 or kind == 'investigation':
                 gateway_id = new_id(node_id + '_decision')
                 gateway = ET.SubElement(process, b('inclusiveGateway') if kind == 'investigation' else b('parallelGateway'), {'id': gateway_id})
@@ -376,8 +392,12 @@ def compile_workflow(xml):
                     if branches:
                         expression = ET.SubElement(edge, b('conditionExpression'), {
                             '{http://www.w3.org/2001/XMLSchema-instance}type': 'bpmn:tFormalExpression'})
-                        # 同一判断结果的所有出口同时触发，不依赖 XML 中的顺序。
-                        expression.text = '${execution.getVariable(' + json.dumps('route_' + node_id) + ') == ' + json.dumps(branches[edge.get('id')]) + '}'
+                        # 自动判断缺省执行全组；人工可在同组内只启动所选连线。
+                        selection = 'execution.getVariable(' + json.dumps('selectedRoutes_' + node_id) + ')'
+                        expression.text = ('${execution.getVariable(' + json.dumps('route_' + node_id)
+                            + ') == ' + json.dumps(branches[edge.get('id')]) + ' && (' + selection
+                            + ' == null || ' + selection + '.isNull() || ' + selection
+                            + '.has(' + json.dumps(edge.get('id')) + '))}')
             elif not outgoing:
                 end_id = new_id(node_id + '_handoff')
                 ET.SubElement(process, b('endEvent'), {'id': end_id, 'name': 'Handoff / 跳转交接'})
