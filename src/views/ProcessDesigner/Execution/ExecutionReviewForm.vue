@@ -21,7 +21,9 @@ const variables = defineModel<string>('variables', { required: true })
 const next = defineModel<string>('next', { required: true })
 const selectedFlowIds = defineModel<string[]>('selectedFlowIds', { default: () => [] })
 const selectedOption = computed(() =>
-  props.review.options?.find((option) => option.id === next.value),
+  props.review.mode === 'action'
+    ? undefined
+    : props.review.options?.find((option) => option.id === next.value),
 )
 const reviewInputs = computed(() => props.review.inputs ?? props.inputs)
 // 切换判断分组时重置为该组全部路径，避免携带另一分组的连线。
@@ -37,6 +39,7 @@ watch(
   { immediate: true, flush: 'sync' },
 )
 const decisionPending = computed(() => props.review.mode === 'decision')
+const actionPending = computed(() => props.review.mode === 'action')
 const successPending = computed(() => props.review.mode === 'success')
 const reviewInstructions = computed(() =>
   [
@@ -68,6 +71,22 @@ const reviewInstructions = computed(() =>
       <strong>{{ review.name || review.nodeId }}</strong>
       <code>{{ review.nodeId }}</code>
     </header>
+    <el-alert
+      v-if="actionPending"
+      type="info"
+      :closable="false"
+      :title="
+        review.actionMode === 'confirm'
+          ? $tu(
+              '接口已执行，请核验结果；再次确认不会重复调用接口',
+              'The interface has run. Verify the result; confirming again will not repeat the call.',
+            )
+          : $tu(
+              '请在现场完成以下操作后填写结果；平台不会替你执行',
+              'Complete the following action on site before entering the result; the platform will not perform it for you.',
+            )
+      "
+    />
     <template v-for="instruction in reviewInstructions" :key="instruction.label">
       <p>
         <strong>{{ instruction.label }}</strong>
@@ -81,13 +100,31 @@ const reviewInstructions = computed(() =>
       readonly
     />
     <section v-if="review.evidence != null" class="review-evidence">
-      <h4>{{ $tu('实际判断依据', 'Actual decision evidence') }}</h4>
+      <h4>
+        {{
+          actionPending
+            ? $tu('实际执行依据', 'Actual execution evidence')
+            : $tu('实际判断依据', 'Actual decision evidence')
+        }}
+      </h4>
       <ExecutionValue :value="review.evidence" />
     </section>
     <details v-if="reviewInputs != null">
       <summary>{{ $tu('人工复核上下文', 'Human review context') }}</summary>
       <ExecutionValue :value="reviewInputs" />
     </details>
+    <el-form v-if="actionPending" label-position="top" :disabled="disabled">
+      <el-form-item :label="$tu('执行结果', 'Action result')">
+        <el-radio-group v-model="next" class="review-options" :disabled="disabled">
+          <el-radio value="ok" border>{{
+            $tu('OK（已完成并通过）', 'OK (completed and verified)')
+          }}</el-radio>
+          <el-radio value="not_ok" border>{{
+            $tu('不OK（未完成或未通过）', 'Not OK (incomplete or not verified)')
+          }}</el-radio>
+        </el-radio-group>
+      </el-form-item>
+    </el-form>
     <el-form v-if="decisionPending" label-position="top" :disabled="disabled">
       <el-form-item
         v-if="review.options?.length"
@@ -193,9 +230,11 @@ const reviewInstructions = computed(() =>
       </template>
       <el-button v-else type="primary" :disabled="disabled" @click="emit('submit', 'confirm')">
         {{
-          decisionPending
-            ? $tu('确认并继续', 'Confirm and continue')
-            : $tu('确认上升并结束本轮排查', 'Confirm escalation and finish this investigation')
+          actionPending
+            ? $tu('提交执行结果', 'Submit action result')
+            : decisionPending
+              ? $tu('确认并继续', 'Confirm and continue')
+              : $tu('确认上升并结束本轮排查', 'Confirm escalation and finish this investigation')
         }}
       </el-button>
     </footer>

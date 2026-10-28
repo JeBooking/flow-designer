@@ -43,7 +43,8 @@
         { "name": "pythonFunction", "isAttr": true, "type": "String" },
         { "name": "pythonArguments", "isAttr": true, "type": "String" },
         { "name": "pythonTopic", "isAttr": true, "type": "String" },
-        { "name": "humanDecision", "isAttr": true, "type": "Boolean", "default": false }
+        { "name": "humanDecision", "isAttr": true, "type": "Boolean", "default": false },
+        { "name": "actionMode", "isAttr": true, "type": "String" }
       ]
     },
     {

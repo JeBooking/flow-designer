@@ -15,6 +15,19 @@ export default function diagnosisRequired(): RuleDefinition {
   return {
     check(node, reporter) {
       const diagnosisKind = getDiagnosisKind(node)
+      if (diagnosisKind === 'remediation' || diagnosisKind === 'investigationAction') {
+        const module = String(node.get('flowable:pythonModule') || '').trim()
+        const functionName = String(node.get('flowable:pythonFunction') || '').trim()
+        const mode =
+          node.get('flowable:actionMode') ||
+          (node.get('flowable:pythonModule') || node.get('flowable:pythonFunction')
+            ? 'automatic'
+            : 'manual')
+        if (!['automatic', 'manual', 'confirm'].includes(mode))
+          reporter.report(node.id, 'Select a valid action execution mode')
+        else if (mode !== 'manual' && (!module || !functionName))
+          reporter.report(node.id, 'Action execution requires a Python project and interface')
+      }
       if (diagnosisKind === 'investigation') {
         const flows: ModdleElement[] = node.get('outgoing') || []
         for (const flow of flows) {

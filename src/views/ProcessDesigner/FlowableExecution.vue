@@ -56,7 +56,12 @@ async function reloadStartupInputs() {
       const module = String(element.get('flowable:pythonModule') || '')
       const factory = String(element.get('flowable:pythonFactory') || '')
       const name = String(element.get('flowable:pythonFunction') || '')
-      if (module && name) {
+      const kind = element.get('flowable:diagnosisKind')
+      const manualAction =
+        (kind === 'remediation' || kind === 'investigationAction') &&
+        element.get('flowable:actionMode') === 'manual'
+      // 人工执行保留旧接口供切回使用，但它不参与本次运行的参数发现。
+      if (!manualAction && module && name) {
         const key = JSON.stringify([module, factory])
         const binding = bindings.get(key) || { module, factory, functions: new Set<string>() }
         binding.functions.add(name)

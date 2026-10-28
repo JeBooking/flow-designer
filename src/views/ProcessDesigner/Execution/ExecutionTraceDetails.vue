@@ -18,9 +18,35 @@ const instructionFields = computed(() =>
   ].filter(([, value]) => value !== undefined && value !== ''),
 )
 const reviewFields = computed(() => [
+  ...(props.review?.mode === 'action' || props.review?.actionResult || props.review?.actionMode
+    ? [
+        [
+          translateUi('执行结果', 'Action result'),
+          props.review.actionResult === 'ok'
+            ? 'OK'
+            : props.review.actionResult === 'not_ok'
+              ? translateUi('不OK', 'Not OK')
+              : undefined,
+        ],
+        [
+          translateUi('执行方式', 'Execution mode'),
+          props.review.actionMode === 'manual'
+            ? translateUi('人工执行并确认', 'Perform manually and confirm')
+            : props.review.actionMode === 'confirm'
+              ? translateUi('接口执行后人工核验', 'Run interface, then verify manually')
+              : props.review.actionMode === 'automatic'
+                ? translateUi('自动执行', 'Automatic execution')
+                : undefined,
+        ],
+      ]
+    : []),
   [translateUi('选择动作', 'Selected action'), props.review?.action],
-  [translateUi('后续节点', 'Next node'), props.review?.next],
-  [translateUi('选择的后续路径', 'Selected next paths'), props.review?.selectedFlowIds],
+  ...(props.review?.mode === 'action'
+    ? []
+    : [[translateUi('后续节点', 'Next node'), props.review?.next]]),
+  ...(props.review?.mode === 'action'
+    ? []
+    : [[translateUi('选择的后续路径', 'Selected next paths'), props.review?.selectedFlowIds]]),
   [translateUi('目标节点', 'Target node'), props.review?.target],
   [translateUi('原因', 'Reason'), props.review?.reason],
   [translateUi('处理前结果', 'Previous result'), props.review?.previousResult],

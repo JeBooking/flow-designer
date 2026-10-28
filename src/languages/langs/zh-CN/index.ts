@@ -53,6 +53,9 @@ export default {
     Investigation: '排查节点',
     'Investigation requires both Yes and No branches': '排查节点必须同时设置是和否两种分支',
     'Select Yes or No for this branch': '请为此连线选择是或否分支',
+    'Select a valid action execution mode': '请选择有效的动作执行方式',
+    'Action execution requires a Python project and interface':
+      '此执行方式需要配置 Python 工程和调用接口',
     'Investigation Action': '排查动作',
     Conclusion: '结论节点',
     Remediation: '处置措施',

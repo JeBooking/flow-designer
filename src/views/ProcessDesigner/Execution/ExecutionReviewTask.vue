@@ -22,6 +22,17 @@ const selectedFlowIds = ref<string[]>([])
 const busy = ref(false)
 const errorMessage = ref('')
 const completed = ref(false)
+const lastActionResult = ref<'ok' | 'not_ok'>()
+interface ReviewDraft {
+  target: string
+  reason: string
+  variables: string
+  next: string
+  selectedFlowIds: string[]
+  lastActionResult?: 'ok' | 'not_ok'
+}
+const drafts = new Map<string, ReviewDraft>()
+let activeDraftKey = ''
 let generation = 0
 let disposed = false
 const disabled = computed(
@@ -30,12 +41,31 @@ const disabled = computed(
 watch(
   [() => props.runId, () => props.review.taskId],
   () => {
+    if (activeDraftKey)
+      drafts.set(activeDraftKey, {
+        target: target.value,
+        reason: reason.value,
+        variables: variables.value,
+        next: next.value,
+        selectedFlowIds: [...selectedFlowIds.value],
+        lastActionResult: lastActionResult.value,
+      })
+    activeDraftKey = JSON.stringify([props.runId, props.review.taskId])
+    const draft = drafts.get(activeDraftKey)
     generation++
-    target.value = ''
-    reason.value = ''
-    variables.value = '{}'
-    next.value = props.review.options?.length === 1 ? props.review.options[0].id : ''
-    selectedFlowIds.value = []
+    busy.value = false
+    target.value = draft?.target || ''
+    reason.value = draft?.reason || ''
+    variables.value = draft?.variables || '{}'
+    next.value =
+      draft?.next ??
+      (props.review.mode === 'action'
+        ? props.review.lastActionResult || ''
+        : props.review.options?.length === 1
+          ? props.review.options[0].id
+          : '')
+    selectedFlowIds.value = draft?.selectedFlowIds || []
+    lastActionResult.value = draft?.lastActionResult
     errorMessage.value = ''
     completed.value = false
   },
@@ -71,7 +101,14 @@ async function submit(action: 'recheck' | 'confirm', successAction?: 'continue' 
       )
     }
     const selectedNext = successAction || next.value
-    const option = props.review.options?.find((entry) => entry.id === selectedNext)
+    const isAction = props.review.mode === 'action'
+    if (action === 'confirm' && isAction && !['ok', 'not_ok'].includes(selectedNext))
+      throw new Error(
+        translateUi('请选择执行结果 OK 或不OK', 'Choose the action result: OK or Not OK'),
+      )
+    const option = isAction
+      ? undefined
+      : props.review.options?.find((entry) => entry.id === selectedNext)
     if (action === 'confirm' && props.review.mode === 'decision' && !option) {
       throw new Error(translateUi('请选择判断结果', 'Choose a decision'))
     }
@@ -146,8 +183,24 @@ async function submit(action: 'recheck' | 'confirm', successAction?: 'continue' 
       )
     }
     requestStarted = true
-    await flowableRequest('review/' + encodeURIComponent(submittedRunId), payload)
+    const result = await flowableRequest<{
+      ok: boolean
+      pending?: boolean
+      actionResult?: 'ok' | 'not_ok'
+    }>('review/' + encodeURIComponent(submittedRunId), payload)
     if (disposed || token !== generation) return
+    if (isAction && action === 'confirm' && result.pending === true) {
+      lastActionResult.value = result.actionResult
+      emit('refresh')
+      return
+    }
+    if (isAction && action === 'confirm' && result.pending !== false)
+      throw new Error(
+        translateUi(
+          '未收到任务完成确认，请刷新状态后重试',
+          'Task completion was not confirmed. Refresh the status before retrying.',
+        ),
+      )
     completed.value = true
     emit('submitted', submittedTaskId)
   } catch (failure) {
@@ -156,7 +209,7 @@ async function submit(action: 'recheck' | 'confirm', successAction?: 'continue' 
     // 服务错误也可能表示任务已被其他窗口完成；刷新状态但绝不自动重发。
     if (requestStarted) emit('refresh')
   } finally {
-    if (!disposed) busy.value = false
+    if (!disposed && token === generation) busy.value = false
   }
 }
 </script>
@@ -177,6 +230,18 @@ async function submit(action: 'recheck' | 'confirm', successAction?: 'continue' 
     />
     <p v-if="busy" role="status">{{ $tu('正在提交此任务…', 'Submitting this task…') }}</p>
     <el-alert v-if="errorMessage" type="error" :title="errorMessage" :closable="false" show-icon />
+    <el-alert
+      v-if="review.mode === 'action' && (lastActionResult || review.lastActionResult) === 'not_ok'"
+      type="warning"
+      :closable="false"
+      show-icon
+      :title="
+        $tu(
+          '执行结果未通过，任务仍在等待。请在现场完成或重做后提交 OK，或回退重查；平台不会自动重复调用接口。',
+          'The action was not verified and this task is still waiting. Complete or redo it on site, then submit OK, or recheck an earlier node. The platform will not automatically repeat the interface call.',
+        )
+      "
+    />
     <el-alert
       v-if="completed"
       type="success"

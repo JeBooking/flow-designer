@@ -163,6 +163,19 @@ public class ReviewController {
         state.put("taskId", task.getId());
         state.put("nodeId", currentNode);
         state.put("mode", review.path("mode").asText("escalation"));
+        state.put("actionMode", review.path("actionMode").asText());
+        state.put("kind", metadata.path("nodes").path(currentNode).path("kind").asText());
+        // 同一节点可有多个并行待办，只显示当前 task 的最近一次动作核验。
+        JsonNode records = json.valueToTree(variables.get("diagnosticReviews"));
+        if (records.isArray()) {
+            for (JsonNode record : records) {
+                if (task.getId().equals(record.path("taskId").asText())
+                    && "action".equals(record.path("mode").asText())
+                    && Set.of("ok", "not_ok").contains(record.path("actionResult").asText())) {
+                    state.put("lastActionResult", record.path("actionResult").asText());
+                }
+            }
+        }
         state.put("name", review.path("name").asText(task.getName()));
         state.put("selectionMode", "single");
         state.put("canRecheck", canRecheck);
@@ -209,6 +222,9 @@ public class ReviewController {
         record.put("from", task.getTaskDefinitionKey());
         record.put("nodeId", currentNode);
         record.put("taskId", task.getId());
+        record.put("mode", review.path("mode").asText("escalation"));
+        record.put("actionMode", review.path("actionMode").asText());
+        record.put("kind", metadata.path("nodes").path(currentNode).path("kind").asText());
         // 必须在回退清理或人工覆盖结果之前冻结依据，避免后续模型变化改写历史。
         record.put("inputs", inputs(variables));
         record.put("evidence", json.valueToTree(variables.get(currentNode)));
@@ -259,6 +275,23 @@ public class ReviewController {
             // 清理、记录与状态变更在同一事务中完成，worker 无法领取到半更新的重查任务。
             runtime.removeVariables(instanceId, cleared);
             changes.forEach((key, value) -> runtime.setVariable(instanceId, key, json.valueToTree(value)));
+        } else if ("action".equals(review.path("mode").asText())) {
+            if (!Set.of("ok", "not_ok").contains(request.next() == null ? "" : request.next())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Choose OK or not OK / 请选择执行结果 OK 或不 OK");
+            }
+            Object previousResult = variables.get(currentNode);
+            record.put("previousResult", json.valueToTree(previousResult));
+            record.put("actionResult", request.next());
+            record.put("next", request.next());
+            JsonNode previous = json.valueToTree(previousResult);
+            ObjectNode result = previous.isObject() ? ((ObjectNode) previous).deepCopy()
+                : json.createObjectNode();
+            if (previousResult != null && !previous.isObject()) result.set("data", previous);
+            // 动作核验只补充人工结果，保留 Python 的 success/next 等原始执行语义。
+            result.put("humanConfirmed", "ok".equals(request.next()));
+            result.put("actionResult", request.next());
+            runtime.setVariable(instanceId, currentNode, result);
         } else if ("success".equals(review.path("mode").asText())) {
             if (!Set.of("continue", "finish").contains(request.next() == null ? "" : request.next())) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Choose continue or finish / 请选择继续或结束排查");
@@ -320,12 +353,19 @@ public class ReviewController {
         if (existing instanceof JsonNode node && node.isArray()) node.forEach(records::add);
         records.add(record);
         runtime.setVariable(instanceId, "diagnosticReviews", json.valueToTree(records));
+        boolean actionReview = "action".equals(review.path("mode").asText())
+            && "confirm".equals(request.action());
+        // 不 OK 保留原待办及 token，后续人工重做后可再次核验，不重跑 Python 或消耗串行队列。
+        if (actionReview && "not_ok".equals(request.next())) {
+            return Map.of("ok", true, "pending", true, "actionResult", "not_ok");
+        }
         if ("confirm".equals(request.action())) {
             tasks.complete(task.getId());
         } else {
             runtime.createChangeActivityStateBuilder().processInstanceId(instanceId)
                 .moveExecutionToActivityId(task.getExecutionId(), request.targetNodeId()).changeState();
         }
+        if (actionReview) return Map.of("ok", true, "pending", false, "actionResult", "ok");
         return Map.of("ok", true, "action", request.action());
     }
 

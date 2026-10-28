@@ -5,7 +5,7 @@ import {
   automaticNameForText,
   isLegacyAutomaticName,
 } from '@/views/ProcessDesigner/Diagnosis/geometry'
-import type { DiagnosisKind } from '@/types/diagnosis'
+import type { DiagnosisActionMode, DiagnosisKind } from '@/types/diagnosis'
 import { resourcePath, resourceDataUrl } from '@/views/ProcessDesigner/CodeGeneration/resources'
 import type {
   ResourceResolver,
@@ -47,6 +47,7 @@ interface WorkflowNode {
   pythonArguments?: string
   pythonTopic?: string
   humanDecision?: boolean
+  actionMode?: DiagnosisActionMode
 }
 
 const record = (value: unknown): value is Record<string, unknown> =>
@@ -194,6 +195,7 @@ export async function importWorkflowJson(
     'pythonFunction',
     'pythonArguments',
     'pythonTopic',
+    'actionMode',
   ] as const
   for (const [key, value] of Object.entries(data.nodes)) {
     if (
@@ -227,6 +229,12 @@ export async function importWorkflowJson(
     }
     if (value.humanDecision !== undefined && typeof value.humanDecision !== 'boolean')
       return fail(key + ': humanDecision')
+    if (
+      value.actionMode !== undefined &&
+      (!['automatic', 'manual', 'confirm'].includes(String(value.actionMode)) ||
+        !['remediation', 'investigationAction'].includes(value.kind))
+    )
+      return fail(key + ': actionMode')
     if (value.nameMode !== undefined && !['auto', 'manual'].includes(String(value.nameMode)))
       return fail(key + ': nameMode')
     for (const edge of value.outgoing) {

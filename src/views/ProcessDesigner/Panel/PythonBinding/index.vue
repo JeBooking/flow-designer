@@ -4,6 +4,7 @@ import { useBpmnContextService } from '@/hooks/useService'
 import { listPythonProjects } from '@/services/pythonProjects'
 import type { PythonProject } from '@/types/pythonProject'
 import { useCustomRef } from '@/views/ProcessDesigner/utils/ElementUtil'
+import type { DiagnosisActionMode } from '@/types/diagnosis'
 
 const moduleValue = useCustomRef('flowable:pythonModule')
 const factoryValue = useCustomRef('flowable:pythonFactory')
@@ -41,6 +42,16 @@ const functionName = computed({
     updateProperties({ 'flowable:pythonFunction': value, 'flowable:pythonArguments': undefined }),
 })
 const isDecision = computed(() => getDiagnosisKind(selectedElement) === 'investigation')
+const isAction = computed(() =>
+  ['remediation', 'investigationAction'].includes(getDiagnosisKind(selectedElement) || ''),
+)
+const storedActionMode = useCustomRef<DiagnosisActionMode | undefined>('flowable:actionMode')
+const hasInterface = computed(() => !!moduleValue.value?.trim() && !!functionValue.value?.trim())
+const hasPython = computed(() => !!moduleValue.value || !!functionValue.value)
+const actionMode = computed({
+  get: () => storedActionMode.value || (hasPython.value ? 'automatic' : 'manual'),
+  set: (value: DiagnosisActionMode) => (storedActionMode.value = value),
+})
 const discoveryError = ref('')
 const loadingProjects = ref(false)
 const reloadProjects = async () => {
@@ -70,6 +81,43 @@ const humanDecision = useCustomRef<boolean>('flowable:humanDecision')
         : $tu('接口绑定', 'Interface binding')
     "
   >
+    <el-form-item v-if="isAction" :label="$tu('执行方式', 'Execution mode')">
+      <el-select v-model="actionMode">
+        <el-option value="automatic" :label="$tu('自动执行', 'Automatic execution')" />
+        <el-option value="manual" :label="$tu('人工执行并确认', 'Perform manually and confirm')" />
+        <el-option
+          value="confirm"
+          :label="$tu('接口执行后人工核验', 'Run interface, then verify manually')"
+        />
+      </el-select>
+    </el-form-item>
+    <p v-if="isAction && actionMode === 'manual'">
+      {{
+        $tu(
+          '由现场人员完成操作并提交 OK／不OK。平台不会调用下方 Python 接口；原有绑定会保留，便于切回。',
+          'An operator performs the action and submits OK / Not OK. The platform does not call the Python interface below; its binding is preserved for switching back.',
+        )
+      }}
+    </p>
+    <p v-if="isAction && actionMode === 'confirm'">
+      {{
+        $tu(
+          '接口执行一次后等待人工核验 OK／不OK；再次提交确认不会重复调用接口。',
+          'The interface runs once, then waits for manual OK / Not OK verification. Submitting confirmation again does not repeat the interface call.',
+        )
+      }}
+    </p>
+    <el-alert
+      v-if="isAction && actionMode !== 'manual' && !hasInterface"
+      type="warning"
+      :closable="false"
+      :title="
+        $tu(
+          '此执行方式需要配置 Python 工程和调用接口。',
+          'This execution mode requires a Python project and interface.',
+        )
+      "
+    />
     <p v-if="isDecision">
       {{
         $tu(

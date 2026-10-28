@@ -94,6 +94,23 @@ function parseReviews(value: unknown): ExecutionReview[] {
   const entries = parseStoredJson(value)
   if (!Array.isArray(entries)) return []
   return entries.filter(isRecord).map((entry) => ({
+    mode:
+      entry.mode === 'action' ||
+      entry.mode === 'decision' ||
+      entry.mode === 'success' ||
+      entry.mode === 'escalation'
+        ? entry.mode
+        : undefined,
+    actionMode:
+      entry.actionMode === 'manual' ||
+      entry.actionMode === 'confirm' ||
+      entry.actionMode === 'automatic'
+        ? entry.actionMode
+        : undefined,
+    actionResult:
+      entry.actionResult === 'ok' || entry.actionResult === 'not_ok'
+        ? entry.actionResult
+        : undefined,
     nodeId: optionalString(entry.nodeId),
     taskId: optionalString(entry.taskId),
     from: optionalString(entry.from),

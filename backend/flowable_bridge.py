@@ -28,6 +28,25 @@ KINDS = {'investigation', 'investigationAction', 'conclusion', 'remediation',
          'deepDiagnosis', 'jump', 'problemSolved', 'escalation'}
 
 
+def action_mode(node):
+    if node.get(f('diagnosisKind')) not in ('remediation', 'investigationAction'):
+        return None
+    mode = node.get(f('actionMode'), '').strip()
+    if not mode:
+        mode = 'automatic' if (node.get(f('pythonModule'), '').strip()
+            or node.get(f('pythonFunction'), '').strip()) else 'manual'
+    if mode not in ('automatic', 'manual', 'confirm'):
+        raise ValueError('Invalid action mode / 无效动作模式: ' + str(node.get('id')))
+    return mode
+
+
+def action_review(node_id, name, mode, instructions):
+    return {'nodeId': node_id, 'name': name, 'mode': 'action', 'actionMode': mode,
+        'instructions': instructions, 'options': [
+            {'id': 'ok', 'name': '执行结果 OK / Result OK'},
+            {'id': 'not_ok', 'name': '执行结果不 OK / Result not OK'}]}
+
+
 def node_instructions(node):
     return {field: node.get(f(field), '') for field in
         ('observation', 'acquisition', 'assessment', 'referenceImage', 'referenceImageName',
@@ -124,11 +143,19 @@ def serial_workflow(xml, manifest):
         else:
             topic, binding = bindings[node_id]
             has_python, human = bool(binding['module']), binding['humanDecision']
-            node.tag = b('serviceTask') if has_python else b('userTask') if human else b('task')
+            action = binding.get('actionMode')
+            node.tag = b('serviceTask') if has_python else b('userTask') if human or action == 'manual' else b('task')
             if has_python:
                 node.set(f('type'), 'external-worker')
                 node.set(f('topic'), topic)
-            if kind == 'investigation':
+            if action in ('manual', 'confirm'):
+                review_id = unique(node_id + '_review') if action == 'confirm' else node_id
+                manifest['reviews'][review_id] = action_review(node_id, info['name'], action, instructions[node_id])
+                if action == 'confirm':
+                    ET.SubElement(process, b('userTask'), {'id': review_id, 'name': info['name']})
+                    connect(node_id, review_id)
+                    continuation = review_id
+            elif kind == 'investigation':
                 review_id = unique(node_id + '_review') if has_python else node_id
                 manifest['reviews'][review_id] = {'nodeId': node_id, 'mode': 'decision', 'name': info['name'],
                     'selectionMode': 'single', 'options': decision_options(manifest, node_id)}
@@ -167,7 +194,7 @@ def compile_workflow(xml):
     mode = process.get(f('diagnosisMode'), 'parallel')
     if mode not in ('parallel', 'serial'):
         raise ValueError('Invalid diagnosis mode / 无效排查模式')
-    signature = {'formatVersion': 8, 'processId': process_id, 'mode': mode, 'nodes': [], 'flows': []}
+    signature = {'formatVersion': 9, 'processId': process_id, 'mode': mode, 'nodes': [], 'flows': []}
     executable_elements = [e for e in process if e.tag in (b('task'), b('startEvent'), b('sequenceFlow'))]
     execution_ids = [e.get('id') for e in executable_elements]
     if any(not value for value in execution_ids) or len(set(execution_ids)) != len(execution_ids):
@@ -186,7 +213,8 @@ def compile_workflow(xml):
                 'factory': element.get(f('pythonFactory'), '').strip(),
                 'function': element.get(f('pythonFunction'), '').strip(), 'kwargs': kwargs,
                 'topic': element.get(f('pythonTopic'), '').strip(),
-                'humanDecision': element.get(f('humanDecision')) == 'true'})
+                'humanDecision': element.get(f('humanDecision')) == 'true',
+                'actionMode': action_mode(element)})
     signature['nodes'].sort(key=lambda item: item['id'])
     # 串行模式保留缺省/同优先级连线的 XML 顺序，顺序本身也是执行定义。
     if mode == 'parallel':
@@ -319,8 +347,12 @@ def compile_workflow(xml):
                     if branch not in ('yes', 'no'):
                         raise ValueError('Select Yes/No for branch / 请设置是或否分支: ' + edge.get('id'))
                     branches[edge.get('id')] = branch
+            action = action_mode(node)
+            # 人工动作必须隔离旧绑定，确保 worker 无法误执行历史配置。
+            if action == 'manual':
+                module, factory, function = '', '', ''
             has_python = bool(module or function)
-            if kind != 'conclusion' and not human and not has_python:
+            if kind != 'conclusion' and not human and action != 'manual' and not has_python:
                 raise ValueError('Bind Python interface / 请绑定 Python 接口: ' + node_id)
             if has_python and (not re.fullmatch(r'[A-Za-z_]\w*(\.[A-Za-z_]\w*)*', module) or not re.fullmatch(r'[A-Za-z_]\w*', function)):
                 raise ValueError('Invalid Python interface / 无效 Python 接口: ' + node_id)
@@ -335,15 +367,24 @@ def compile_workflow(xml):
             manifest['bindings'][topic] = {'nodeId': node_id, 'module': module, 'function': function,
                 'factory': factory,
                 'kwargs': kwargs, 'outgoing': sorted(e.get('id') for e in outgoing), 'kind': kind,
-                'humanDecision': human, 'branches': branches, 'mode': mode,
+                'humanDecision': human, 'branches': branches, 'mode': mode, 'actionMode': action,
                 'instructions': node_instructions(node),
                 'detailText': manifest['nodes'][node_id]['detailText']}
-            node.tag = b('serviceTask') if has_python else b('userTask') if human else b('task')
+            node.tag = b('serviceTask') if has_python else b('userTask') if human or action == 'manual' else b('task')
             if has_python:
                 node.set(f('type'), 'external-worker')
                 node.set(f('topic'), topic)
             continuation_id = node_id
-            if kind == 'investigation':
+            if action in ('manual', 'confirm'):
+                review_id = new_id(node_id + '_review') if action == 'confirm' else node_id
+                manifest['reviews'][review_id] = action_review(node_id, node.get('name') or node_id,
+                    action, node_instructions(node))
+                if action == 'confirm':
+                    ET.SubElement(process, b('userTask'), {'id': review_id, 'name': node.get('name') or node_id})
+                    ET.SubElement(process, b('sequenceFlow'), {'id': new_id(node_id + '_to_review'),
+                        'sourceRef': node_id, 'targetRef': review_id})
+                    continuation_id = review_id
+            elif kind == 'investigation':
                 # 引擎只消费组件发出的等待请求；自动结果直接绕过人工任务。
                 review_id = new_id(node_id + '_review') if has_python else node_id
                 if has_python:

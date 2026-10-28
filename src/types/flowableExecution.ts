@@ -1,4 +1,4 @@
-import type { DiagnosisReviewState } from '@/types/diagnosis'
+import type { DiagnosisActionMode, DiagnosisReviewState } from '@/types/diagnosis'
 
 export type ExecutionNodeStatus = 'idle' | 'active' | 'completed' | 'waiting' | 'failed'
 export type ExecutionStatus = 'loading' | 'running' | 'waiting' | 'paused' | 'failed' | 'ended'
@@ -62,6 +62,9 @@ export interface ExecutionTrace {
 }
 
 export interface ExecutionReview {
+  mode?: DiagnosisReviewState['mode']
+  actionMode?: DiagnosisActionMode
+  actionResult?: 'ok' | 'not_ok'
   nodeId?: string
   taskId?: string
   from?: string

@@ -114,6 +114,7 @@ export function generateWorkflowProject(definitions: ModelElement): ProjectFiles
     'pythonFunction',
     'pythonArguments',
     'pythonTopic',
+    'actionMode',
   ] as const
   const readScope = (scope: ModelElement): string => {
     const elements = list(scope, 'flowElements')
