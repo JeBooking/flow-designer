@@ -1,0 +1,13 @@
+纯人工动作演练 / Manual action practice
+
+本示例没有真实设备，不连接任何设备，也不调用 Python。
+This example has no real device, connects to no equipment, and calls no Python.
+
+1. 人工检查时，模拟发现问题选“是”，无法确认选“否”进入升级。
+   At inspection, choose Yes for a simulated finding, or No to escalate.
+2. 在人工处置停点，自行模拟完成操作，例如在纸上记录“模拟处置完成”。
+   At the manual action, simulate completion yourself, for example by writing a completion note.
+3. 核验模拟结果后选择 OK 才会进入“问题解决”。
+   Verify the simulated result and choose OK to continue to Problem Solved.
+4. 选择“不 OK”保留同一个人工处置任务，不进入后继。可继续处理后选 OK，或回退检查。
+   Not OK keeps the same action pending and does not advance. Continue working and choose OK later, or recheck.

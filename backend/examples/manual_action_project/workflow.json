@@ -1,0 +1,48 @@
+{
+  "version": 4,
+  "process": { "id": "ManualActionPractice", "name": "纯人工演练：检查与处置确认" },
+  "mode": "parallel",
+  "start": "Start",
+  "nodes": {
+    "Start": { "kind": "start", "outgoing": [{ "id": "Start_Inspect", "target": "ManualInspect" }] },
+    "ManualInspect": {
+      "kind": "investigation",
+      "nameMode": "auto",
+      "detailText": "按参考文件进行人工演练。本节点没有 Python 接口，由操作者选择是或否。",
+      "observation": "模拟检查记录是否发现需要人工处置的问题。",
+      "acquisition": "阅读参考说明，自行模拟检查，无需连接真实设备。",
+      "assessment": "确认发现问题选是，无法确认或需要协助选否。",
+      "referenceImage": "assets/manual-instructions.txt",
+      "humanDecision": true,
+      "outgoing": [
+        { "id": "Inspect_Yes", "target": "ManualConclusion", "branch": "yes" },
+        { "id": "Inspect_No", "target": "Escalation", "branch": "no" }
+      ]
+    },
+    "ManualConclusion": {
+      "kind": "conclusion",
+      "nameMode": "auto",
+      "detailText": "人工检查已确认模拟问题，进入人工处置。",
+      "outgoing": [{ "id": "Conclusion_Action", "target": "ManualRemediation" }]
+    },
+    "ManualRemediation": {
+      "kind": "remediation",
+      "nameMode": "auto",
+      "actionMode": "manual",
+      "detailText": "按参考文件自行模拟完成处置，无接口会替你执行。完成并核验后选择 OK；不 OK 会保留此停点，可继续处理或回退。",
+      "referenceImage": "assets/manual-instructions.txt",
+      "outgoing": [{ "id": "Action_Solved", "target": "Solved" }]
+    },
+    "Solved": {
+      "kind": "problemSolved",
+      "nameMode": "auto",
+      "detailText": "人工已确认模拟处置结果 OK，本次演练完成。"
+    },
+    "Escalation": {
+      "kind": "escalation",
+      "nameMode": "auto",
+      "detailText": "人工检查未确认问题，停止本条演练并寻求协助。"
+    }
+  },
+  "resources": [{ "path": "assets/manual-instructions.txt", "mediaType": "text/plain" }]
+}

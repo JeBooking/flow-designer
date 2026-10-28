@@ -49,6 +49,17 @@ def review(run_id):
     return result if result.get('pending') else None
 
 
+def confirm_actions_until(run_id, condition):
+    # 冷却工程处置接口执行后必须先人工核验；保留原脚本在 success 停点的断言。
+    def advance():
+        state = review(run_id)
+        if state and state.get('mode') == 'action':
+            post('/diagnosis-api/instances/' + run_id + '/review', {
+                'action': 'confirm', 'taskId': state['taskId'], 'next': 'ok'})
+        return condition()
+    return wait(advance)
+
+
 def verify():
     reports = []
     for scenario, expected in [('fan', 0), ('filter', 0), ('healthy', 0), ('unknown', 2), ('fan_stuck', 1)]:
@@ -127,7 +138,7 @@ def verify():
                 runs = {scenario: start('parallel', scenario) for scenario in ('fan', 'filter', 'healthy', 'unknown', 'fan_stuck')}
                 for scenario in ('fan', 'filter', 'healthy', 'unknown'):
                     run_id = runs[scenario]
-                    wait(lambda: finished(run_id))
+                    confirm_actions_until(run_id, lambda: finished(run_id))
                     result = values(run_id)
                     expected_status = 'failed' if scenario == 'unknown' else 'problemSolved'
                     assert result['diagnosticStatus'] == expected_status, (scenario, result)
@@ -152,13 +163,14 @@ def verify():
                 print('PASS: real Flowable parallel five scenarios, native objects, SVG, failure isolation and exception', flush=True)
 
                 serial_fan = start('serial', 'fan')
-                wait(lambda: finished(serial_fan))
+                confirm_actions_until(serial_fan, lambda: finished(serial_fan))
                 result = values(serial_fan)
                 assert result['FanReport']['after'] == 42 and result['diagnosticFailures'][0]['nodeId'] == 'FilterCheck'
                 reports.append({'mode': 'serial', 'scenario': 'fan', 'status': 'problemSolved', 'runId': serial_fan})
                 for choice in ('finish', 'continue'):
                     run_id = start('serial', 'filter')
-                    pending = wait(lambda: review(run_id))
+                    pending = confirm_actions_until(run_id, lambda: (
+                        state if (state := review(run_id)) and state.get('mode') == 'success' else None))
                     assert pending['mode'] == 'success'
                     assert values(run_id)['diagnosticStatus'] == 'paused'
                     assert not any(item['activityId'] == 'fan_sample' for item in activities(run_id))

@@ -53,7 +53,8 @@
     "CleanFilter": {
       "kind": "remediation",
       "nameMode": "auto",
-      "detailText": "模拟清理滤网，保持当前设备实例，方法无返回值。",
+      "detailText": "接口已模拟清理滤网，保持当前设备实例，方法无返回值。请人工核验模拟操作结果，选择 OK 后才继续复采报告；不 OK 保留当前停点。",
+      "actionMode": "confirm",
       "pythonModule": "cooling_lab.api",
       "pythonFactory": "CoolingSession",
       "pythonFunction": "clean_filter",
@@ -99,7 +100,8 @@
     "RestartFan": {
       "kind": "remediation",
       "nameMode": "auto",
-      "detailText": "异步模拟重启风机；卡死场景抛出原始 Python 异常。",
+      "detailText": "接口已异步模拟重启风机，请人工核验模拟操作结果，选择 OK 后才继续复采报告；不 OK 保留当前停点。卡死场景抛出原始 Python 异常。",
+      "actionMode": "confirm",
       "pythonModule": "cooling_lab.api",
       "pythonFactory": "CoolingSession",
       "pythonFunction": "restart_fan",
