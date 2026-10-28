@@ -10,6 +10,7 @@ import {
   renameSync,
   unlinkSync,
   statSync,
+  readdirSync,
 } from 'node:fs'
 import { createConnection } from 'node:net'
 import { dirname, join } from 'node:path'
@@ -433,11 +434,22 @@ async function findPython() {
 async function prepareFlowableJar(jar) {
   const pending = join(root, 'backend', '.local', 'flowable-build.pending')
   const pom = join(root, 'flowable-runtime', 'pom.xml')
-  // 编译目标改变后不能复用旧字节码；Git 更新构建配置后自动重建一次。
+  const sources = join(root, 'flowable-runtime', 'src', 'main')
+  // 同时检查目录时间，新增或删除源码、资源后也不能复用旧字节码。
+  const newerThanJar = (path, jarTime) => {
+    if (!existsSync(path)) return false
+    const info = statSync(path)
+    return (
+      info.mtimeMs > jarTime ||
+      (info.isDirectory() &&
+        readdirSync(path).some((name) => newerThanJar(join(path, name), jarTime)))
+    )
+  }
   const ready = () =>
     existsSync(jar) &&
     !existsSync(pending) &&
-    (!existsSync(pom) || statSync(jar).mtimeMs >= statSync(pom).mtimeMs)
+    !newerThanJar(pom, statSync(jar).mtimeMs) &&
+    !newerThanJar(sources, statSync(jar).mtimeMs)
   if (ready()) return
   const release = acquireSetupLock('flowable', 'Flowable')
   try {
@@ -533,12 +545,31 @@ async function main() {
       }
       return '后端 Flowable 配置冲突，请使用相同 FLOWABLE_URL 重启后端 / Backend Flowable configuration conflict: restart backend with the same FLOWABLE_URL'
     })
-  const flowableHealth = () =>
-    probe(
-      `${flowableUrl.replace(/\/$/, '')}/process-api/repository/process-definitions?size=1`,
+  const flowableHealth = async () => {
+    const address = flowableUrl.replace(/\/$/, '')
+    const headers = { Authorization: `Basic ${credentials}` }
+    const repository = await probe(
+      `${address}/process-api/repository/process-definitions?size=1`,
       (body) => Array.isArray(body?.data) && Number.isInteger(body?.total) && body.total >= 0,
-      { Authorization: `Basic ${credentials}` },
+      headers,
     )
+    if (!repository.healthy) return repository
+    // 不存在的实例返回空任务数组，无需创建流程即可验证诊断接口能力。
+    const diagnosis = await probe(
+      `${address}/diagnosis-api/instances/launcher-health-check/review/tasks`,
+      (body) => Array.isArray(body?.tasks),
+      headers,
+    )
+    if (diagnosis.healthy) return diagnosis
+    return {
+      ...diagnosis,
+      reachable: true,
+      reason:
+        'Flowable 诊断 API 不兼容，请用当前源码重新构建并重启引擎 / ' +
+        'Incompatible Flowable diagnosis API; rebuild and restart the engine from current sources. ' +
+        diagnosis.reason,
+    }
+  }
   const backend = await backendHealth()
   const engine = await flowableHealth()
   if (!backend.healthy && (backend.reachable || (await portOccupied(backendUrl)))) {
@@ -546,13 +577,10 @@ async function main() {
       `8765 已被未通过身份检查的服务占用 / Unrecognized service on port 8765: ${backend.reason}`,
     )
   }
-  if (
-    !engine.healthy &&
-    !explicitFlowable &&
-    (engine.reachable || (await portOccupied(flowableUrl)))
-  ) {
+  if (!engine.healthy && (engine.reachable || (await portOccupied(flowableUrl)))) {
     throw new Error(
-      `8080 服务未通过 Flowable 认证健康检查 / Flowable check failed on port 8080: ${engine.reason}`,
+      'Flowable 服务未通过认证及诊断能力检查 / ' +
+        `Flowable authentication or diagnosis capability check failed (${flowableUrl}): ${engine.reason}`,
     )
   }
   let java
