@@ -459,20 +459,19 @@ async function prepareFlowableJar(jar) {
           : ['-version']
     try {
       const output = await checkCommand('maven-check', command, args(false), { cwd })
-      const version = /Apache Maven (\d+)\.(\d+)/.exec(output)
+      const version = /Apache Maven (\d+)\.(\d+)\.(\d+)/.exec(output)
+      const [, major, minor, patch] = version ?? []
+      const supportedMaven =
+        Number(major) > 3 ||
+        (Number(major) === 3 && (Number(minor) > 8 || (Number(minor) === 8 && Number(patch) >= 8)))
       const javaVersion = /Java version:\s*(\d+)/i.exec(output)
-      if (
-        !version ||
-        !(Number(version[1]) > 3 || (Number(version[1]) === 3 && Number(version[2]) >= 9)) ||
-        !javaVersion ||
-        Number(javaVersion[1]) < 17
-      ) {
-        throw new Error('Maven 3.9+ running on JDK 17+ required')
+      if (!supportedMaven || !javaVersion || Number(javaVersion[1]) < 17) {
+        throw new Error('Maven 3.8.8 or later running on JDK 17 or later required')
       }
     } catch (error) {
       throw new Error(
-        `构建 Flowable 需要 Maven 3.9+ 和 JDK 17+，请检查 PATH/JAVA_HOME / ` +
-          `Building Flowable requires Maven 3.9+ on JDK 17+; check PATH/JAVA_HOME.\n${error.message}`,
+        `构建 Flowable 需要 Maven 3.8.8 或更高版本、JDK 17 或更高版本，请检查 PATH/JAVA_HOME / ` +
+          `Building Flowable requires Maven 3.8.8 or later on JDK 17 or later; check PATH/JAVA_HOME.\n${error.message}`,
       )
     }
     log(
@@ -565,10 +564,10 @@ async function main() {
     try {
       const version = await checkCommand('java-check', java, ['-version'])
       const major = Number(/version\s+"(\d+)/i.exec(version)?.[1])
-      if (!Number.isInteger(major) || major < 17) throw new Error('Java 17+ required')
+      if (!Number.isInteger(major) || major < 17) throw new Error('Java 17 or later required')
     } catch {
       throw new Error(
-        `需要 Java 17+，请检查 JAVA_HOME/PATH / Java 17+ required; check JAVA_HOME/PATH.\n${join(logDirectory, 'java-check.log')}`,
+        `需要 Java 17 或更高版本，请检查 JAVA_HOME/PATH / Java 17 or later required; check JAVA_HOME/PATH.\n${join(logDirectory, 'java-check.log')}`,
       )
     }
     await prepareFlowableJar(jar)

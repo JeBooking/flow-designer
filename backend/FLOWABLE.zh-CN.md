@@ -26,8 +26,8 @@ Flowable 7.1.0 负责调度；官方 `flowable.external-worker-client==1.0.2` �
 
 ## 首次准备
 
-需要 JDK 17+、Python 3.9+ 和项目原有的 Node.js/pnpm 环境。
-首次没有引擎 JAR 时还需在 PATH 中提供 Maven 3.9+。在仓库根目录安装前端依赖：
+需要 JDK 17 或更高版本、Python 3.9+ 和项目原有的 Node.js/pnpm 环境；17 包括 17.0.12 等更新版本。
+首次没有引擎 JAR 时还需在 PATH 中提供 Maven 3.8.8+。在仓库根目录安装前端依赖：
 
 ```powershell
 pnpm install

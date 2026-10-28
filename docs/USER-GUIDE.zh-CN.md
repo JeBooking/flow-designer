@@ -12,7 +12,7 @@
 
 ## 2. 首次准备与每次启动
 
-首次需要 JDK 17+、Python 3.9+、Node 和 pnpm；缺少引擎 JAR 时还需在 PATH 中提供 Maven 3.9+。在仓库根目录准备：
+首次需要 JDK 17+、Python 3.9+、Node 和 pnpm；缺少引擎 JAR 时还需在 PATH 中提供 Maven 3.8.8+。在仓库根目录准备：
 
 ```powershell
 pnpm install

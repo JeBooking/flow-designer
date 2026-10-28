@@ -12,7 +12,7 @@ The diagram defines dependencies and diagnostic paths. Python interfaces perform
 
 ## 2. Prepare once, then start each run
 
-Prepare JDK 17+, Python 3.9+, Node and pnpm. If the runtime JAR is missing, Maven 3.9+ must also be on PATH. From the repository root:
+Prepare JDK 17+, Python 3.9+, Node and pnpm. If the runtime JAR is missing, Maven 3.8.8+ must also be on PATH. From the repository root:
 
 ```powershell
 pnpm install

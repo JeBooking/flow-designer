@@ -30,8 +30,9 @@ the process; the official Python client 1.0.2 acquires jobs and reports completi
 
 ## Prepare once
 
-Requires JDK 17+, Python 3.9+ and the existing Node.js/pnpm environment.
-Maven 3.9+ must also be on PATH when the runtime JAR has not been built yet.
+Requires JDK 17 or later, Python 3.9+ and the existing Node.js/pnpm environment.
+Java 17 updates such as 17.0.12 meet this requirement.
+Maven 3.8.8+ must also be on PATH when the runtime JAR has not been built yet.
 From the repository root, install frontend dependencies:
 
 ```powershell
