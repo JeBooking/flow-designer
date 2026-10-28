@@ -12,7 +12,8 @@ XML order as fallback. Failure advances to the next pending path; exhaustion wit
 `diagnosticStatus=failed`. Success pauses remaining paths (`diagnosticStatus=paused`). The review
 UI offers finish or continue; review requests use `action=confirm`, `next=finish` or `continue`,
 and `mode=success`. Continue resumes the retained queue without replaying completed paths.
-Move conditional decisions into investigations. Conclusions may contain text without a Python binding.
+Move conditional decisions into investigations. Conclusions may contain text without a Python binding
+and continue automatically to their successor; a conclusion alone is not a human wait.
 Exported Python runners follow the same mode and failure rules and expose paused state through
 `run(..., resume=state, success_action='continue'|'finish')`.
 
@@ -172,13 +173,15 @@ Ended instances cannot be rechecked.
 
 ## Rechecking from any human decision
 
-Enable **Human decision / confirmation** under **Execution and human decisions** on a
-non-final diagnostic node. Without a Python binding it waits immediately. With a binding,
+Enable **Human decision / confirmation** under **Execution and human decisions** on an investigation
+node. Without a Python binding it waits immediately. With a binding,
 it first runs acquisition, plotting or actions, then waits for the human decision.
 Choose one Yes/No group. Paths within that group default to all selected and can be checked as a subset.
 Every human wait, including escalation, offers a return to an earlier executed investigation,
 conclusion or action. Unvisited nodes and the current node are excluded; the first node shows
-that no earlier target exists. Returning to a manual node waits again; a bound node reruns Python first.
+that no earlier target exists. Returning to an action in manual mode waits again without calling
+Python, even with a saved binding. Returning to a bound investigation or an action in automatic or
+confirm mode reruns its interface; confirm then waits for verification again.
 Interrupting running automatic nodes is outside this change. Problem solved follows the serial
 success-pause and parallel-path rules above.
 
@@ -187,7 +190,7 @@ and `selectionMode: single`. Decision `options` retain Yes/No IDs and names, eac
 `paths: [{id: flowId, name: targetName, target: nodeId}]`. POST `action: confirm` uses `next: yes|no`
 and optional `selectedFlowIds`. Omitting the subset selects all paths in that group; duplicates,
 foreign-group IDs and empty selections for a group with paths are rejected. Groups with no paths
-retain the failed-path behavior. This requires a newly compiled deployment (format version 8);
+retain the failed-path behavior. This requires a newly compiled deployment;
 automatic decisions keep the entire matching group. Python's `next` is optional advisory data in human mode. Confirmation updates
 the node result's `next`, adds `humanConfirmed: true`, and audits the original result. Other object
 fields remain intact; non-object results are wrapped in `data`. Results and audit records also retain
@@ -257,14 +260,46 @@ parameters, start a new execution from the current diagram; the backend prepares
 Previous instances still need their original worker and native session. Topics must be unique
 in a diagram. Source conditions and default flows are rejected. Automatic mode uses Python's `next`; human mode uses the selected option.
 Export currently supports one top-level process, one plain start event, and diagnostic nodes.
-Unsupported subprocesses and events are rejected. Non-final nodes require bindings or human mode.
+Unsupported subprocesses and events are rejected. Investigations require a binding or human judgment;
+actions follow their action mode, and text-only conclusions need no binding.
 Real machine operations need business-specific
 idempotency because external jobs can be retried. GUI functions requiring the main thread should
 launch a separate desktop process from their entry point; client callbacks execute on threads.
 
+## Action execution and human verification
+
+Investigation Action (`investigationAction`) and Remediation (`remediation`) persist their mode as
+`flowable:actionMode`, with undo/redo and XML round-trip support:
+
+| Mode | Python execution | Continuation |
+| --- | --- | --- |
+| `automatic` | Calls the bound interface | Continues after success |
+| `manual` | Does not call Python, even if an old binding is saved | Waits for human OK |
+| `confirm` | Calls the interface once before review | Waits for human verification and OK |
+
+If no mode is saved, a bound action defaults to automatic and an unbound action to manual. Manual
+actions need no Python registration. Import the entire
+[`manual_action_project`](examples/manual_action_project/README.md) directory for a simulated
+exercise. In Cooling, `RestartFan` and `CleanFilter` explicitly use confirm, while report nodes use
+automatic. The default fan run waits for action verification; serial filter first waits for action
+verification, then separately offers finish/continue after its report reaches Problem Solved.
+
+Action reviews use `mode=action`. Send `action=confirm`, the current `taskId`, and `next=ok` or
+`next=not_ok` to `POST /diagnosis-api/instances/{id}/review`. Only OK completes the task and follows
+its successors. Not OK records `actionResult` and the context available at the time, retaining the
+same task as pending. It neither reruns the Python interface nor reaches Problem Solved. After
+actually redoing the action, the user can choose OK or recheck an eligible earlier node. Pending
+action-review responses expose `actionMode` and `lastActionResult`; each submission remains in
+`diagnosticReviews`. POST returns `pending=true` for Not OK and `pending=false` after OK, with the
+submitted `actionResult`. Normal Python exceptions still produce task failures and original tracebacks;
+they are not converted into Not OK. Rechecking can rerun actions and does not undo equipment state.
+
 ## Automatic human fallback in decision components
 
-`backend/diagnostic_components.py` provides reusable Python decision components. Flowable only transports wait requests, persists state and resumes execution. Every Python-bound non-final node supports this protocol without the human checkbox; that checkbox can still require extra review of automatic results.
+`backend/diagnostic_components.py` provides reusable Python decision components for investigations.
+Flowable transports wait requests, persists state and resumes execution. An investigation can request
+human judgment without its human checkbox; that checkbox can still require extra review of automatic
+results. Actions use `flowable:actionMode` and the separate action-review contract above.
 
 ```python
 from diagnostic_components import DecisionComponent, decision

@@ -10,7 +10,8 @@
 失败后尝试下一个待执行思路，全部耗尽且未成功时 `diagnosticStatus=failed`。
 成功后暂停剩余思路（`diagnosticStatus=paused`）；界面可选择结束或继续，复核接口
 使用 `mode=success`，提交 `action=confirm` 和 `next=finish` 或 `continue`。
-继续操作恢复保留的队列，不重放已经完成的路径。有条件的判断应放在排查节点；结论只记录文本时无需绑定 Python。
+继续操作恢复保留的队列，不重放已经完成的路径。有条件的判断应放在排查节点；结论只记录文本时无需绑定 Python，
+会自动进入后继，不会仅凭结论产生人工等待。
 导出的离线 Python 遵循相同规则，通过 `run(..., resume=state, success_action='continue'|'finish')` 恢复暂停状态。
 
 worker 使用 `inspect.signature` 识别参数：兼容旧映射、匹配同名流程变量、上游结果中唯一的同名字段、
@@ -143,19 +144,20 @@ Java 引擎升级后需重新构建 jar、重启服务，再从当前图开始�
 
 ## 任意人工判断节点的回退
 
-在非最终诊断节点的“执行与人工判断”中启用“人工判断／确认”。
+在排查节点的“执行与人工判断”中启用“人工判断／确认”。
 不配置 Python 接口时直接等待人工；配置接口时先执行采集、绘图或动作，再等待人工选择。
 多后继节点按出线名称列出选项，必须明确选择；单后继节点提供“确认并继续”。
 所有这些等待入口以及上升复核均提供回退，可选择此前实际执行过的排查、结论或动作节点。
 当前节点和未执行节点不能作为回退目标；首个节点会提示暂无可回退节点。
-回退到人工节点时会再次等待；若该节点绑定 Python，则先重新运行 Python。
+回退到 manual 动作仍等待人工，即使保留绑定也不调用 Python。回退到有绑定的排查，或 automatic／confirm
+动作，会重新执行接口；confirm 执行后再次等待核验。
 本次不包含运行中自动节点的暂停介入；“问题解决”遵循前述串行成功暂停与并行支路规则。
 
 复核返回 `mode`、完整说明、参考、依据、业务上下文 `inputs` 和 `selectionMode: single`。
 `options` 保留“是／否”组 ID 和名称，各组附带 `paths: [{id: 连线ID, name: 目标名称, target: 节点ID}]`。
 先单选“是／否”组，再勾选组内路径，默认全选，不跨组混选。POST `action: confirm` 传
 `next: yes|no`，可选 `selectedFlowIds`；未传时选择该组全部路径，重复、跨组和有出口的空选都会拒绝。
-没有后继的组仍按原语义记录思路失败。路径子集需要重新编译部署（格式版本 8），自动判断仍执行整个匹配组。
+没有后继的组仍按原语义记录思路失败。路径子集需要重新编译部署，自动判断仍执行整个匹配组。
 Python 的 `next` 在人工模式中只是建议，可以省略；实际路由由人工选择决定。
 确认后节点结果中的 `next` 更新为实际选择并带有 `humanConfirmed: true`，原始结果保存在复核记录。
 对象结果的其他字段保持不变；非对象结果包装在 `data` 中，纯人工节点生成确认结果。
@@ -208,13 +210,40 @@ worker 日志可补充上下文。
 不要同时让配置不同的 worker 订阅同一组主题。
 
 当前执行导出支持一个顶层流程、一个普通开始事件和这些诊断节点；子流程、并行节点、复杂事件等会明确拒绝。
-非最终节点须绑定接口或启用人工判断，并满足内容、连接和终点规则。
+排查须绑定接口或启用人工判断；动作按动作模式执行，纯文本结论无需绑定接口，均需满足内容、连接和终点规则。
 外部任务失败、超时重领可能造成重复调用，真实机台操作函数须按业务需要保证幂等。
 桌面绘图函数若要求主线程或交互桌面，应在业务入口中启动独立桌面进程；官方客户端回调运行在线程中。
 
+## 动作执行与人工核验
+
+排查动作（`investigationAction`）和处置措施（`remediation`）使用 `flowable:actionMode`
+保存模式，支持撤销、重做和 XML 导入导出：
+
+| 模式 | Python 执行 | 继续条件 |
+| --- | --- | --- |
+| `automatic` | 调用绑定接口 | 成功后自动继续 |
+| `manual` | 不调用 Python，即使保存了旧绑定 | 等待人工 OK |
+| `confirm` | 复核前调用一次接口 | 等待人工核验后 OK |
+
+未保存模式时，有接口默认自动，无接口默认人工。人工动作无需登记 Python 工程；纯人工模拟演练
+可整体导入 [`manual_action_project`](examples/manual_action_project/README.zh-CN.md) 目录。
+Cooling 的 `RestartFan`、`CleanFilter` 明确使用 confirm，报告节点为 automatic。
+默认 fan 场景会等待动作核验；串行 filter 先核验动作，报告到问题解决后，另一次成功复核才提供结束／继续。
+
+动作复核使用 `mode=action`。向 `POST /diagnosis-api/instances/{id}/review` 提交
+`action=confirm`、当前 `taskId` 和 `next=ok` 或 `next=not_ok`。只有 OK 完成任务并进入后继。
+不OK 会记录 `actionResult` 和当时可用上下文，同一个任务仍为待处理，不自动重跑 Python 接口，
+也不到问题解决。实际重新完成动作后可选 OK，或回退到符合条件的已执行节点。
+动作待办响应包含 `actionMode`、`lastActionResult`，每次提交保留在 `diagnosticReviews` 中。
+POST 对不OK 返回 `pending=true`，对已确认的 OK 返回 `pending=false`，并附带提交的 `actionResult`。
+普通 Python 异常仍按任务失败处理并保留原始 traceback，不会转换为不OK。
+回退可能重新执行动作，不会撤销设备状态。
+
 ## 判断组件自动转人工
 
-`backend/diagnostic_components.py` 提供可复用的 Python 判断组件。Flowable 只接收等待请求、保存状态和继续执行，不判断业务逻辑是否实现。所有绑定 Python 的非最终节点都支持此协议，无需开启“人工判断／确认”；该开关用于额外要求人工复核自动结果。
+`backend/diagnostic_components.py` 为排查节点提供可复用的 Python 判断组件。Flowable 接收等待请求、
+保存状态和继续执行。排查无需开启“人工判断／确认”也能请求人工判断；该开关用于额外要求
+人工复核自动结果。动作使用 `flowable:actionMode` 及上述独立的动作复核约定。
 
 ```python
 from diagnostic_components import DecisionComponent, decision

@@ -70,6 +70,26 @@ Open **Diagnostic execution**, fill startup inputs and click **Start execution**
 compiles the current diagram, prepares or reuses its worker, then deploys and starts it.
 No manual binding export or worker launch is required.
 
+排查动作和处置措施使用 `flowable:actionMode`：`automatic` 调用接口后继续；`manual` 等待
+人工完成，不调用 Python，即使保留旧绑定；`confirm` 先调用一次接口，再等待人工核验。
+未配置时，有接口默认自动，无接口默认人工。结论自动进入后继。选择 OK 才继续；不OK 记录结果和
+当时上下文，保留同一待办，不自动重跑接口，也不到问题解决。实际重新完成动作后再选 OK，或回退
+到符合条件的已执行节点；Python 异常仍按任务失败处理。
+纯人工模拟可整体导入 [manual_action_project](examples/manual_action_project/README.zh-CN.md)，无需登记 Python 工程。
+
+Investigation Action and Remediation use `flowable:actionMode`: `automatic` calls the interface and
+continues; `manual` waits for human completion without calling Python, even with a saved binding;
+`confirm` calls the interface once, then waits for human verification. Without an explicit mode,
+bound actions are automatic and unbound actions are manual. Conclusions continue automatically.
+Only OK continues; Not OK records the result and current context, keeping the same task pending
+without rerunning Python or reaching Problem Solved. Actually redo the action before OK, or recheck
+an eligible earlier node; Python exceptions remain task failures. Import the entire simulated
+[manual_action_project](examples/manual_action_project/README.md) without a Python registration.
+
+动作复核／Action review: `mode=action`; `POST /diagnosis-api/instances/{id}/review` uses
+`action=confirm`, `taskId` and `next=ok|not_ok`. Pending responses include `actionMode` and
+`lastActionResult`; `diagnosticReviews` preserves each `actionResult` and its context.
+
 默认从 `backend/.local/projects.json` 按模块/工厂选择工程，业务子进程使用登记解释器及工作目录。
 启动表单按登记类/工厂初始化签名生成，可选项留空保留默认值；额外启动数据可添加名称/值行。
 普通方法参数从上游自动匹配。高级初始变量 JSON 默认折叠，开启后替代表单，默认 `{}`。

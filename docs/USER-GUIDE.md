@@ -2,7 +2,7 @@
 
 [English](USER-GUIDE.md) | [中文](USER-GUIDE.zh-CN.md)
 
-This is the complete user operation manual. The root [README](../README.md) provides the project overview and installation/development entry points; individual example READMEs provide supplementary engineering details. After the first-time environment preparation in section 2, the main path is `pnpm dev` → register a Python project → bind its interfaces → start execution in the UI.
+This is the complete user operation manual. The root [README](../README.md) provides the project overview and installation/development entry points; individual example READMEs provide supplementary engineering details. After the first-time environment preparation in section 2, the main path is `pnpm dev` → register a Python project → bind its interfaces → start execution in the UI. Entirely manual workflows need no Python project registration.
 
 Start with your own Python business project. General integration steps use placeholder paths, modules, classes and methods: replace them with real values. The example chapters use actual projects in this repository. The platform neither creates business implementations nor installs business dependencies.
 
@@ -56,7 +56,7 @@ Fill debug inputs from the real interface signature and call it to check the int
 
 Draw your own workflow, or import your saved BPMN, `workflow.json` or project directory. Save current work before importing. Configure diagnostic content, references and Yes/No connections using section 8. On each node select its registered **Python project** and **Call interface**. Module/class entry settings come from registration and need not be repeated per node.
 
-Investigations return explicit `True`/`False`, `yes`/`no`, or a dictionary with `next`. Conclusions may contain text only. Actions can take no inputs and return `None`. Final nodes have no business binding.
+Investigations return explicit `True`/`False`, `yes`/`no`, or a dictionary with `next`. Conclusions may contain text only and continue automatically. Actions can take no inputs and return `None`; manual actions need no interface. Section 9.1 explains action modes. Final nodes have no business binding.
 
 ## 5. Parameters and native objects
 
@@ -132,6 +132,23 @@ Enable **Human decision / confirmation** on an investigation. With no Python int
 
 When the workflow waits, read the floating window's full instructions, references and evidence. Select one Yes/No group, then check the paths to follow within that group; all paths in the group are selected by default. You cannot combine paths across Yes and No. A group without successors keeps the existing failed-path behavior. Path subsets require a newly compiled deployment; automatic decisions still follow their entire matching group. Escalation also waits for human review. Serial success with remaining paths offers **Finish investigation** and **Continue remaining paths**.
 
+Investigation Action and Remediation have a separate **Action mode**:
+
+| Mode | Calls Python | When the workflow continues |
+| --- | --- | --- |
+| `automatic` | Yes | After the interface succeeds |
+| `manual` | No, even if a saved binding remains | After a person completes the action and chooses **OK** |
+| `confirm` | Once before human verification | After a person verifies the result and chooses **OK** |
+
+Without an explicit mode, an action with an interface is automatic and one without an interface is
+manual. **Not OK** records the action result and context available at that time, keeps the same task
+pending, and does not rerun Python or reach Problem Solved. After actually redoing the action, choose
+OK, or recheck an eligible earlier node. A Python exception is still a task failure and follows the
+error-handling flow. Conclusions continue automatically to their successor; they do not create a
+human wait merely by being conclusions. Import the entire
+[`manual_action_project`](../backend/examples/manual_action_project/README.md) directory for a
+simulated, entirely manual exercise without registering a Python project.
+
 ### 9.2 Request human help for unimplemented judgment code
 
 Engineers can explicitly request human handling with the supplied decision component:
@@ -152,7 +169,7 @@ The worker supplies the import path for `diagnostic_components`. Add this reposi
 
 ### 9.3 Recheck an earlier node
 
-During an investigation or escalation human wait, select a **previously executed node**, provide a reason and optional recheck input variables, then click **Recheck**. The system retains previous history, results, and the reason; it clears results requiring recomputation and runs again from the selected node.
+During an investigation, action or escalation human wait, select a **previously executed node**, provide a reason and optional recheck input variables, then click **Recheck**. The system retains previous history, results, and the reason; it clears results requiring recomputation and runs again from the selected node.
 
 Rechecking is disabled while multiple parallel human reviews are pending because it clears shared results and could affect another task's evidence. Handle the other human tasks first. Rechecking targets the selected task; it does not undo physical actions.
 
@@ -361,10 +378,14 @@ Only the component protocol turns an unimplemented judgment into human handling.
 `None` return does not request human review, as diagram 08 demonstrates. Diagram 03
 waits because its human switch is enabled, not because returning evidence itself implies fallback.
 
-These examples cover investigation judgments. The execution UI currently has no unified form for
-manually entering acquisition results or confirming completion of arbitrary business actions.
-The Yes/No review must not be presented as either of those capabilities. This guide describes the
-expected behavior; it does not claim that the examples have been run on your machine.
+These eight diagrams cover investigation judgments; diagrams 02–06 do not demonstrate action
+results. Their Yes/No review is not an action-completion check. Investigation Action and Remediation
+use the separate manual/confirm modes and OK/Not OK results described in section 9.1. For a complete
+manual-action exercise, import the entire
+[`manual_action_project`](../backend/examples/manual_action_project/README.md) directory without
+registering a Python project. The execution UI still has no general form for manually entering
+acquisition results; action confirmation does not supply those values. This guide describes expected
+behavior and does not claim that the examples have been run on your machine.
 
 For the project files and standalone instructions, see the [example project README](../backend/examples/manual_handling_project/README.md).
 
@@ -404,12 +425,17 @@ does not automatically register a Python project.
    contains `cooling_lab.api`, `CoolingSession` and method bindings, such as
    `Overheat → is_overheated`, `air_sample → collect_air`, and `FanReport → report_fan`.
    Confirm that they match the registered project; conclusions and Problem Solved need no interface.
+   `RestartFan` and `CleanFilter` explicitly use `confirm`; the report nodes use `automatic`.
 3. Open **Diagnostic execution**. Keep the constructor defaults `scenario=fan` and
    `device_id=COOL-01`, then click **Start execution**. The backend automatically prepares the
    matching worker and starts the current diagram. No preparation script or manual backend/worker
    command is needed for these UI steps.
-4. Follow the canvas paths and result cards. In the default parallel mode, the fan path performs
-   remediation and verification; the filter path has no matching fault and ends independently.
+4. Follow the canvas paths and result cards. In the default parallel mode, the conclusion continues
+   automatically to `RestartFan`. Its interface runs once, then a floating task waits for human
+   verification. Choose **OK** to run the automatic report and proceed; **Not OK** records the result
+   and context while retaining the task, without repeating the interface or reaching Problem Solved.
+   Actually redo the simulated action before OK, or recheck an eligible earlier node. The filter
+   path has no matching fault and ends independently; `fan_stuck` remains a Python task error.
    The fan report's `chartSvg` displays the temperature change from 85 °C to 42 °C.
    Click green completion checks to inspect each node's execution records, including inputs,
    returned evidence and references where recorded. Expand **Raw execution details** for the
@@ -419,8 +445,9 @@ does not automatically register a Python project.
 
 Select the process by clicking the blank canvas, then choose **Investigation mode → Serial** in
 the process properties. In **Diagnostic execution**, set `scenario` to `filter` and start a new
-instance. The imported connection order tries the filter path first. After successful verification,
-remaining paths pause: choose **Finish investigation** to finish or **Continue remaining paths**
+instance. The imported connection order tries the filter path first. First verify `CleanFilter` and
+choose **OK** to run its automatic report. Once that reaches Problem Solved, a separate success
+review pauses remaining paths: choose **Finish investigation** or **Continue remaining paths**
 to investigate the fan path. Mode and input changes do not alter an already running instance.
 Each scenario presets at most one recoverable fault; this example does not combine multiple faults.
 

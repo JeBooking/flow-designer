@@ -26,7 +26,9 @@ This standard-library business project manages its own simulated equipment, meas
 
 The fan fault recovers temperature from 85 C to 42 C. Scenarios are `filter`, `fan`, `healthy`, `unknown`, and `fan_stuck`; the last two mean no matching cause and a remediation error.
 
-The two sibling paths in `workflow.json` use the original `Measurement` results from `air_sample` and `fan_sample`. A matching cause proceeds through conclusion, remediation, and verification. Only a normal temperature reaches Problem Solved; its report includes a displayable SVG chart.
+The two sibling paths in `workflow.json` use the original `Measurement` results from `air_sample` and `fan_sample`. A matching cause proceeds automatically through its conclusion to remediation. `RestartFan` and `CleanFilter` explicitly use `confirm`: Python performs the simulated action once, then the UI waits for human verification. Choose **OK** to run the automatic report node and verify temperature before Problem Solved. **Not OK** records the result and current context, keeps the same task pending, and neither reruns Python nor reports success; complete the simulated action again before OK, or recheck an eligible earlier node. Python errors such as `fan_stuck` remain task failures. Report nodes use `automatic` and return a displayable SVG chart.
+
+The default `fan` UI run therefore waits at fan-action verification. In serial `filter` mode, first verify the filter action; after its automatic report reaches Problem Solved, a separate success review offers finish or continue with the remaining fan path. Standalone `run_demo.py` exercises Python directly and does not open these UI tasks.
 
 To run serially, change the execution mode in the process properties and start a new instance; no bundle regeneration is needed. The `filter` scenario pauses after success so you can finish or continue the other path. Each scenario presets at most one recoverable fault; combined multi-fault recovery is outside this example.
 

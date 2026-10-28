@@ -101,7 +101,16 @@ Investigation uses a diamond, Investigation Action an upright trapezoid, Conclus
 Remediation an inverted trapezoid, Jump an ellipse, Problem Solved a triangle, and Escalation a
 five-point star. Deep Diagnosis keeps its existing shape.
 
-Only investigations show human judgment settings. Action nodes retain interface binding with
+Only investigations show Yes/No judgment settings. Investigation Action and Remediation offer
+`automatic`, `manual` and `confirm` action modes: automatic calls Python and continues; manual
+waits for human completion without calling Python, even when an old binding is retained; confirm
+calls Python once and then waits for human verification. Without an explicit mode, a bound action
+is automatic and an unbound action is manual. **OK** continues; **Not OK** records the result and
+current context while keeping the same task pending, without rerunning Python or reaching Problem
+Solved. Complete the real action again and choose OK, or return to an earlier eligible node.
+Python exceptions remain task failures. Conclusions continue automatically to their successor.
+See the [manual action example](backend/examples/manual_action_project/README.md), which needs no
+Python project registration. Action interfaces use
 automatic signature-based parameters: exact workflow variable names, then unique fields in
 upstream results, then function defaults. Missing or ambiguous data produces an explicit error.
 No-argument functions and actions returning `None` are supported; no JSON entry is required.
