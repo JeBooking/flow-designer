@@ -30,13 +30,24 @@ the process; the official Python client 1.0.2 acquires jobs and reports completi
 
 ## Prepare once
 
-Requires Java 21, Maven 3.9+, Python 3.9+ and the existing Node.js/pnpm environment.
-From the repository root, install dependencies and build the local runtime:
+Requires JDK 21+, Python 3.9+ and the existing Node.js/pnpm environment.
+Maven 3.9+ must also be on PATH when the runtime JAR has not been built yet.
+From the repository root, install frontend dependencies:
 
 ```powershell
 pnpm install
-mvn -f flowable-runtime/pom.xml package
 ```
+
+When the local runtime JAR is missing, `pnpm dev` or `pnpm start` automatically runs Maven,
+downloads Java dependencies and creates `flowable-runtime/target/diagnostic-flowable-1.0.0.jar`.
+Build output appears in the terminal and `backend/.local/logs/flowable-build.log`.
+Restart after a failed or interrupted build to retry. An existing JAR needs no Maven or rebuild.
+An explicit external `FLOWABLE_URL` or a validated existing engine skips the local build.
+Missing or incompatible tools produce PATH/JAVA_HOME guidance; JDK/Maven themselves are not installed.
+
+Project configuration disables pnpm's implicit install before scripts. Run `pnpm install` on
+first setup or after frontend dependency changes. `pnpm-workspace.yaml` explicitly allows the
+listed frontend installation scripts rather than leaving placeholder values.
 
 On the first `pnpm dev` or `pnpm start`, the launcher creates `backend/.local/venv`
 and installs platform dependencies from `backend/requirements-flowable.txt`. Later starts
@@ -54,8 +65,8 @@ base interpreter. Unusable environments after migration are backed up to
 environment as portable; update registered business paths and interpreters for the new machine.
 
 Install business dependencies in the interpreter registered for that project. The launcher
-does not install business dependencies, download Python/Java, install frontend dependencies
-or build the Java jar. Reusing a validated Python backend skips local Python setup.
+does not install business dependencies, download Python/Java or install frontend dependencies.
+Reusing a validated Python backend skips local Python setup.
 Rebuild the jar after Java runtime changes, then restart the owned services.
 
 The local runtime binds to `127.0.0.1:8080` with `diagnostic / local-demo` and stores its H2

@@ -1,0 +1,7 @@
+# 启动时不隐式安装前端依赖，首次准备或依赖变更后显式运行 pnpm install。
+verifyDepsBeforeRun: false
+
+allowBuilds:
+  '@parcel/watcher': true
+  esbuild: true
+  vue-demi: true

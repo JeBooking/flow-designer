@@ -12,14 +12,15 @@
 
 ## 2. 首次准备与每次启动
 
-首次需要 Java 21、Maven 3.9、Python 3.9+、Node 和 pnpm。在仓库根目录准备：
+首次需要 JDK 21+、Python 3.9+、Node 和 pnpm；缺少引擎 JAR 时还需在 PATH 中提供 Maven 3.9+。在仓库根目录准备：
 
 ```powershell
 pnpm install
-mvn -f flowable-runtime/pom.xml package
 ```
 
-这一步构建 `flowable-runtime/target/diagnostic-flowable-1.0.0.jar`。首次启动时，启动器自动创建 `backend/.local/venv` 并按依赖清单安装官方 `flowable.external-worker-client==1.0.2` 及其依赖。后续检查版本、导入和依赖完整性，已就绪时不重复安装。安装需要访问 Python 软件源，支持代理和 `PIP_INDEX_URL`；安装失败会显示错误并保留日志，解决后重新启动即可。业务依赖仍应单独装在业务项目解释器中。启动器不会下载 Java 或 Python，也不会构建 Java JAR 或安装前端依赖。当前 Flowable 客户端要求平台使用 Python 3.9+，不能只去掉版本检查来支持 3.7。
+首次启动时，缺少 `flowable-runtime/target/diagnostic-flowable-1.0.0.jar` 会自动通过 Maven 构建，显示下载与构建进度，日志在 `backend/.local/logs/flowable-build.log`；失败或中断后重新启动可重试。已有 JAR、复用健康引擎或连接指定外部引擎时跳过构建。Java 引擎源码更新后仍需手动重新构建 JAR 并重启。
+
+启动器还会自动创建 `backend/.local/venv` 并按依赖清单安装官方 `flowable.external-worker-client==1.0.2` 及其依赖。后续检查版本、导入和依赖完整性，已就绪时不重复安装。安装需要访问 Python 软件源，支持代理和 `PIP_INDEX_URL`；安装失败会显示错误并保留日志，解决后重新启动即可。业务依赖仍应单独装在业务项目解释器中。启动器不会下载 JDK、Maven 或 Python 本身，也不安装前端依赖。项目已关闭 pnpm 启动前的隐式安装，首次或前端依赖变更后显式运行 `pnpm install`。当前 Flowable 客户端要求平台使用 Python 3.9+，不能只去掉版本检查来支持 3.7。
 
 每次运行只需：
 

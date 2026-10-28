@@ -26,13 +26,22 @@ Flowable 7.1.0 负责调度；官方 `flowable.external-worker-client==1.0.2` �
 
 ## 首次准备
 
-需要 Java 21、Maven 3.9+、Python 3.9+ 和项目原有的 Node.js/pnpm 环境。
-在仓库根目录安装依赖并构建本地引擎：
+需要 JDK 21+、Python 3.9+ 和项目原有的 Node.js/pnpm 环境。
+首次没有引擎 JAR 时还需在 PATH 中提供 Maven 3.9+。在仓库根目录安装前端依赖：
 
 ```powershell
 pnpm install
-mvn -f flowable-runtime/pom.xml package
 ```
+
+`pnpm dev` 或 `pnpm start` 检测到缺少本地引擎 JAR 时，会自动执行 Maven 构建，
+下载所需 Java 依赖并生成 `flowable-runtime/target/diagnostic-flowable-1.0.0.jar`。
+构建过程显示在终端，日志为 `backend/.local/logs/flowable-build.log`。
+构建失败或中断后重新启动即可重试；已有 JAR 时无需 Maven，也不会每次重新构建。
+配置外部 `FLOWABLE_URL` 或复用已通过检查的引擎时不构建本地引擎。
+缺少工具或版本不符合时，会明确提示检查 PATH/JAVA_HOME；启动器不安装 JDK/Maven 本身。
+
+项目配置关闭了 pnpm 启动前的隐式依赖安装，首次准备或前端依赖变更后运行 `pnpm install`。
+`pnpm-workspace.yaml` 中明确允许所列前端依赖的安装脚本，不使用未填写的占位值。
 
 首次运行 `pnpm dev` 或 `pnpm start` 时，启动器自动创建 `backend/.local/venv`，
 并按 `backend/requirements-flowable.txt` 安装平台依赖。后续启动检查版本、导入和依赖完整性，
@@ -47,7 +56,7 @@ mvn -f flowable-runtime/pom.xml package
 不要把旧机器的虚拟环境当作可移植运行环境；业务工程的路径与解释器也须适配新机器。
 
 业务依赖仍安装在该工程登记的解释器环境，启动器不自动安装业务依赖、下载 Python/Java、
-安装前端依赖或构建 Java jar。复用已通过检查的 Python 后端时，跳过本地 Python 环境准备。
+安装前端依赖。复用已通过检查的 Python 后端时，跳过本地 Python 环境准备。
 Java 引擎代码升级后需重新构建 jar，再重启自有服务。
 
 本地引擎默认监听 `127.0.0.1:8080`，认证为 `diagnostic / local-demo`，H2 数据库保存在

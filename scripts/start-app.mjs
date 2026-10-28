@@ -140,8 +140,13 @@ function shutdown(code) {
 process.on('SIGINT', () => void shutdown(130))
 process.on('SIGTERM', () => void shutdown(143))
 
-async function checkCommand(name, command, args, { timeout = 15000, echo = true } = {}) {
-  const entry = launch(name, command, args, { essential: false, echo })
+async function checkCommand(
+  name,
+  command,
+  args,
+  { timeout = 15000, echo = true, cwd = root } = {},
+) {
+  const entry = launch(name, command, args, { essential: false, echo, cwd })
   let output = ''
   // 静默检查仍写日志；需要返回值的命令才通过管道收集输出。
   entry.child.stdout?.on('data', (chunk) => (output += chunk))
@@ -151,7 +156,7 @@ async function checkCommand(name, command, args, { timeout = 15000, echo = true 
     let timeoutError
     const timer = setTimeout(() => {
       timeoutError = new Error(`命令执行超时 / Command timed out: ${entry.logPath}`)
-      // 先停止安装进程再释放环境锁，避免下次启动与未结束的 pip 同时写入。
+      // 先停止准备进程再释放锁，避免下次启动与未结束的安装或构建同时写入。
       void terminate(entry).then(() => finish(timeoutError))
     }, timeout)
     const finish = (error) => {
@@ -241,7 +246,7 @@ async function pythonCommand() {
   const local = join(directory, windows ? 'Scripts/python.exe' : 'bin/python')
   const requirements = join(root, 'backend', 'requirements-flowable.txt')
   requireFile(requirements, '请恢复 Python 依赖清单 / Restore backend/requirements-flowable.txt')
-  const release = acquirePythonSetupLock()
+  const release = acquireSetupLock('python', 'Python')
   try {
     let usable = false
     if (existsSync(local)) {
@@ -335,8 +340,8 @@ async function pythonCommand() {
   }
 }
 
-function acquirePythonSetupLock() {
-  const path = join(root, 'backend', '.local', 'python-setup.lock')
+function acquireSetupLock(name, label) {
+  const path = join(root, 'backend', '.local', `${name}-setup.lock`)
   try {
     const owner = JSON.parse(readFileSync(path, 'utf8'))
     if (!Number.isInteger(owner.pid) || owner.pid <= 0) throw new Error('Invalid setup lock')
@@ -349,8 +354,8 @@ function acquirePythonSetupLock() {
   } catch (error) {
     if (error.code !== 'ENOENT') {
       throw new Error(
-        `无法读取 Python 环境准备锁，请确认没有其他安装进程后移除此文件 / ` +
-          `Cannot read Python setup lock; remove this file only after confirming no other setup is running.\n${path}\n${error.message}`,
+        `无法读取 ${label} 准备锁，请确认没有其他准备进程后移除此文件 / ` +
+          `Cannot read ${label} setup lock; remove this file only after confirming no other setup is running.\n${path}\n${error.message}`,
       )
     }
   }
@@ -360,8 +365,8 @@ function acquirePythonSetupLock() {
   } catch (error) {
     if (error.code !== 'EEXIST') throw error
     throw new Error(
-      `另一个启动器正在准备 Python 环境，请等待其完成 / ` +
-        `Another launcher is preparing Python; wait for it to finish.\n${path}`,
+      `另一个启动器正在准备 ${label}，请等待其完成 / ` +
+        `Another launcher is preparing ${label}; wait for it to finish.\n${path}`,
     )
   }
   try {
@@ -424,6 +429,65 @@ async function findPython() {
   )
 }
 
+async function prepareFlowableJar(jar) {
+  const pending = join(root, 'backend', '.local', 'flowable-build.pending')
+  if (existsSync(jar) && !existsSync(pending)) return
+  const release = acquireSetupLock('flowable', 'Flowable')
+  try {
+    if (existsSync(jar) && !existsSync(pending)) return
+    const cwd = join(root, 'flowable-runtime')
+    requireFile(join(cwd, 'pom.xml'), '请恢复引擎源码 / Restore flowable-runtime sources')
+    // Windows 的 Maven 入口是批处理；只把固定命令交给 cmd，项目路径通过 cwd 传递。
+    const command = windows ? process.env.ComSpec || 'cmd.exe' : 'mvn'
+    const args = (build) =>
+      windows
+        ? ['/d', '/s', '/c', build ? 'mvn.cmd -B -ntp -DskipTests package' : 'mvn.cmd -version']
+        : build
+          ? ['-B', '-ntp', '-DskipTests', 'package']
+          : ['-version']
+    try {
+      const output = await checkCommand('maven-check', command, args(false), { cwd })
+      const version = /Apache Maven (\d+)\.(\d+)/.exec(output)
+      const javaVersion = /Java version:\s*(\d+)/i.exec(output)
+      if (
+        !version ||
+        !(Number(version[1]) > 3 || (Number(version[1]) === 3 && Number(version[2]) >= 9)) ||
+        !javaVersion ||
+        Number(javaVersion[1]) < 21
+      ) {
+        throw new Error('Maven 3.9+ running on JDK 21+ required')
+      }
+    } catch (error) {
+      throw new Error(
+        `首次构建 Flowable 需要 Maven 3.9+ 和 JDK 21+，请检查 PATH/JAVA_HOME / ` +
+          `First Flowable build requires Maven 3.9+ on JDK 21+; check PATH/JAVA_HOME.\n${error.message}`,
+      )
+    }
+    log(
+      '首次准备：正在构建 Flowable 引擎，可能下载 Java 依赖，请稍候 / ' +
+        'First setup: building Flowable; Java dependencies may be downloaded, please wait...',
+    )
+    // 强制退出时可能来不及清理 JAR；标记让下次启动重试，而不复用中断的打包产物。
+    writeFileSync(pending, String(process.pid))
+    try {
+      await checkCommand('flowable-build', command, args(true), { cwd, timeout: 900000 })
+      requireFile(jar, '构建未生成可执行引擎 / Build did not produce the runtime JAR')
+      unlinkSync(pending)
+    } catch (error) {
+      assertRunning()
+      // Maven 可能在打包中途失败；保留失败产物，避免下次误把普通或不完整 JAR 当成可执行引擎。
+      if (existsSync(jar)) renameSync(jar, `${jar}.failed-${Date.now()}`)
+      throw new Error(
+        `Flowable 自动构建失败，请检查上方错误、Maven 软件源和网络后重试 / ` +
+          `Automatic Flowable build failed; check the output, Maven repositories and network, then retry.\n${error.message}`,
+      )
+    }
+    log(`Flowable 引擎已准备好 / Flowable runtime ready: ${jar}`)
+  } finally {
+    release()
+  }
+}
+
 function normalizedEngineUrl(value) {
   return new URL(value).href.replace(/\/+$/, '')
 }
@@ -483,10 +547,6 @@ async function main() {
   let java
   const jar = join(root, 'flowable-runtime', 'target', 'diagnostic-flowable-1.0.0.jar')
   if (!engine.healthy && !explicitFlowable) {
-    requireFile(
-      jar,
-      '首次准备 / Prepare once: cd flowable-runtime, then mvn package (Java 21, Maven 3.9+)',
-    )
     java = process.env.JAVA_HOME
       ? join(process.env.JAVA_HOME, 'bin', windows ? 'java.exe' : 'java')
       : 'java'
@@ -499,6 +559,7 @@ async function main() {
         `需要 Java 21+，请检查 JAVA_HOME/PATH / Java 21+ required; check JAVA_HOME/PATH.\n${join(logDirectory, 'java-check.log')}`,
       )
     }
+    await prepareFlowableJar(jar)
   }
   const python = backend.healthy ? null : await pythonCommand()
   if (engine.healthy) log('复用已认证 Flowable / Reusing authenticated Flowable')
