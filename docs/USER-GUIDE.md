@@ -12,13 +12,13 @@ The diagram defines dependencies and diagnostic paths. Python interfaces perform
 
 ## 2. Prepare once, then start each run
 
-Prepare JDK 21+, Python 3.9+, Node and pnpm. If the runtime JAR is missing, Maven 3.9+ must also be on PATH. From the repository root:
+Prepare JDK 17+, Python 3.9+, Node and pnpm. If the runtime JAR is missing, Maven 3.9+ must also be on PATH. From the repository root:
 
 ```powershell
 pnpm install
 ```
 
-At startup, a missing `flowable-runtime/target/diagnostic-flowable-1.0.0.jar` is built automatically using Maven. Download and build progress appear in the terminal and `backend/.local/logs/flowable-build.log`; restart after failure or interruption to retry. An existing JAR, a validated healthy engine or an explicitly configured external engine skips the build. Java source updates still require a manual rebuild and restart.
+At startup, a missing `flowable-runtime/target/diagnostic-flowable-1.0.0.jar` is built automatically using Maven. Download and build progress appear in the terminal and `backend/.local/logs/flowable-build.log`; restart after failure or interruption to retry. Compilation targets Java 17. Updating `pom.xml` triggers a clean rebuild to replace old Java 21 bytecode. An existing JAR with unchanged build configuration, a validated healthy engine or an explicitly configured external engine skips the build. Java source changes alone still require a manual rebuild and restart.
 
 The launcher also creates `backend/.local/venv` and installs the official `flowable.external-worker-client==1.0.2` and its dependencies from the requirements file. Later starts check versions, imports and dependency consistency without reinstalling a ready environment. Installation requires Python package index access and respects proxy and `PIP_INDEX_URL` settings. Failures display errors and retain logs; fix the cause and restart to retry. Install business dependencies separately in the registered business interpreter. The launcher does not download JDK/Maven/Python themselves or install frontend dependencies. Project settings disable pnpm's implicit install before scripts; explicitly run `pnpm install` on first setup or after frontend dependency changes. The current Flowable client requires platform Python 3.9+; removing the version check does not add 3.7 support.
 

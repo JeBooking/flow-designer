@@ -26,7 +26,7 @@ Flowable 7.1.0 负责调度；官方 `flowable.external-worker-client==1.0.2` �
 
 ## 首次准备
 
-需要 JDK 21+、Python 3.9+ 和项目原有的 Node.js/pnpm 环境。
+需要 JDK 17+、Python 3.9+ 和项目原有的 Node.js/pnpm 环境。
 首次没有引擎 JAR 时还需在 PATH 中提供 Maven 3.9+。在仓库根目录安装前端依赖：
 
 ```powershell
@@ -36,7 +36,9 @@ pnpm install
 `pnpm dev` 或 `pnpm start` 检测到缺少本地引擎 JAR 时，会自动执行 Maven 构建，
 下载所需 Java 依赖并生成 `flowable-runtime/target/diagnostic-flowable-1.0.0.jar`。
 构建过程显示在终端，日志为 `backend/.local/logs/flowable-build.log`。
-构建失败或中断后重新启动即可重试；已有 JAR 时无需 Maven，也不会每次重新构建。
+编译目标为 Java 17，使用较新 JDK 构建时也保持 Java 17 兼容。
+构建失败或中断后重新启动即可重试；已有 JAR 且构建配置未更新时无需 Maven，也不会每次重新构建。
+更新 `pom.xml` 后会自动清理旧编译产物并重新构建，避免复用旧的 Java 21 字节码。
 配置外部 `FLOWABLE_URL` 或复用已通过检查的引擎时不构建本地引擎。
 缺少工具或版本不符合时，会明确提示检查 PATH/JAVA_HOME；启动器不安装 JDK/Maven 本身。
 

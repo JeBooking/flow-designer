@@ -6,9 +6,9 @@ for drawing, binding, execution, human review and offline exports.
 ## 启动与登记 / Start and register
 
 先按[首次准备](FLOWABLE.zh-CN.md#首次准备) / [prepare once](FLOWABLE.md#prepare-once)
-安装 pnpm 依赖、准备 Python 3.9+ 与 JDK 21+；缺少引擎 JAR 时，启动器会用 Maven 3.9+ 自动构建。
+安装 pnpm 依赖、准备 Python 3.9+ 与 JDK 17+；缺少引擎 JAR 时，启动器会用 Maven 3.9+ 自动构建。
 启动器自动创建项目专用 Python 环境并安装平台依赖，就绪后直接复用；业务依赖仍由业务工程管理。
-准备好后在仓库根目录运行 / Prepare pnpm dependencies, Python 3.9+ and JDK 21+ first.
+准备好后在仓库根目录运行 / Prepare pnpm dependencies, Python 3.9+ and JDK 17+ first.
 If the runtime JAR is missing, the launcher builds it automatically using Maven 3.9+ on PATH.
 The launcher creates a project Python environment and installs platform dependencies automatically,
 then reuses it when ready. Business dependencies remain managed by the business project.

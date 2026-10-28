@@ -9,6 +9,7 @@ import {
   writeFileSync,
   renameSync,
   unlinkSync,
+  statSync,
 } from 'node:fs'
 import { createConnection } from 'node:net'
 import { dirname, join } from 'node:path'
@@ -431,19 +432,30 @@ async function findPython() {
 
 async function prepareFlowableJar(jar) {
   const pending = join(root, 'backend', '.local', 'flowable-build.pending')
-  if (existsSync(jar) && !existsSync(pending)) return
+  const pom = join(root, 'flowable-runtime', 'pom.xml')
+  // 编译目标改变后不能复用旧字节码；Git 更新构建配置后自动重建一次。
+  const ready = () =>
+    existsSync(jar) &&
+    !existsSync(pending) &&
+    (!existsSync(pom) || statSync(jar).mtimeMs >= statSync(pom).mtimeMs)
+  if (ready()) return
   const release = acquireSetupLock('flowable', 'Flowable')
   try {
-    if (existsSync(jar) && !existsSync(pending)) return
+    if (ready()) return
     const cwd = join(root, 'flowable-runtime')
-    requireFile(join(cwd, 'pom.xml'), '请恢复引擎源码 / Restore flowable-runtime sources')
+    requireFile(pom, '请恢复引擎源码 / Restore flowable-runtime sources')
     // Windows 的 Maven 入口是批处理；只把固定命令交给 cmd，项目路径通过 cwd 传递。
     const command = windows ? process.env.ComSpec || 'cmd.exe' : 'mvn'
     const args = (build) =>
       windows
-        ? ['/d', '/s', '/c', build ? 'mvn.cmd -B -ntp -DskipTests package' : 'mvn.cmd -version']
+        ? [
+            '/d',
+            '/s',
+            '/c',
+            build ? 'mvn.cmd -B -ntp -DskipTests clean package' : 'mvn.cmd -version',
+          ]
         : build
-          ? ['-B', '-ntp', '-DskipTests', 'package']
+          ? ['-B', '-ntp', '-DskipTests', 'clean', 'package']
           : ['-version']
     try {
       const output = await checkCommand('maven-check', command, args(false), { cwd })
@@ -453,19 +465,19 @@ async function prepareFlowableJar(jar) {
         !version ||
         !(Number(version[1]) > 3 || (Number(version[1]) === 3 && Number(version[2]) >= 9)) ||
         !javaVersion ||
-        Number(javaVersion[1]) < 21
+        Number(javaVersion[1]) < 17
       ) {
-        throw new Error('Maven 3.9+ running on JDK 21+ required')
+        throw new Error('Maven 3.9+ running on JDK 17+ required')
       }
     } catch (error) {
       throw new Error(
-        `首次构建 Flowable 需要 Maven 3.9+ 和 JDK 21+，请检查 PATH/JAVA_HOME / ` +
-          `First Flowable build requires Maven 3.9+ on JDK 21+; check PATH/JAVA_HOME.\n${error.message}`,
+        `构建 Flowable 需要 Maven 3.9+ 和 JDK 17+，请检查 PATH/JAVA_HOME / ` +
+          `Building Flowable requires Maven 3.9+ on JDK 17+; check PATH/JAVA_HOME.\n${error.message}`,
       )
     }
     log(
-      '首次准备：正在构建 Flowable 引擎，可能下载 Java 依赖，请稍候 / ' +
-        'First setup: building Flowable; Java dependencies may be downloaded, please wait...',
+      '正在准备 Flowable 引擎，可能下载 Java 依赖，请稍候 / ' +
+        'Preparing Flowable; Java dependencies may be downloaded, please wait...',
     )
     // 强制退出时可能来不及清理 JAR；标记让下次启动重试，而不复用中断的打包产物。
     writeFileSync(pending, String(process.pid))
@@ -553,10 +565,10 @@ async function main() {
     try {
       const version = await checkCommand('java-check', java, ['-version'])
       const major = Number(/version\s+"(\d+)/i.exec(version)?.[1])
-      if (!Number.isInteger(major) || major < 21) throw new Error('Java 21+ required')
+      if (!Number.isInteger(major) || major < 17) throw new Error('Java 17+ required')
     } catch {
       throw new Error(
-        `需要 Java 21+，请检查 JAVA_HOME/PATH / Java 21+ required; check JAVA_HOME/PATH.\n${join(logDirectory, 'java-check.log')}`,
+        `需要 Java 17+，请检查 JAVA_HOME/PATH / Java 17+ required; check JAVA_HOME/PATH.\n${join(logDirectory, 'java-check.log')}`,
       )
     }
     await prepareFlowableJar(jar)

@@ -20,7 +20,7 @@ def rebuild(source, output):
                 if name.startswith('BOOT-INF/lib/') and name.endswith('.jar'):
                     (libraries / Path(name).name).write_bytes(archive.read(name))
         sources = sorted((ROOT / 'flowable-runtime/src/main/java').rglob('*.java'))
-        subprocess.run(['javac', '-parameters', '-encoding', 'UTF-8', '-cp', str(libraries / '*'),
+        subprocess.run(['javac', '--release', '17', '-parameters', '-encoding', 'UTF-8', '-cp', str(libraries / '*'),
                         '-d', str(classes), *map(str, sources)], check=True)
         packaged = directory / 'diagnostic-flowable.jar'
         resources = {

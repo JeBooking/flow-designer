@@ -30,7 +30,7 @@ the process; the official Python client 1.0.2 acquires jobs and reports completi
 
 ## Prepare once
 
-Requires JDK 21+, Python 3.9+ and the existing Node.js/pnpm environment.
+Requires JDK 17+, Python 3.9+ and the existing Node.js/pnpm environment.
 Maven 3.9+ must also be on PATH when the runtime JAR has not been built yet.
 From the repository root, install frontend dependencies:
 
@@ -41,7 +41,10 @@ pnpm install
 When the local runtime JAR is missing, `pnpm dev` or `pnpm start` automatically runs Maven,
 downloads Java dependencies and creates `flowable-runtime/target/diagnostic-flowable-1.0.0.jar`.
 Build output appears in the terminal and `backend/.local/logs/flowable-build.log`.
-Restart after a failed or interrupted build to retry. An existing JAR needs no Maven or rebuild.
+The compilation target is Java 17, including builds performed with a newer JDK.
+Restart after a failed or interrupted build to retry. An existing JAR with unchanged build
+configuration needs no Maven or rebuild. Updating `pom.xml` triggers a clean rebuild so old
+Java 21 bytecode is not reused.
 An explicit external `FLOWABLE_URL` or a validated existing engine skips the local build.
 Missing or incompatible tools produce PATH/JAVA_HOME guidance; JDK/Maven themselves are not installed.
 
