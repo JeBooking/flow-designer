@@ -1,0 +1,38 @@
+name: Publish offline trial
+
+on:
+  push:
+    branches:
+      - offline-trial-20261029-516c29e
+
+permissions:
+  contents: write
+
+concurrency:
+  group: offline-trial-release-20261029-v2
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Verify and publish the approved offline package
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: offline-trial-20261029-v2
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd downloads
+          sha256sum --check vue-bpmn-designer-offline-20261029-v2.zip.sha256
+          if ! gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" \
+              vue-bpmn-designer-offline-20261029-v2.zip \
+              vue-bpmn-designer-offline-20261029-v2.zip.sha256 \
+              --target "$GITHUB_SHA" \
+              --prerelease \
+              --title 'Windows 内网离线试用包 V2 / Offline trial V2' \
+              --notes '下载 V2 ZIP，完整解压到新的空文件夹，然后双击 start.cmd。需要 Node.js 22、Python 3.9+ 和 Java 17 或更高版本，无需 Maven 或 pnpm install。包含前端、Python 后端、Java 引擎及离线 Python 依赖；本试用包绝不调用 Maven。业务工程依赖仍由业务工程提供。Download the V2 ZIP, extract into a new empty folder, and run start.cmd. Requires Node.js 22, Python 3.9+ and Java 17 or later. No Maven or pnpm install required.'
+          fi
