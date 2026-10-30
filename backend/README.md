@@ -6,9 +6,9 @@ for drawing, binding, execution, human review and offline exports.
 ## 启动与登记 / Start and register
 
 先按[首次准备](FLOWABLE.zh-CN.md#首次准备) / [prepare once](FLOWABLE.md#prepare-once)
-安装 pnpm 依赖、准备 Python 3.9+ 与 JDK 17+；缺少引擎 JAR 时，启动器会用 Maven 3.8.8+ 自动构建。
+安装 pnpm 依赖、准备 Python 3.9+ 与 Java 17+；可使用匹配的预构建 JAR，或提供 JDK 17+、Maven 3.8.8+ 由启动器构建。
 启动器自动创建项目专用 Python 环境并安装平台依赖，就绪后直接复用；业务依赖仍由业务工程管理。
-准备好后在仓库根目录运行 / Prepare pnpm dependencies, Python 3.9+ and JDK 17+ first.
+准备好后在仓库根目录运行 / Prepare pnpm dependencies, Python 3.9+ and Java 17+ with a matching prebuilt runtime, or JDK/Maven for source builds.
 If the runtime JAR is missing, the launcher builds it automatically using Maven 3.8.8+ on PATH.
 The launcher creates a project Python environment and installs platform dependencies automatically,
 then reuses it when ready. Business dependencies remain managed by the business project.
@@ -103,14 +103,13 @@ the form. Ordinary method arguments match upstream results automatically.
 结果自动轮询，真实画布节点高亮。结果卡片、数组表格展示返回值，返回 `chartSvg` 时显示图表；
 原始详情默认折叠，失败时可展开查看 Python traceback。关闭抽屉后继续监控当前实例并更新画布提示，
 直到流程结束，结束后保留已完成节点的提示；改图或导入图会隐藏旧实例的画布提示。
-浏览器刷新或 Modeler 重建不会恢复监控。死信失败可确认重新执行，但旧实例不取消，动作可能重复。
+浏览器刷新或 Modeler 重建会恢复最近监控的实例，也可按实例 ID 手动接回；画布关联先核对执行定义。死信失败可确认重新执行，但旧实例不取消，动作可能重复。
 
 Results update automatically with actual canvas-node highlights, result cards and array tables.
 A returned `chartSvg` displays a chart; raw details stay collapsed and can expose a Python traceback.
 Closing the drawer keeps monitoring the current instance and updating its canvas prompts until the
 process ends; completed-node prompts remain available afterward. Editing or importing a diagram hides
-canvas prompts for the previous instance. Refreshing the browser or recreating the Modeler does not
-restore monitoring. Confirmed reruns after dead-letter failure create a new instance without
+canvas prompts for the previous instance. Refreshing the browser or recreating the Modeler restores the latest monitor; another instance ID can reconnect it manually. Confirmed reruns after dead-letter failure create a new instance without
 canceling the old one and may repeat actions.
 
 人工待办自动从节点展开浮动窗口，曲线连接节点，完成后收回；各任务独立保留输入和错误。
@@ -149,24 +148,23 @@ Service logs are under `backend/.local/logs/`; managed worker logs are under
 `backend/.local/executions/<hash>/<uuid>.log`. Exiting the launcher stops only owned services
 and their workers; reused/external services remain running. Equipment actions are not undone.
 
-同一流程的同一工程常驻一个隔离子进程，创建一次工厂实例；普通函数也保留模块全局状态。
+同一流程的同一工程共享隔离会话，工厂实例只创建一次；普通函数也保留模块全局状态。声明检查点后可在人工等待时释放解释器。
 不同流程完全隔离，不同工程间不能直接传递原生对象引用。原始节点结果留在会话，按签名从
 启动变量及唯一同名结果自动匹配；节点 ID 同名参数可取得完整原对象。支持默认值、位置专用
 参数、异步和返回 `None` 的动作。排查返回明确是/否，不能将任意对象真假性用作路由。
 
 Flowable owns scheduling, branch selection, human waits and history. Python owns
 native objects and raw results; Flowable stores display projections. A project uses
-one persistent isolated subprocess per workflow. Ordinary functions keep module globals.
+one isolated session per workflow, with checkpoint-based idle release when supported. Ordinary functions keep module globals.
 Native references cannot cross project subprocesses. Parallel methods sharing an
 instance require business code to manage thread safety. Finished workflow sessions
 are released after the worker observes completion; failed sessions remain for inspection.
 
-没有自动检查点。worker 或子进程重启后，旧流程继续时明确报告会话丢失，不会静默创建新实例。
+声明[检查点协议](../docs/RECOVERY.zh-CN.md)后，真实执行自动保存状态并支持 worker／后端重启恢复；安全的空闲解释器在人工等待时释放。不支持的对象、未完成动作或不兼容环境不会被静默恢复。
 人工回退在当前实例上重跑，不回滚内部状态或设备动作；历史显示不能恢复原始对象。
 离线骨架仍需工程师补业务，不会自动调用流程图上的 binding。
 
-There is no automatic checkpoint/recovery. Restarted workers report a lost session
-for affected workflows rather than silently rebuilding objects. Rechecks rerun methods
+The [checkpoint protocol](../docs/RECOVERY.md) enables automatic snapshots and worker/backend restart recovery, with idle interpreter release at human waits. Unsupported objects, incomplete actions and incompatible environments never trigger silent reconstruction. Rechecks rerun methods
 on current state, without undoing equipment operations. Exported offline scaffolds
 still require business implementation and do not automatically execute saved bindings.
 

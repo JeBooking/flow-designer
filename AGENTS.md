@@ -2,7 +2,7 @@
 
 ## 1. Project Scope and Stack
 
-This project is a client-side BPMN designer for Flowable. Its core features include process modeling, a properties panel, BPMN linting, token simulation, CodeMirror script editing, and English/Chinese localization.
+This project is a local diagnostic workflow platform: a Vue BPMN designer, a Python HTTP backend and worker coordinator, and a Java Flowable runtime. It supports modeling, properties, linting, token simulation, Python project integration, human reviews, execution history, and English/Chinese localization.
 
 - Vue 3.5, TypeScript, and Vite 6
 - Pinia 3 and `pinia-plugin-persistedstate`
@@ -10,24 +10,34 @@ This project is a client-side BPMN designer for Flowable. Its core features incl
 - `bpmn-js`, `diagram-js`, `bpmnlint`, and related plugins
 - CodeMirror 6
 - `vue-i18n` and VueUse
+- Python 3.9+ and the official Flowable external-worker client
+- Java 17+ and Flowable 7.1; Maven 3.8.8+ for building the runtime
 - Use `pnpm` exclusively. Do not use `npm` or `yarn`.
 
-The project currently has no routing layer, server API layer, or automated test suite. Do not scaffold them without an explicit requirement.
+There is no frontend routing layer or separate test framework. The backend API and automated `scripts/verify-*` regression scripts already exist; reuse them instead of scaffolding replacement infrastructure.
+
+Parallel execution uses Flowable gateways and independent tokens. Serial execution uses the persistent queue in `DiagnosisScheduler`. Flowable persists waits, variables and history; Python sessions retain native objects in memory. Declared business checkpoints preserve native state, release idle interpreters at human waits, and restore compatible sessions after worker/backend restarts. Unsupported or uncertain state must fail closed; see docs/RECOVERY.md.
 
 ## 2. Commands
 
 ```bash
-pnpm dev          # Start the development server
+pnpm dev          # Prepare/reuse Java and Python services, then start the frontend
+pnpm dev:frontend # Start only the frontend
 pnpm type-check   # Run Vue and TypeScript checks
 pnpm build-only   # Run the Vite production build
 pnpm build        # Run type checking and the production build
+pnpm verify       # Run all regression scripts with isolated verification engines
+pnpm verify --group unit   # Run scripts that do not require Java
+pnpm verify --group engine # Run real-engine regression scripts
 pnpm lint         # Run ESLint with automatic fixes; modifies files
 pnpm format       # Format all files under src; modifies files
 ```
 
 - Run checks proportional to the change. For build, configuration, or cross-module changes, run both `pnpm type-check` and `pnpm build-only`.
 - `lint` and `format` write to many files. If the worktree contains unrelated changes, run ESLint or Prettier only on files changed by the current task.
-- There is no `test` script. Never claim that tests passed; report the checks that actually ran and any remaining failures.
+- There is no `test` script. `pnpm verify` discovers every `scripts/verify-*.py` and `scripts/verify-*.mjs`; classify new real-engine scripts in `scripts/verify.py`. The runner uses the prepared backend interpreter (or `PYTHON`/`--python`), random local ports and temporary databases. Logs are under `backend/.local/verification/`.
+- Rebuild Java changes before engine verification: `mvn -B -ntp -f flowable-runtime/pom.xml -DskipTests package`. When dependencies are unavailable but an existing executable JAR is present, `python scripts/rebuild-flowable-local.py` compiles current sources against its bundled dependencies without downloading replacements.
+- GitHub Actions runs frontend checks and all regression scripts on Windows, including the mocked Windows reference-file launcher checks. Report the commands actually run and any remaining failures.
 
 ## 3. Directory Responsibilities
 
@@ -42,6 +52,15 @@ pnpm format       # Format all files under src; modifies files
 - `src/languages/`: UI and bpmn-js localization resources.
 - `src/stores/`: Pinia Setup Stores and persisted-state plugin registration.
 - `src/types/`: business types and supplemental third-party declarations.
+- `src/rules/diagnosis-connections.json`: the single connection-rule table used by the frontend and Python compiler. `generic` preserves ordinary BPMN modeling boundaries; the runtime compiler still rejects unsupported executable constructs.
+- `backend/server.py`: local HTTP API, historical execution projection and project registration.
+- `backend/flowable_bridge.py`: diagnostic compilation and Flowable REST access.
+- `backend/execution_manager.py`, `flowable_worker.py`, `python_sessions.py`, `python_runtime.py`: worker recovery, native sessions and display projections. `session_checkpoint.py` implements the explicit state codec and atomic checkpoint store; do not substitute display projections or replay old actions.
+- `backend/execution_history.py` and `ExecutionHistoryController.java`: revision-based historical projections, cursor resets and bounded caches. The frontend merges updates/removals in `Execution/history.ts`.
+- `src/stores/modules/execution.ts`: persisted monitor IDs only; do not persist business snapshots in browser storage.
+- `scripts/runtime-manifest.mjs`: source/JAR identity for prebuilt artifacts; building Java sources must refresh the manifest.
+- `flowable-runtime/src/main/java/local/diagnosis/`: persistent scheduling and transactional human reviews.
+- `scripts/verify.py`, `scripts/verify-*`: unified verification runner and regression cases; old example migration checks must explicitly reject unsupported legacy branch definitions.
 - `src/typings/auto-imports.d.ts` and `src/typings/components.d.ts`: generated files; never maintain them manually.
 
 Use the `@/` alias for internal modules instead of adding deep relative imports.
@@ -77,6 +96,10 @@ Use the `@/` alias for internal modules instead of adding deep relative imports.
 - Use the `flowable:` prefix for Flowable extensions and `bpmn:` for standard BPMN elements. Do not introduce the `camunda:` prefix.
 - When changing a Flowable extension structure, check `flowable.json`, `src/types`, XML serialization, and the properties panel together.
 - Complex model operations require comments that explain why the command, parent relationship, or boundary handling is necessary. Do not write comments that merely restate the code.
+- Keep an entire human review in one Flowable command context as well as one Spring transaction. Separate engine calls can reload a newer variable revision while writing an older snapshot, silently losing audit records. On optimistic conflicts, roll back and return HTTP 409; never retry equipment actions automatically.
+- Read completed execution data through historical variables. Review endpoints use runtime variables only while an active task exists. Preserve legacy documentation metadata through `DiagnosticMetadata` when reading old deployments.
+- Checkpoints require explicit module stateless declarations/global-state hooks and synchronous native-object hooks. Capture only after concurrent calls finish, persist before acknowledging the job, and cache responses until acknowledgment. Never recover an in-flight/unsupported snapshot or silently accept changed source, dependencies or session identity.
+- Verify changes to monitoring with mutable activity completion, variable deletion, cursor expiry/backend restart, definition mismatch and stop-monitor behavior. Both launcher health checks and frontend protocol checks must reject obsolete execution APIs.
 
 ## 6. Localization Rules
 

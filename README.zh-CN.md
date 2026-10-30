@@ -160,7 +160,7 @@ pnpm format
 
 ## 接入已有 Python 工程
 
-首次准备 JDK 17+、Python 3.9+ 与前端依赖；没有 Flowable JAR 时还需提供 Maven 3.8.8+，启动器会自动构建，见[环境准备](backend/FLOWABLE.zh-CN.md)。启动器也会自动创建项目专用 Python 环境并安装平台依赖，后续就绪时直接复用；不会向系统 Python 中安装依赖。前端依赖首次或变更后使用 `pnpm install` 显式安装，启动时不隐式安装。业务依赖仍须预先装在业务解释器中。平台暂不支持 Python 3.7。
+首次准备 Java 17+、Python 3.9+ 与前端依赖；可使用匹配的预构建引擎，或提供 JDK 17+、Maven 3.8.8+ 由启动器自动构建，见[环境准备](backend/FLOWABLE.zh-CN.md)。启动器也会自动创建项目专用 Python 环境并安装平台依赖，后续就绪时直接复用；不会向系统 Python 中安装依赖。前端依赖首次或变更后使用 `pnpm install` 显式安装，启动时不隐式安装。业务依赖仍须预先装在业务解释器中。平台暂不支持 Python 3.7。
 
 以后只需在仓库根目录运行 `pnpm dev`，统一启动前端、本机后端与本地 Flowable。打开 `http://127.0.0.1:5173/vue-bpmn-designer/`，在 **Python 项目** 登记自己的工程目录、可导入模块、解释器及可选类或工厂。登记不复制源码或安装依赖。节点选择工程和接口，参数按签名自动匹配。
 
@@ -170,9 +170,9 @@ pnpm format
 
 新执行的节点历史逐次保留函数实际输入（含默认值）、实例初始化输入（配置工厂时）、返回的依据／结果、部署时的说明和参考文件、分支及错误。人工记录保留当时可用上下文、依据、参考和选择；该上下文与函数实际参数分别标记。重跑不会覆盖此前记录。旧实例或缺失字段显示“未记录”，不会补造快照。Python 局部中间变量需要通过返回结构或 `HumanDecisionRequest.data` 提供才能留存，例如人工处理示例中的 `voltage`、`threshold`、`unit` 判断依据。
 
-每个流程的同一工程使用独立常驻 Python 子进程，保留对象、实例状态与模块全局变量；Flowable 保存展示投影。worker 或业务进程重启会丢失会话，没有自动检查点。关闭执行抽屉后，仍继续监控当前实例并更新画布提示，直到流程结束；结束后保留已完成节点的提示。修改画布或导入流程图后，隐藏旧实例的画布提示。刷新页面或重建 modeler 不会恢复对该实例的监控。退出启动器停止自己启动的服务，不能撤销设备动作，复用服务不会被终止。
+每个流程的同一工程使用隔离 Python 会话，Flowable 保存执行进度和展示投影。声明[检查点协议](docs/RECOVERY.zh-CN.md)的工程会自动保存可恢复业务状态，在人工等待时释放空闲业务解释器，并在 worker／后端重启后恢复；不会静默重放结果不确定的动作，也不会恢复到不兼容的代码或环境。刷新或重建 modeler 后自动接回监控，也可按实例 ID 手动恢复。仅在执行定义一致时显示画布高亮。历史轮询只传输变化的值和活动记录，状态不变时逐步降低频率。退出启动器停止自己启动的服务，不能撤销设备动作，复用服务不会被终止。
 
-任务进入死信后，可点击 **重新执行当前流程**，确认后新建实例。这不会取消旧实例，也不会撤销已完成的动作，同一动作可能再次执行。旧实例 ID 保留在当前面板中，刷新页面或重建 modeler 前应自行记录。服务日志位于 `backend/.local/logs/`，worker 日志路径为 `backend/.local/executions/<内容哈希>/<启动UUID>.log`。
+任务进入死信后，可点击 **重新执行当前流程**，确认后新建实例。这不会取消旧实例，也不会撤销已完成的动作，同一动作可能再次执行。当前实例和最近十个实例 ID 会持久保存供恢复监控；停止监控不会取消实例。服务日志位于 `backend/.local/logs/`，worker 日志路径为 `backend/.local/executions/<内容哈希>/<启动UUID>.log`。
 
 已有生产构建时运行 `pnpm start`，访问 `http://127.0.0.1:8765/vue-bpmn-designer/`。仅前端开发可用 `pnpm dev:frontend`。详见[后端接入说明](backend/README.md)。
 
@@ -207,6 +207,24 @@ Python ZIP 包含同一份工作流 JSON、资源文件、代码骨架、示例�
 
 可运行 `pnpm exec node scripts/verify-code-export.mjs`，验证真实 Moddle 模型、ZIP 完整性和
 生成的 Python 工程行为。该检查需要 Python，可用 `PYTHON` 环境变量指定解释器。
+
+## 预构建引擎
+
+从相同源码提交的一次成功 Verification 运行下载 `diagnostic-flowable-runtime`，把 JAR 和配套 `.manifest.json` 解压到 `flowable-runtime/target/`。准备 Java 17+、Python 3.9+ 和前端依赖后，即可运行 `pnpm dev`，无需本机 Maven。启动器校验源码与 JAR 哈希，不受检出时间和 CRLF／LF 换行差异影响。需要源码构建时仍需 JDK 17+、Maven 3.8.8+。
+
+## 回归验证
+
+安装前端依赖和 `backend/requirements-flowable.txt` 中的 Python 依赖后，先运行
+`mvn -B -ntp -f flowable-runtime/pom.xml -DskipTests package` 构建 Java 引擎。
+`pnpm verify` 执行全部验证脚本，也可用 `--group unit`（不需要 Java）或
+`--group engine`（真实 Flowable）分组执行。入口默认使用已准备的后端解释器，
+可用 `PYTHON` 或 `--python` 选择另一个已安装所需依赖的解释器。
+引擎检查使用随机本地端口、临时数据库和模拟业务工程。完整套件还包含模拟的 Windows
+参考文件打开器检查，CI 在 Windows 上执行。结果和日志写入
+`backend/.local/verification/`，任一失败都会返回非零退出码。
+
+Verification 工作流在推送和拉取请求时执行类型检查、前端构建及全部 `verify-*` 脚本。
+旧示例检查明确的迁移错误，运行验证使用当前“是／否”分组协议。
 
 ## 社群交流
 

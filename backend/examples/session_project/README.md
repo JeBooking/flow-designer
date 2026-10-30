@@ -39,4 +39,4 @@ is async, and `restore_and_verify` is an async action returning `None`. Internal
 `latest`, `attempts`, and `recovered` remain on the instance and need no form inputs.
 `Reading` remains a Python object; the browser/Flowable representation is only a
 display projection. Rechecking reruns a method on the current instance and does
-not roll its state back. Restarting the worker loses the session.
+not roll its state back. The module declares stateless globals, and `Device`/`Reading` implement checkpoint hooks. Real workflow execution can restore the same native reference graph after worker/backend restart without calling the device constructor or replaying completed actions. Safe interpreters are released at human waits. Interface-debug sessions remain temporary. See [recovery](../../../docs/RECOVERY.md).

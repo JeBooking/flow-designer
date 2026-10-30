@@ -4,6 +4,11 @@
 
 This standard-library business project manages its own simulated equipment, measurement objects, threshold files, and temperature charts. It imports neither Flowable nor the platform executor. All equipment operations are simulated.
 
+The API declares stateless globals; session, device and measurement classes provide checkpoint hooks.
+Real workflow execution can release its business interpreter at human waits and restore after restart.
+The process lock is recreated, while measurements, thresholds and completed repairs retain their saved
+state. Constructors and completed repairs are not replayed. See [recovery](../../../docs/RECOVERY.md).
+
 ## Run in the platform
 
 1. Prepare the platform environment as described in the [user guide](../../../docs/USER-GUIDE.md), then start the platform from the repository root:

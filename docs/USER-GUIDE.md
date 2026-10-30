@@ -12,13 +12,13 @@ The diagram defines dependencies and diagnostic paths. Python interfaces perform
 
 ## 2. Prepare once, then start each run
 
-Prepare JDK 17+, Python 3.9+, Node and pnpm. If the runtime JAR is missing, Maven 3.8.8+ must also be on PATH. From the repository root:
+Prepare Java 17+, Python 3.9+, Node and pnpm. Use a matching prebuilt runtime, or install JDK 17+ and Maven 3.8.8+ for a source build. From the repository root:
 
 ```powershell
 pnpm install
 ```
 
-At startup, a missing `flowable-runtime/target/diagnostic-flowable-1.0.0.jar` is built automatically using Maven. Download and build progress appear in the terminal and `backend/.local/logs/flowable-build.log`; restart after failure or interruption to retry. Compilation targets Java 17. Updating `pom.xml` triggers a clean rebuild to replace old Java 21 bytecode. An existing JAR with unchanged build configuration, a validated healthy engine or an explicitly configured external engine skips the build. Java source changes alone still require a manual rebuild and restart.
+At startup, a missing `flowable-runtime/target/diagnostic-flowable-1.0.0.jar` is built automatically using Maven. Download and build progress appear in the terminal and `backend/.local/logs/flowable-build.log`; restart after failure or interruption to retry. Compilation targets Java 17. Updating `pom.xml` triggers a clean rebuild to replace old Java 21 bytecode. An existing JAR with unchanged build configuration, a validated healthy engine or an explicitly configured external engine skips the build. Java source/resource changes invalidate the runtime source manifest and trigger rebuilding. A matching [prebuilt runtime](../README.md#prebuilt-runtime) needs Java 17+ but no Maven.
 
 The launcher also creates `backend/.local/venv` and installs the official `flowable.external-worker-client==1.0.2` and its dependencies from the requirements file. Later starts check versions, imports and dependency consistency without reinstalling a ready environment. Installation requires Python package index access and respects proxy and `PIP_INDEX_URL` settings. Failures display errors and retain logs; fix the cause and restart to retry. Install business dependencies separately in the registered business interpreter. The launcher does not download JDK/Maven/Python themselves or install frontend dependencies. Project settings disable pnpm's implicit install before scripts; explicitly run `pnpm install` on first setup or after frontend dependency changes. The current Flowable client requires platform Python 3.9+; removing the version check does not add 3.7 support.
 
@@ -177,13 +177,13 @@ Rechecking does not undo equipment actions or restore an older Python object sta
 
 ### 9.4 Stop, restart, and update
 
-Closing the execution drawer keeps monitoring the current instance and updating its canvas prompts until the process ends; completed-node prompts remain available afterward. Refreshing the page or recreating the modeler does not restore monitoring of the previous instance. Ctrl+C stops services and workers owned by the launcher; reused external services remain running. Exiting the application and rechecking cannot undo equipment commands already issued. Arrange active equipment and investigations according to business procedures.
+Closing the execution drawer keeps monitoring the current instance and updating its canvas prompts until the process ends; completed-node prompts remain available afterward. Refreshing the page or recreating the modeler restores the latest monitored instance. Use **Resume monitoring** for another instance ID; **Stop monitoring** does not cancel execution. Highlights require a matching execution definition. Ctrl+C stops services and workers owned by the launcher; reused external services remain running. Exiting the application and rechecking cannot undo equipment commands already issued. Arrange active equipment and investigations according to business procedures.
 
-After a task reaches dead letter, **Run the current diagram again** asks for confirmation and starts a new instance from the current diagram. It does not cancel the old instance or undo completed equipment actions, and actions may run again. Previous instance IDs remain available in the current panel; record them before refreshing the page or recreating the modeler.
+After a task reaches dead letter, **Run the current diagram again** asks for confirmation and starts a new instance from the current diagram. It does not cancel the old instance or undo completed equipment actions, and actions may run again. The latest instance and ten recent IDs are persisted for monitoring recovery.
 
-Flowable saves progress and display results, not the entire Python memory. Restarting the worker or business subprocess loses its device instances. Continuing an old workflow then reports session loss; neither `repr` nor historical display data can reconstruct those objects.
+Flowable saves progress and display results, not the entire Python memory. The [checkpoint protocol](RECOVERY.md) enables automatic business snapshots, release during human waits, and restart recovery. Unsupported state and incomplete actions still refuse silent reconstruction; neither `repr` nor historical display data reconstructs objects.
 
-Account for active investigations before updating business code. Reload interfaces after editing code; starting a new workflow automatically prepares its matching worker. Binding, connection, group or order edits apply to new starts; existing instances retain their definition. Do not terminate their workers merely to update a new diagram. Restarting services loses current sessions. The worker releases business sessions after observing process completion; unfinished failed processes retain sessions for subsequent handling.
+Account for active investigations before updating business code. Reload interfaces after editing code; starting a new workflow automatically prepares its matching worker. Binding, connection, group or order edits apply to new starts; existing instances retain their definition. Do not terminate their workers merely to update a new diagram. Restarting services restores only complete, compatible business checkpoints. The worker releases business sessions after observing process completion; unfinished failed processes retain sessions for subsequent handling.
 
 ## 10. Save workflows and reference files
 
@@ -279,7 +279,7 @@ Legacy explicit mappings still support `$NodeID.field`, `$variable`, `$` for all
 | Worker already exists                   | Conflicting backends or manually started workers                                        | Keep one backend manager and stop only identified owned conflicts                                |
 | Unexpected routing                      | Explicit judgment value and matching output group                            | Distinguish a normal failed path from a Python task error                                        |
 | Python task fails                       | Original traceback in failure details                                        | Follow its business file and call location; repeating an action can affect equipment again       |
-| Session is lost                         | Worker or business subprocess restart                                        | Handle the actual equipment state, then start a new investigation; history cannot restore memory |
+| Session is lost                         | Missing, incomplete or incompatible checkpoint | Restore a compatible environment when possible; inspect uncertain equipment actions before restarting |
 | Missing or unopenable reference         | JSON-only import or missing local application                                | Import the full directory or select a supporting application                                     |
 | Recheck did not restore equipment state | Whether recheck was mistaken for undo                                        | Recheck reruns logic; it does not rewind equipment or object state                               |
 

@@ -29,4 +29,4 @@
 `ready` 返回 `True`；`restore` 无参数且返回 `None`；`verify` 是异步方法，
 `restore_and_verify` 是返回 `None` 的异步动作。`latest`、`attempts`、`recovered`
 保存在实例内部，无需在表单重复填写。`Reading` 保留为 Python 对象，界面和 Flowable
-仅保存展示投影。回退重查在当前实例上重新运行方法，不回滚其内部状态。重启 worker 会丢失会话。
+仅保存展示投影。回退重查在当前实例上重新运行方法，不回滚其内部状态。本模块声明全局无状态，`Device`／`Reading` 提供检查点接口；真实执行可在 worker／后端重启后恢复同一原生引用图，不重跑设备构造或已完成动作。安全的解释器会在人工等待时释放；接口调试会话仍为临时会话。详见[恢复说明](../../../docs/RECOVERY.zh-CN.md)。

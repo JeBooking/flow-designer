@@ -31,7 +31,7 @@ the process; the official Python client 1.0.2 acquires jobs and reports completi
 
 ## Prepare once
 
-Requires JDK 17 or later, Python 3.9+ and the existing Node.js/pnpm environment.
+Requires Java 17 or later, Python 3.9+ and the existing Node.js/pnpm environment. A matching [prebuilt runtime](../docs/RECOVERY.md#prebuilt-java-runtime) avoids a local source build; source builds require JDK 17+.
 Java 17 updates such as 17.0.12 meet this requirement.
 Maven 3.8.8+ must also be on PATH when the runtime JAR has not been built yet.
 From the repository root, install frontend dependencies:
@@ -130,16 +130,14 @@ are evidence provided this way.
 
 Closing the drawer keeps monitoring the current instance and updating its canvas prompts until
 the process ends; completed-node prompts remain available afterward. Editing or importing a
-diagram hides canvas prompts for the previous instance. A browser refresh or
-Modeler recreation does not restore the monitored instance. Keep the instance ID for
-operational investigation. A dead-letter failure can be acknowledged to **Run the current
+diagram hides canvas prompts for the previous instance. A browser refresh or Modeler recreation restores the latest monitored instance. Use **Resume monitoring** to enter or select a recent instance ID. **Stop monitoring** detaches the view without cancelling execution. The current diagram must match the execution definition before highlights are enabled. A dead-letter failure can be acknowledged to **Run the current
 diagram again**; this creates a new instance, does not cancel the old one, and may repeat
 equipment actions.
 
 Launcher/service logs are under `backend/.local/logs/`; managed worker logs are under
 `backend/.local/executions/<hash>/<uuid>.log`. Exiting the launcher stops only services
 it owns (and their managed workers), leaving reused/external services running. Stopping
-services does not undo equipment operations; restarting does not restore native sessions.
+services does not undo equipment operations. Declared checkpoints can restore native sessions; see [recovery](../docs/RECOVERY.md).
 
 ## Escalation review and rechecking
 
@@ -227,7 +225,7 @@ subprocesses with each registration's interpreter and project working directory.
 dependencies belong in the interpreter that actually runs that project. Manual CLI options
 are documented under optional operations below.
 
-One workflow's calls to the same project share a persistent isolated subprocess. A factory
+One workflow's calls to the same project share an isolated session, checkpointable during human waits. A factory
 instance is created once; ordinary module functions retain their globals. Different workflows
 are isolated. Raw results stay under node IDs inside Python and may be arbitrary Python
 objects. Flowable stores only JSON display projections, including `native`, `pythonType`
@@ -238,9 +236,7 @@ human waits, routing and history; this adds no second workflow engine.
 
 In interface debugging, consecutive calls share a session and **Reset session** starts fresh.
 During a real workflow, rechecks rerun methods on current state and do not roll the object back. Finished sessions are released after the
-worker observes completion; failed sessions remain for inspection. There is no automatic
-checkpoint: restarting a worker/subprocess loses sessions, and affected old workflows report
-session loss instead of silently rebuilding instances. History/projections cannot restore them.
+worker observes completion; failed sessions remain for inspection. Declared checkpoint hooks (or stateless modules with JSON results) enable automatic snapshots and restart recovery. Safe idle sessions are released at human waits. Unsupported state stays live and reports why it is not recoverable; incomplete actions, changed code or changed Python dependencies refuse automatic recovery. History/projections are never substituted for original objects. See [the checkpoint protocol](../docs/RECOVERY.md).
 Offline skeleton exports retain their existing implementation/manual-fallback rules and do
 not automatically execute bindings saved in the diagram.
 

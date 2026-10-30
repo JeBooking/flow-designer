@@ -204,7 +204,7 @@ pnpm format
 
 ## Connect existing Python projects
 
-First prepare JDK 17+, Python 3.9+ and frontend dependencies. If the Flowable JAR is missing, provide Maven 3.8.8+ and the launcher builds it automatically; see [environment preparation](backend/FLOWABLE.md). The launcher also automatically creates a project Python environment and installs platform dependencies, then reuses it when ready without installing packages into the system Python. Explicitly run `pnpm install` on first setup or after frontend dependency changes; startup does not implicitly install them. Install business dependencies in their business interpreter beforehand. Python 3.7 is not currently supported by the platform.
+First prepare Java 17+, Python 3.9+ and frontend dependencies. Use a matching prebuilt runtime, or provide JDK 17+ and Maven 3.8.8+ for the launcher to build it automatically; see [environment preparation](backend/FLOWABLE.md). The launcher also automatically creates a project Python environment and installs platform dependencies, then reuses it when ready without installing packages into the system Python. Explicitly run `pnpm install` on first setup or after frontend dependency changes; startup does not implicitly install them. Install business dependencies in their business interpreter beforehand. Python 3.7 is not currently supported by the platform.
 
 Then use only `pnpm dev` at the repository root to start the frontend, local backend and local Flowable. Open `http://127.0.0.1:5173/vue-bpmn-designer/`, then register your directory, importable module, interpreter and optional class/factory under **Python projects**. Registration neither copies sources nor installs dependencies. Select the project and interface on each node; parameters match signatures automatically.
 
@@ -214,9 +214,9 @@ Pending human tasks automatically expand into floating windows connected to thei
 
 Node history for new executions preserves each call's actual inputs (including defaults), factory initialization inputs when applicable, returned evidence/results, deployed instructions and reference files, branch and errors. Human records preserve the context available at the time, evidence, references and choice; context is distinguished from actual function arguments. Reruns do not overwrite earlier records. Old instances or missing fields show **Not recorded**, without reconstructed snapshots. Python local intermediate variables must be returned in the result structure or `HumanDecisionRequest.data` to be retained, such as the manual-handling example's `voltage`, `threshold` and `unit` evidence.
 
-Each workflow has a persistent isolated Python process per project, retaining objects, instance state and module globals; Flowable stores display projections. Worker or business process restarts lose sessions, with no automatic checkpoint. Closing the execution drawer keeps monitoring the current instance and updating its canvas prompts until the process ends; completed-node prompts remain available afterward. Editing or importing a diagram hides canvas prompts for the previous instance. Refreshing the page or recreating the modeler does not restore monitoring of that instance. Exiting the launcher stops its own services and cannot undo equipment actions; reused services remain running.
+Each workflow uses an isolated Python session per project; Flowable stores execution progress and display projections. Projects that declare the [checkpoint protocol](docs/RECOVERY.md) save recoverable business state automatically, release idle business interpreters at human waits, and restore them after worker/backend restarts. Uncertain actions and incompatible code/environments are never replayed silently. Monitoring resumes after refresh or modeler recreation, and an instance ID can reconnect it manually. Canvas highlights appear only after the execution definition matches. History polling transfers changed values and activity updates, backing off while unchanged. Exiting the launcher stops owned services and cannot undo equipment actions; reused services remain running.
 
-After a task reaches dead letter, **Run the current diagram again** asks for confirmation before creating a new instance. It does not cancel the old instance or undo completed actions, and actions may run again. Previous instance IDs remain available in the current panel; record them before refreshing or recreating the modeler. Service logs live in `backend/.local/logs/`; worker logs use `backend/.local/executions/<content-hash>/<launch-uuid>.log`.
+After a task reaches dead letter, **Run the current diagram again** asks for confirmation before creating a new instance. It does not cancel the old instance or undo completed actions, and actions may run again. The latest instance and ten recent instance IDs persist for monitoring recovery; stopping monitoring does not cancel an instance. Service logs live in `backend/.local/logs/`; worker logs use `backend/.local/executions/<content-hash>/<launch-uuid>.log`.
 
 With an existing production build, use `pnpm start` and visit `http://127.0.0.1:8765/vue-bpmn-designer/`. Use `pnpm dev:frontend` for frontend-only development. See [backend integration](backend/README.md).
 
@@ -247,6 +247,25 @@ Regenerate into a new directory to preserve your handwritten implementations.
 Run `pnpm exec node scripts/verify-code-export.mjs` for an end-to-end verification
 of real Moddle models, ZIP integrity and the generated Python runtime. Python is
 required for this check (`PYTHON` can override its executable).
+
+## Prebuilt runtime
+
+Download `diagnostic-flowable-runtime` from a successful Verification run for the same source commit. Extract the JAR and its `.manifest.json` into `flowable-runtime/target/`. With Java 17+, Python 3.9+ and prepared frontend dependencies, `pnpm dev` can then start without Maven. The launcher verifies source and JAR hashes, including across checkout timestamps and CRLF/LF changes. Source builds still require JDK 17+ and Maven 3.8.8+.
+
+## Verification
+
+After installing frontend dependencies and the Python dependencies in `backend/requirements-flowable.txt`,
+build the Java runtime with `mvn -B -ntp -f flowable-runtime/pom.xml -DskipTests package`.
+Run `pnpm verify` for all regression scripts, or select `--group unit` (no Java) or
+`--group engine` (real Flowable). The runner uses the prepared backend interpreter;
+`PYTHON` or `--python` selects another interpreter with the required dependencies.
+Engine checks use random local ports, temporary databases and simulated business projects.
+The complete suite includes mocked Windows file-launcher checks and runs on Windows in CI.
+Results and logs are written to `backend/.local/verification/`; failures return a nonzero exit code.
+
+The Verification workflow runs on pushes and pull requests, including type checking,
+the frontend build and every `verify-*` script. Legacy examples are checked for explicit
+migration errors; runtime cases use the current Yes/No branch protocol.
 
 ## Community
 
