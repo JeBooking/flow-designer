@@ -15,6 +15,7 @@ import java.util.UUID;
 import org.flowable.common.engine.api.FlowableObjectNotFoundException;
 import org.flowable.common.engine.api.FlowableOptimisticLockingException;
 import org.flowable.engine.HistoryService;
+import org.flowable.engine.ManagementService;
 import org.flowable.engine.RepositoryService;
 import org.flowable.engine.RuntimeService;
 import org.flowable.engine.TaskService;
@@ -34,14 +35,16 @@ public class ReviewController {
     private final RuntimeService runtime;
     private final TaskService tasks;
     private final HistoryService history;
+    private final ManagementService management;
     private final RepositoryService repository;
     private final ObjectMapper json;
 
-    public ReviewController(RuntimeService runtime, TaskService tasks, HistoryService history,
+    public ReviewController(RuntimeService runtime, TaskService tasks, HistoryService history, ManagementService management,
                             RepositoryService repository, ObjectMapper json) {
         this.runtime = runtime;
         this.tasks = tasks;
         this.history = history;
+        this.management = management;
         this.repository = repository;
         this.json = DiagnosticJson.configure(json);
     }
@@ -190,6 +193,12 @@ public class ReviewController {
     @PostMapping
     @Transactional
     public Map<String, Object> act(@PathVariable String instanceId, @RequestBody ReviewRequest request) {
+        // Spring 事务不共享各次引擎调用的实体缓存；统一命令上下文才能让快照与写回使用同一版本，
+        // 并发提交时由乐观锁回滚整个复核，避免任务完成但审计数组被旧快照覆盖。
+        return management.executeCommand(context -> applyReview(instanceId, request));
+    }
+
+    private Map<String, Object> applyReview(String instanceId, ReviewRequest request) {
         ProcessInstance instance = runtime.createProcessInstanceQuery().processInstanceId(instanceId).singleResult();
         if (instance == null) throw new ResponseStatusException(HttpStatus.CONFLICT, "Process has ended / 流程已结束");
         JsonNode metadata = metadata(instance);

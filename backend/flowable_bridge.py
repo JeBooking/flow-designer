@@ -3,6 +3,7 @@ import base64
 import hashlib
 import json
 import os
+from pathlib import Path
 import re
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -24,8 +25,13 @@ def b(name):
 def f(name):
     return '{' + FLOWABLE + '}' + name
 
-KINDS = {'investigation', 'investigationAction', 'conclusion', 'remediation',
-         'deepDiagnosis', 'jump', 'problemSolved', 'escalation'}
+CONNECTION_RULES = json.loads((Path(__file__).resolve().parents[1]
+    / 'src/rules/diagnosis-connections.json').read_text(encoding='utf-8'))
+KINDS = set(CONNECTION_RULES) - {'start', 'generic'}
+
+
+def is_diagnosis_connection_allowed(source_kind, target_kind):
+    return target_kind in CONNECTION_RULES.get(source_kind, ())
 
 
 def action_mode(node):
@@ -243,16 +249,9 @@ def compile_workflow(xml):
         if edge.get('sourceRef') not in nodes or edge.get('targetRef') not in nodes:
             raise ValueError('Invalid connection / 连线引用无效: ' + str(edge.get('id')))
         source, target = nodes[edge.get('sourceRef')], nodes[edge.get('targetRef')]
-        source_kind, target_kind = source.get(f('diagnosisKind')), target.get(f('diagnosisKind'))
-        allowed = {'investigation': {'investigation', 'investigationAction', 'conclusion', 'jump', 'escalation'},
-            'investigationAction': {'investigation'}, 'conclusion': {'remediation', 'jump', 'escalation'},
-            'remediation': {'remediation', 'jump', 'problemSolved', 'deepDiagnosis', 'escalation'},
-            'jump': {'remediation', 'jump', 'problemSolved', 'deepDiagnosis', 'escalation'}}
-        invalid = source is target or (source.tag == b('startEvent') and target_kind != 'investigation')
-        invalid |= source_kind in allowed and target_kind not in allowed[source_kind]
-        invalid |= target_kind == 'investigation' and source_kind not in ('investigation', 'investigationAction') and source.tag != b('startEvent')
-        invalid |= target_kind in ('conclusion', 'investigationAction') and source_kind != 'investigation'
-        if invalid:
+        source_kind = 'start' if source.tag == b('startEvent') else source.get(f('diagnosisKind'))
+        target_kind = 'start' if target.tag == b('startEvent') else target.get(f('diagnosisKind'))
+        if source is target or not is_diagnosis_connection_allowed(source_kind, target_kind):
             raise ValueError('Diagnostic connection violates rules / 诊断连接违反规则: ' + str(edge.get('id')))
     reached, pending = set(), [starts[0].get('id')]
     while pending:

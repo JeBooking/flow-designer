@@ -1,6 +1,7 @@
 import { getBusinessObject, is } from 'bpmn-js/lib/util/ModelUtil'
 import type { Element, ModdleElement } from 'bpmn-js/lib/model/Types'
 import type { DiagnosisKind, DiagnosisBranch, InvestigationData } from '@/types/diagnosis'
+import connectionRules from '@/rules/diagnosis-connections.json'
 
 export const diagnosisKinds: Record<DiagnosisKind, { label: string; icon: string; color: string }> =
   {
@@ -40,28 +41,13 @@ export function isDiagnosisConnectionAllowed(
   if (!source || !target) return true
   const from = getDiagnosisKind(source)
   const to = getDiagnosisKind(target)
-  if (!from && !to) return true
+  // 普通 BPMN 子流程等仍交给原生规则；诊断节点与普通节点的边界也由共享表约束。
+  const sourceKind = from || (is(source, 'bpmn:StartEvent') ? 'start' : 'generic')
+  const targetKind = to || (is(target, 'bpmn:StartEvent') ? 'start' : 'generic')
+  if (sourceKind === 'generic' && targetKind === 'generic') return true
   if (getBusinessObject(source) === getBusinessObject(target)) return false
-  if (from === 'problemSolved' || from === 'escalation') return false
-  if (to === 'investigation' && from !== 'investigation' && from !== 'investigationAction') {
-    return !from && is(source, 'bpmn:StartEvent')
-  }
-  if (to === 'investigationAction' && from !== 'investigation') return false
-  if (from === 'investigationAction' && to !== 'investigation') return false
-  if (to === 'conclusion' && from !== 'investigation') return false
-  if (
-    from === 'investigation' &&
-    !['investigation', 'investigationAction', 'conclusion', 'jump', 'escalation'].includes(to || '')
-  )
-    return false
-  if (from === 'conclusion' && !['remediation', 'jump', 'escalation'].includes(to || ''))
-    return false
-  if (
-    (from === 'remediation' || from === 'jump') &&
-    !['remediation', 'jump', 'problemSolved', 'deepDiagnosis', 'escalation'].includes(to || '')
-  )
-    return false
-  return true
+  const targets: readonly string[] = connectionRules[sourceKind]
+  return targets.includes(targetKind)
 }
 
 export const investigationFields: Record<

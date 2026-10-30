@@ -1,0 +1,19 @@
+{
+  "start": ["investigation", "generic"],
+  "generic": ["remediation", "jump", "problemSolved", "deepDiagnosis", "escalation", "generic"],
+  "investigation": ["investigation", "investigationAction", "conclusion", "jump", "escalation"],
+  "investigationAction": ["investigation"],
+  "conclusion": ["remediation", "jump", "escalation"],
+  "remediation": ["remediation", "jump", "problemSolved", "deepDiagnosis", "escalation"],
+  "deepDiagnosis": [
+    "remediation",
+    "jump",
+    "problemSolved",
+    "deepDiagnosis",
+    "escalation",
+    "generic"
+  ],
+  "jump": ["remediation", "jump", "problemSolved", "deepDiagnosis", "escalation"],
+  "problemSolved": [],
+  "escalation": []
+}
