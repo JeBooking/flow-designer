@@ -16,6 +16,7 @@ import { createConnection } from 'node:net'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
+import { runtimeManifestMatches, writeRuntimeManifest } from './runtime-manifest.mjs'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const windows = process.platform === 'win32'
@@ -448,8 +449,10 @@ async function prepareFlowableJar(jar) {
   const ready = () =>
     existsSync(jar) &&
     !existsSync(pending) &&
-    !newerThanJar(pom, statSync(jar).mtimeMs) &&
-    !newerThanJar(sources, statSync(jar).mtimeMs)
+    (runtimeManifestMatches(root, jar) ||
+      (!existsSync(`${jar}.manifest.json`) &&
+        !newerThanJar(pom, statSync(jar).mtimeMs) &&
+        !newerThanJar(sources, statSync(jar).mtimeMs)))
   if (ready()) return
   const release = acquireSetupLock('flowable', 'Flowable')
   try {
@@ -495,6 +498,7 @@ async function prepareFlowableJar(jar) {
     try {
       await checkCommand('flowable-build', command, args(true), { cwd, timeout: 900000 })
       requireFile(jar, '构建未生成可执行引擎 / Build did not produce the runtime JAR')
+      writeRuntimeManifest(root, jar)
       unlinkSync(pending)
     } catch (error) {
       assertRunning()
@@ -535,6 +539,8 @@ async function main() {
   const backendHealth = () =>
     probe(`${backendUrl}/api/health`, (body) => {
       if (body?.ok !== true || body?.service !== 'diagnosis-backend') return false
+      if (body.historyVersion !== 1 || body.recoveryVersion !== 1)
+        return '后端执行接口已升级，请重启后端 / Restart the backend to enable execution history and recovery APIs'
       if (typeof body.flowableUrl !== 'string') {
         return '后端健康接口缺少 flowableUrl，请重启当前版本 / Restart current backend: health response requires flowableUrl'
       }
@@ -554,6 +560,18 @@ async function main() {
       headers,
     )
     if (!repository.healthy) return repository
+    const capabilities = await probe(
+      `${address}/diagnosis-api/capabilities`,
+      (body) => body?.historyVersion === 1 && body?.recoveryVersion === 1,
+      headers,
+    )
+    if (!capabilities.healthy)
+      return {
+        ...capabilities,
+        reachable: true,
+        reason:
+          '引擎缺少增量历史接口，请重新构建 / Rebuild the engine: incremental history API is unavailable',
+      }
     // 不存在的实例返回空任务数组，无需创建流程即可验证诊断接口能力。
     const diagnosis = await probe(
       `${address}/diagnosis-api/instances/launcher-health-check/review/tasks`,

@@ -43,6 +43,8 @@ jobs:
           backend/.local/venv/Scripts/python.exe -m pip install -r backend/requirements-flowable.txt
       - name: Build runtime
         run: mvn -B -ntp -f flowable-runtime/pom.xml -DskipTests package
+      - name: Stamp prebuilt runtime
+        run: node scripts/runtime-manifest.mjs
       - name: Check frontend
         run: |
           pnpm type-check
@@ -50,6 +52,13 @@ jobs:
           pnpm build-only
       - name: Verify workflows and runtime
         run: pnpm verify
+      - name: Upload prebuilt runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostic-flowable-runtime
+          path: |
+            flowable-runtime/target/diagnostic-flowable-1.0.0.jar
+            flowable-runtime/target/diagnostic-flowable-1.0.0.jar.manifest.json
       - name: Upload verification logs
         if: always()
         uses: actions/upload-artifact@v4

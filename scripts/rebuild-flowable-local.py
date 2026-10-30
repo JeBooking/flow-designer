@@ -39,6 +39,7 @@ def rebuild(source, output):
                 rebuilt.write(file, name)
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_bytes(packaged.read_bytes())
+    subprocess.run(['node', str(ROOT / 'scripts/runtime-manifest.mjs'), str(output)], check=True)
     print('Compiled Java sources and rebuilt local executable:', output)
 
 
