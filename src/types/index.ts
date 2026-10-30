@@ -48,6 +48,7 @@ export interface ThrowEventListener extends EventListener {
 export type AnyEventListener = ClassEventListener | ThrowEventListener
 
 export interface ExecutionListener extends Listener {
+  event: string
   fields?: Field[]
 }
 

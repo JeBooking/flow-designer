@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { ref } from 'vue'
 import { useCloned } from '@vueuse/core'
 import { type FormInstance, type FormRules, useFormSize } from 'element-plus'
 import { cloneDeep } from 'lodash-es'
@@ -95,7 +94,7 @@ defineExpose({
           type="textarea"
           :rows="4"
           :autosize="{ minRows: 4, maxRows: 10 }"
-          v-model="cloned.value"
+          v-model="cloned.value as string | undefined"
           :placeholder="$tu('请输入默认值')"
           v-if="cloned.type === 'xsd:string'"
         />
@@ -125,7 +124,7 @@ defineExpose({
         <el-date-picker
           type="datetime"
           value-format="YYYY-MM-DDTHH:mm:ss"
-          v-model="cloned.value"
+          v-model="cloned.value as string | undefined"
           :placeholder="$tu('请选择时间')"
           v-else-if="cloned.type === 'xsd:datetime'"
           class="w-full"

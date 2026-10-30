@@ -2,7 +2,6 @@
 import { useCustomRef } from '@/views/ProcessDesigner/utils/ElementUtil.ts'
 import Codemirror from '@/components/CodemirrorEditor/index.vue'
 import javascriptSupport from '@/components/CodemirrorEditor/language/javascript'
-import { ref } from 'vue'
 import juelSupport from '@/components/CodemirrorEditor/language/juel'
 import groovySupport from '@/components/CodemirrorEditor/language/groovy'
 
@@ -33,7 +32,10 @@ const changeScriptFormat = (val: string) => {
 <template>
   <el-collapse-item name="arg1" :title="$tu('调用脚本')">
     <el-form-item :label="$tu('脚本格式')">
-      <el-radio-group v-model="scriptFormat" @change="changeScriptFormat">
+      <el-radio-group
+        v-model="scriptFormat"
+        @change="(value) => typeof value === 'string' && changeScriptFormat(value)"
+      >
         <el-radio-button label="JavaScript" value="javascript" />
         <el-radio-button label="Groovy" value="groovy" />
         <el-radio-button label="Juel" value="juel" />

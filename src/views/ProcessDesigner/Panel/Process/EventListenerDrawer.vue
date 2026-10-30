@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { ref } from 'vue'
 import { useCloned } from '@vueuse/core'
 import { type FormInstance, type FormItemRule, useFormSize } from 'element-plus'
 import { cloneDeep } from 'lodash-es'
@@ -246,7 +245,10 @@ defineExpose({
         </el-select>
       </el-form-item>
       <el-form-item :label="$tu('抛出事件')" prop="rethrowEvent">
-        <el-radio-group v-model="cloned.rethrowEvent" @change="changeRethrowEvent">
+        <el-radio-group
+          v-model="cloned.rethrowEvent"
+          @change="(value) => changeRethrowEvent(value === true)"
+        >
           <el-radio-button :label="$tu('否')" :value="false"></el-radio-button>
           <el-radio-button :label="$tu('是')" :value="true"></el-radio-button>
         </el-radio-group>
