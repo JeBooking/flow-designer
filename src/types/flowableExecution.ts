@@ -11,9 +11,9 @@ export interface ExecutionActivity {
   activityId: string
   activityName?: string
   activityType: string
-  startTime?: string
-  endTime?: string
-  durationInMillis?: number
+  startTime?: string | null
+  endTime?: string | null
+  durationInMillis?: number | null
 }
 export interface ExecutionFailure {
   id: string
@@ -22,13 +22,35 @@ export interface ExecutionFailure {
   traceback?: string
   [key: string]: unknown
 }
+export interface DiagnosticFailure {
+  id?: string
+  nodeId?: string
+  node?: string
+  code?: string
+  source?: string
+  reason?: string
+  branch?: string
+  path?: string[]
+  time?: string
+  [key: string]: unknown
+}
 export interface ExecutionHistory {
-  process: { endTime?: string; [key: string]: unknown }
+  process: { endTime?: string | null; [key: string]: unknown }
   activities: { data: ExecutionActivity[] }
-  variables: { data: { variable?: { name?: string; value?: unknown } }[] }
+  variables: { data: { id?: string; variable?: { name?: string; value?: unknown } }[] }
   review: DiagnosisReviewState
   pendingReviews?: DiagnosisReviewState[]
   failures?: ExecutionFailure[]
+  nodes?: ExecutionNode[]
+  cursor?: string
+}
+
+export interface ExecutionHistoryPatch extends Omit<ExecutionHistory, 'review'> {
+  review?: DiagnosisReviewState
+  reset: boolean
+  changed: boolean
+  removedVariableIds: string[]
+  removedActivityIds: string[]
 }
 export interface ExecutionNodeView extends ExecutionNode {
   status: ExecutionNodeStatus

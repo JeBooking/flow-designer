@@ -5,8 +5,11 @@ import type ElementRegistry from 'diagram-js/lib/core/ElementRegistry'
 import type EventBus from 'diagram-js/lib/core/EventBus'
 import { getBusinessObject, is } from 'bpmn-js/lib/util/ModelUtil'
 import { flowableRequest } from '@/services/flowable'
+import { useExecutionStore } from '@/stores/modules/execution'
+import { mergeExecutionHistory } from '@/views/ProcessDesigner/Execution/history'
 import type {
   ExecutionHistory,
+  ExecutionHistoryPatch,
   ExecutionInstructions,
   ExecutionNode,
   ExecutionNodeStatus,
@@ -31,6 +34,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined
+}
+
+function groupByNode<T>(entries: T[], key: (entry: T) => string): Map<string, T[]> {
+  const result = new Map<string, T[]>()
+  entries.forEach((entry) => {
+    const id = key(entry)
+    const group = result.get(id)
+    if (group) group.push(entry)
+    else result.set(id, [entry])
+  })
+  return result
 }
 
 function parseInstructions(value: unknown): ExecutionInstructions | undefined {
@@ -132,12 +146,13 @@ function parseReviews(value: unknown): ExecutionReview[] {
 }
 
 export function useExecution(modeler: Modeler, visible: Ref<boolean>) {
-  const runId = ref('')
+  const monitor = useExecutionStore()
+  const runId = ref(monitor.runId)
   const snapshot = shallowRef<ExecutionHistory>()
   const nodes = ref<ExecutionNode[]>([])
   const connectionError = ref('')
   const loading = ref(false)
-  const canvasMatches = ref(true)
+  const canvasMatches = ref(!runId.value)
   const canvas = modeler.get<Canvas>('canvas')
   const registry = modeler.get<ElementRegistry>('elementRegistry')
   const eventBus = modeler.get<EventBus>('eventBus')
@@ -146,6 +161,7 @@ export function useExecution(modeler: Modeler, visible: Ref<boolean>) {
   let requestSequence = 0
   let revision = 0
   let disposed = false
+  let pollDelay = 1500
   const markers = new Map<string, string>()
   const variables = computed<Record<string, unknown>>(() =>
     Object.fromEntries(
@@ -178,11 +194,17 @@ export function useExecution(modeler: Modeler, visible: Ref<boolean>) {
     }),
   )
   const reviews = computed(() => parseReviews(variables.value.diagnosticReviews))
+  const activitiesByNode = computed(() =>
+    groupByNode(snapshot.value?.activities.data || [], (entry) => entry.activityId),
+  )
+  const tracesByNode = computed(() => groupByNode(traces.value, (entry) => entry.nodeId))
+  const reviewsByNode = computed(() =>
+    groupByNode(reviews.value, (entry) => entry.nodeId || entry.from || ''),
+  )
   const nodeViews = computed<ExecutionNodeView[]>(() =>
     nodes.value.map((node) => {
       // 同一节点可能有并行或重复执行记录；仍有活动未结束时不能显示完成。
-      const occurrences = (snapshot.value?.activities.data || [])
-        .filter((activity) => activity.activityId === node.id)
+      const occurrences = (activitiesByNode.value.get(node.id) || [])
         .map((activity, index) => ({ activity, index }))
         .sort((a, b) => {
           const delta =
@@ -204,9 +226,9 @@ export function useExecution(modeler: Modeler, visible: Ref<boolean>) {
         occurrences,
         hasResult: Object.prototype.hasOwnProperty.call(variables.value, node.id),
         result: variables.value[node.id],
-        traces: traces.value.filter((trace) => trace.nodeId === node.id),
+        traces: tracesByNode.value.get(node.id) || [],
         // 旧协议的 from 就是来源节点；缺少来源的人工记录不能猜测归属。
-        reviews: reviews.value.filter((review) => (review.nodeId || review.from) === node.id),
+        reviews: reviewsByNode.value.get(node.id) || [],
       }
     }),
   )
@@ -236,7 +258,7 @@ export function useExecution(modeler: Modeler, visible: Ref<boolean>) {
     if (timer) clearTimeout(timer)
     timer = undefined
     if (disposed || !runId.value || terminal.value) return
-    timer = setTimeout(() => void load(), 1500)
+    timer = setTimeout(() => void load(), pollDelay)
   }
   async function load() {
     if (!runId.value || disposed || loading.value) return
@@ -247,15 +269,28 @@ export function useExecution(modeler: Modeler, visible: Ref<boolean>) {
     const sequence = ++requestSequence
     loading.value = true
     try {
-      const result = await flowableRequest<ExecutionHistory>(`history/${encodeURIComponent(id)}`)
+      const cursor = snapshot.value?.cursor
+      const result = await flowableRequest<ExecutionHistoryPatch>(
+        `history/${encodeURIComponent(id)}${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`,
+      )
+      if (typeof result.reset !== 'boolean' || typeof result.changed !== 'boolean')
+        throw new Error(
+          translateUi(
+            '执行服务版本不兼容，请重启后端和引擎',
+            'Execution service versions are incompatible. Restart the backend and engine.',
+          ),
+        )
       if (disposed || token !== generation || id !== runId.value || sequence !== requestSequence)
         return
-      snapshot.value = result
+      snapshot.value = mergeExecutionHistory(snapshot.value, result)
+      if ((result.reset || result.changed) && result.nodes) nodes.value = result.nodes
+      pollDelay = result.changed ? 1500 : Math.min(pollDelay * 2, 10000)
       connectionError.value = ''
-      renderMarkers()
+      if (result.changed) renderMarkers()
     } catch (error) {
       if (token !== generation || id !== runId.value || sequence !== requestSequence) return
       connectionError.value = error instanceof Error ? error.message : String(error)
+      pollDelay = Math.min(pollDelay * 2, 10000)
     } finally {
       if (token === generation && sequence === requestSequence && !disposed) {
         loading.value = false
@@ -279,6 +314,8 @@ export function useExecution(modeler: Modeler, visible: Ref<boolean>) {
     stop()
     clearMarkers()
     runId.value = id
+    monitor.remember(id)
+    pollDelay = 1500
     snapshot.value = undefined
     connectionError.value = ''
     nodes.value = captured.nodes
@@ -286,6 +323,7 @@ export function useExecution(modeler: Modeler, visible: Ref<boolean>) {
   }
   async function reloadAfterReview() {
     stop()
+    pollDelay = 1500
     // 保留其余并行任务的窗口实例和草稿，直到最新快照替换旧状态。
     await load()
   }
@@ -303,11 +341,87 @@ export function useExecution(modeler: Modeler, visible: Ref<boolean>) {
       void load()
     }
   })
+  async function matchCanvas() {
+    if (!runId.value || disposed) return
+    const id = runId.value
+    const currentRevision = revision
+    const currentGeneration = generation
+    try {
+      const { xml } = await modeler.saveXML({ format: true })
+      const result = await flowableRequest<{ matches: boolean }>(
+        `match/${encodeURIComponent(id)}`,
+        { xml },
+      )
+      if (
+        !disposed &&
+        id === runId.value &&
+        currentGeneration === generation &&
+        currentRevision === revision
+      ) {
+        canvasMatches.value = result.matches
+        renderMarkers()
+      }
+    } catch {
+      // 未完成或不支持的画布不能关联到旧执行；历史和待办仍可通过卡片查看。
+      if (id === runId.value && currentGeneration === generation && currentRevision === revision)
+        canvasMatches.value = false
+    }
+  }
+  async function restore(id: string) {
+    if (!/^[A-Za-z0-9_-]+$/.test(id))
+      throw new Error(translateUi('请输入有效的流程实例 ID', 'Enter a valid process instance ID'))
+    const previous = {
+      id: runId.value,
+      snapshot: snapshot.value,
+      nodes: nodes.value,
+      matches: canvasMatches.value,
+      error: connectionError.value,
+    }
+    stop()
+    clearMarkers()
+    runId.value = id
+    snapshot.value = undefined
+    nodes.value = []
+    canvasMatches.value = false
+    pollDelay = 1500
+    await load()
+    if (connectionError.value) {
+      const message = connectionError.value
+      if (previous.snapshot) {
+        stop()
+        runId.value = previous.id
+        snapshot.value = previous.snapshot
+        nodes.value = previous.nodes
+        canvasMatches.value = previous.matches
+        connectionError.value = previous.error
+        renderMarkers()
+        schedule()
+      }
+      throw new Error(message)
+    }
+    monitor.remember(id)
+    await matchCanvas()
+  }
+  function detach() {
+    stop()
+    clearMarkers()
+    runId.value = ''
+    monitor.forget()
+    snapshot.value = undefined
+    nodes.value = []
+    connectionError.value = ''
+    canvasMatches.value = true
+  }
+  eventBus.on('import.done', matchCanvas)
+  onMounted(() => {
+    if (runId.value) void restore(runId.value).catch(() => {})
+  })
   onBeforeUnmount(() => {
     disposed = true
     stop()
     clearMarkers()
     eventBus.off(changeEvents, changed)
+    eventBus.off('import.done', matchCanvas)
   })
   return {
     runId,
@@ -324,5 +438,8 @@ export function useExecution(modeler: Modeler, visible: Ref<boolean>) {
     begin,
     load,
     reloadAfterReview,
+    restore,
+    detach,
+    recentRunIds: computed(() => monitor.recentRunIds),
   }
 }

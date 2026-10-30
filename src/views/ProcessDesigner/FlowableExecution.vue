@@ -4,6 +4,7 @@ import { is } from 'bpmn-js/lib/util/ModelUtil'
 import type { ModdleElement } from 'bpmn-js/lib/model/Types'
 import type { ModelElement } from '@/views/ProcessDesigner/CodeGeneration/generate'
 import type { PythonParameter } from '@/types/pythonProject'
+import type { DiagnosticFailure } from '@/types/flowableExecution'
 import { listPythonProjects } from '@/services/pythonProjects'
 import { flowableRequest } from '@/services/flowable'
 import { useExecution } from '@/views/ProcessDesigner/Execution/useExecution'
@@ -161,7 +162,16 @@ const {
   begin,
   load: loadExecution,
   reloadAfterReview,
+  restore,
+  detach,
+  recentRunIds,
 } = useExecution(props.modeler, visible)
+const monitorId = ref('')
+const restoreMonitoring = () =>
+  perform(async () => {
+    await restore(monitorId.value.trim())
+    ElMessage.success(translateUi('已恢复实例监控', 'Instance monitoring restored'))
+  })
 const history = computed(() => (snapshot.value ? JSON.stringify(snapshot.value, null, 2) : ''))
 const taskWindows = ref<InstanceType<typeof ExecutionTaskWindows>>()
 const selectedNodeId = ref('')
@@ -209,6 +219,24 @@ watch(
   { flush: 'sync' },
 )
 const pythonFailures = computed(() => snapshot.value?.failures || [])
+const checkpointStates = computed(() =>
+  Object.entries(executionVariables.value).flatMap(([name, value]) => {
+    if (
+      !name.startsWith('pythonCheckpoint_') ||
+      !value ||
+      typeof value !== 'object' ||
+      !('recoverable' in value)
+    )
+      return []
+    return [
+      {
+        name,
+        recoverable: value.recoverable === true,
+        reason: 'reason' in value && typeof value.reason === 'string' ? value.reason : '',
+      },
+    ]
+  }),
+)
 const previousRunIds = ref<string[]>([])
 const canStart = computed(
   () =>
@@ -218,8 +246,17 @@ const canStart = computed(
 const restartingFailure = computed(() => Boolean(runId.value) && status.value === 'failed')
 const failures = computed(() => {
   const value = executionVariables.value.diagnosticFailures
-  return Array.isArray(value) ? value : []
+  return Array.isArray(value)
+    ? value.filter((entry): entry is DiagnosticFailure => entry && typeof entry === 'object')
+    : []
 })
+function failureDescription(failure: DiagnosticFailure) {
+  if (failure.code === 'route/no-outgoing')
+    return translateUi('排查节点没有后续路径', 'Investigation has no outgoing paths')
+  if (failure.code === 'route/unmatched-branch')
+    return translateUi('判断结果没有匹配出口', 'The decision has no matching outgoing branch')
+  return failure.reason || translateUi('历史失败记录', 'Historical failure record')
+}
 
 // 只在出现新任务时让出画布，轮询相同任务不打断用户重新打开的执行面板。
 watch(
@@ -302,6 +339,42 @@ defineExpose({
     :close-on-click-modal="false"
     size="min(620px, 100vw)"
   >
+    <el-form label-position="top" @submit.prevent="restoreMonitoring">
+      <el-form-item :label="$tu('恢复已有实例监控', 'Resume monitoring an existing instance')">
+        <el-select
+          v-model="monitorId"
+          filterable
+          allow-create
+          default-first-option
+          :disabled="busy"
+          :placeholder="$tu('输入或选择流程实例 ID', 'Enter or select a process instance ID')"
+        >
+          <el-option v-for="id in recentRunIds" :key="id" :label="id" :value="id" />
+        </el-select>
+      </el-form-item>
+      <el-button native-type="submit" :loading="busy" :disabled="!monitorId.trim() || busy">
+        {{ $tu('恢复监控', 'Resume monitoring') }}
+      </el-button>
+      <el-button v-if="runId" :disabled="busy" @click="detach">{{
+        $tu('停止监控', 'Stop monitoring')
+      }}</el-button>
+      <p>
+        {{
+          $tu(
+            '查看已有实例并继续其待办，不会新建执行。',
+            'View an existing instance and continue its pending tasks without starting a new run.',
+          )
+        }}
+      </p>
+      <p v-if="runId">
+        {{
+          $tu(
+            '停止监控不会取消流程实例。',
+            'Stopping monitoring does not cancel the process instance.',
+          )
+        }}
+      </p>
+    </el-form>
     <p>
       {{
         $tu(
@@ -413,6 +486,25 @@ defineExpose({
     <el-alert v-if="errorMessage" type="error" :title="errorMessage" :closable="false" show-icon />
     <template v-if="runId">
       <p>{{ $tu('流程实例', 'Process instance') }}: {{ runId }}</p>
+      <el-alert
+        v-for="state in checkpointStates"
+        :key="state.name"
+        :closable="false"
+        :type="state.recoverable ? 'success' : 'warning'"
+        :title="
+          state.recoverable
+            ? $tu('最近一次业务检查点已保存', 'Latest business checkpoint saved')
+            : $tu(
+                '此工程暂不可从检查点恢复，等待期间会保留会话',
+                'This project cannot restore a checkpoint yet; its session stays available while waiting',
+              )
+        "
+      >
+        <details v-if="state.reason">
+          <summary>{{ $tu('检查点说明', 'Checkpoint details') }}</summary>
+          {{ state.reason }}
+        </details>
+      </el-alert>
       <details v-if="previousRunIds.length">
         <summary>{{ $tu('此前的执行实例 ID', 'Previous execution instance IDs') }}</summary>
         <p>
@@ -469,7 +561,21 @@ defineExpose({
         <summary>
           {{ $tu('排查思路失败记录', 'Failed investigation paths') }} ({{ failures.length }})
         </summary>
-        <pre class="execution-results">{{ JSON.stringify(failures, null, 2) }}</pre>
+        <ol>
+          <li v-for="(failure, index) in failures" :key="failure.id || index">
+            <strong
+              >{{ failure.nodeId || failure.node }} · {{ failureDescription(failure) }}</strong
+            >
+            <p v-if="failure.branch">{{ $tu('判断结果', 'Decision') }}: {{ failure.branch }}</p>
+            <p v-if="failure.path?.length">
+              {{ $tu('排查路径', 'Investigation path') }}: {{ failure.path.join(' → ') }}
+            </p>
+            <details>
+              <summary>{{ $tu('原始记录', 'Raw record') }}</summary>
+              <pre class="execution-results">{{ JSON.stringify(failure, null, 2) }}</pre>
+            </details>
+          </li>
+        </ol>
       </details>
       <el-alert
         v-for="failure in pythonFailures"
