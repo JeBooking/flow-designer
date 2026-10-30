@@ -106,7 +106,7 @@ with tempfile.TemporaryDirectory(prefix='diagnosis-modes-') as directory:
                 # 多次排查由同一个协调器管理独立会话，不能重复订阅同一执行包的主题。
                 if metadata['version'] not in launched_versions:
                     launched_versions.add(metadata['version'])
-                    workers.append(subprocess.Popen([str(ROOT / 'backend/.local/venv/Scripts/python.exe'), '-X', 'utf8',
+                    workers.append(subprocess.Popen([sys.executable, '-X', 'utf8',
                         str(ROOT / 'backend/flowable_worker.py'), str(filename), '--project', str(directory)],
                         cwd=directory, stdout=log, stderr=log))
                 deployment = deploy(bundle['files']['workflow.bpmn20.xml'])

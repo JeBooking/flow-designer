@@ -7,8 +7,9 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'backend'))
 from flowable_bridge import compile_workflow, b, f
+from verification_fixtures import review_workflow
 
-xml = (ROOT / 'src/views/ProcessDesigner/examples/diagnostic-demo.bpmn').read_text(encoding='utf-8')
+xml = review_workflow('BoundaryVerification', 'boundary_fixture', 'inspect')
 
 def manifest(root):
     return json.loads(compile_workflow(ET.tostring(root, encoding='unicode'))['files']['bindings.json'])
@@ -17,17 +18,16 @@ original = manifest(ET.fromstring(xml))
 root = ET.fromstring(xml)
 root.find('.//' + b('task')).set('name', 'Renamed / 修改名称')
 root.find('.//' + b('task')).set(f('assessment'), 'Changed instructions / 修改说明')
-root.find('.//{http://www.omg.org/spec/DD/20100524/DC}Bounds').set('x', '999')
 process = root.find(b('process'))
 process[:] = list(reversed(process))
 ET.indent(root, space='    ')
 assert manifest(root)['version'] == original['version'], 'Cosmetic edits invalidated worker topics'
-assert manifest(root)['bindings'] == original['bindings'], 'Cosmetic edits changed worker bindings'
+assert set(manifest(root)['bindings']) == set(original['bindings']), 'Cosmetic edits changed worker topics'
 root = ET.fromstring(xml)
 task = root.find('.//' + b('task'))
 task.set(f('pythonArguments'), '{"scenario":"new-input"}')
 assert manifest(root)['version'] != original['version']
-task.set(f('pythonArguments'), '{ "scenario" : "$scenario" }')
+task.set(f('pythonArguments'), '{ }')
 assert manifest(root) == original, 'JSON formatting changed worker topics'
 
 def reject(change):

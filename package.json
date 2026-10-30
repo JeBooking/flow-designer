@@ -14,6 +14,7 @@
     "build:prod": "vite build --mode production",
     "preview": "vite preview --open",
     "type-check": "vue-tsc --build",
+    "verify": "python scripts/verify.py",
     "lint": "eslint . --fix",
     "format": "prettier --write src/"
   },

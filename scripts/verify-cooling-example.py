@@ -76,7 +76,7 @@ def verify():
         directory = Path(temporary)
         registration = {'name': 'Cooling verification', 'path': str(PROJECT), 'module': 'cooling_lab.api',
                         'factory': 'CoolingSession',
-                        'python': str(PROJECT / '.venv' / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python'))}
+                        'python': sys.executable}
         server = create_server(0, registry_file=directory / 'registry.json')
         server.RequestHandlerClass.log_message = lambda *args: None
         serving = threading.Thread(target=server.serve_forever, daemon=True)

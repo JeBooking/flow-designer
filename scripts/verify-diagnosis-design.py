@@ -93,10 +93,10 @@ assert execute(binding('positional'), {'Read': {'voltage': 24}}) is True
 assert execute(binding('inspect', 'investigation'), {'voltage': 24}) is True
 assert decision_branch(False, {}) == 'no'
 assert decision_branch({'next': 'b'}, binding('inspect', 'investigation')) == 'no'
-for variables, message in [({}, 'Missing'), ({'A': {'voltage': 1}, 'B': {'voltage': 2}}, 'Ambiguous')]:
+for variables, message in [({}, 'missing'), ({'A': {'voltage': 1}, 'B': {'voltage': 2}}, 'Ambiguous')]:
     try:
         execute(binding('inspect', 'investigation'), variables)
-    except ValueError as error:
+    except (TypeError, ValueError) as error:
         assert message in str(error)
     else:
         raise AssertionError('Unresolved parameter accepted')

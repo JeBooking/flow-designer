@@ -41,7 +41,7 @@ with tempfile.TemporaryDirectory(prefix='diagnosis-parallel-') as directory:
             bundle = compile_workflow(xml)
             bindings = Path(directory, 'bindings.json')
             bindings.write_text(bundle['files']['bindings.json'], encoding='utf-8')
-            worker = subprocess.Popen([str(ROOT / 'backend/.local/venv/Scripts/python.exe'), '-X', 'utf8',
+            worker = subprocess.Popen([sys.executable, '-X', 'utf8',
                 str(ROOT / 'backend/flowable_worker.py'), str(bindings), '--project',
                 str(ROOT / 'backend/examples/diagnostic_demo')], cwd=directory, stdout=log, stderr=log)
             deployment = deploy(bundle['files']['workflow.bpmn20.xml'])
