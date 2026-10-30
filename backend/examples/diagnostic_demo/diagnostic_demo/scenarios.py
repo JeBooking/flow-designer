@@ -1,6 +1,7 @@
 """电源、通信、传感器与压力示例；设备数据和动作均为明确的模拟。"""
 import asyncio
 from diagnostic_demo.api import plot
+__diagnosis_stateless__ = True
 
 
 def chart_result(values, title, threshold, **result):

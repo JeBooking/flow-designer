@@ -7,21 +7,28 @@ import traceback
 
 from diagnostic_components import HumanDecisionRequest
 from python_runtime import (NativeRuntime, decision_branch, display_value, member,
-                            new_execution_trace, public_members)
+                            new_execution_trace, public_members, environment_signature)
 
 
 def main():
     project = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
     root = Path(project['path']).resolve()
     sys.path[:0] = [str(root / 'src'), str(root), str(root.parent)]
-    runtime = NativeRuntime()
+    runtime = NativeRuntime(checkpoint_root=root)
 
     def respond(request_file):
         source = Path(request_file)
         request = json.loads(source.read_text(encoding='utf-8'))
         trace = None
         try:
-            if request.get('operation') == 'debug':
+            if request.get('operation') == 'checkpoint_compatible':
+                response = {'ok': True, 'compatible': runtime.environment_signature == environment_signature()}
+            elif request.get('operation') == 'checkpoint':
+                response = {'ok': True, 'checkpoint': runtime.checkpoint()}
+            elif request.get('operation') == 'restore':
+                runtime.restore_checkpoint(request['checkpoint'])
+                response = {'ok': True}
+            elif request.get('operation') == 'debug':
                 owner = runtime.target(project['module'], project.get('factory', ''), request.get('inputs', {}))
                 if not project.get('factory') and request['function'] not in public_members(owner):
                     raise ValueError('Function is not public in this entry module')

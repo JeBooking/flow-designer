@@ -3,6 +3,7 @@
 from typing import Literal, NoReturn, TypedDict
 
 from diagnostic_components import DecisionComponent, HumanDecisionRequest, decision, human_judgment
+__diagnosis_stateless__ = True
 
 
 __all__ = [

@@ -18,7 +18,8 @@ SHARED_ENGINE = {'verify-flowable.py', 'verify-diagnostic-review.py',
                  'verify-human-decisions.py', 'verify-component-decisions.py'}
 OWN_ENGINE = {'verify-diagnosis-flowable.py', 'verify-diagnosis-execution.py',
               'verify-native-flowable.py', 'verify-cooling-example.py',
-              'verify-action-confirmation.py', 'verify-review-concurrency.py'}
+              'verify-action-confirmation.py', 'verify-review-concurrency.py',
+              'verify-execution-history.py', 'verify-execution-recovery.py'}
 
 
 def main():

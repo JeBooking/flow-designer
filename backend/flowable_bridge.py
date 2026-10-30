@@ -498,14 +498,14 @@ def compile_workflow(xml):
         'bindings.json': json.dumps(manifest, ensure_ascii=False, indent=2)}}
 
 
-def engine_request(path, data=None, content_type='application/json', as_text=False):
+def engine_request(path, data=None, content_type='application/json', as_text=False, timeout=30, method=None):
     base = os.environ.get('FLOWABLE_URL', 'http://127.0.0.1:8080').rstrip('/')
     credentials = os.environ.get('FLOWABLE_USER', 'diagnostic') + ':' + os.environ.get('FLOWABLE_PASSWORD', 'local-demo')
     headers = {'Authorization': 'Basic ' + base64.b64encode(credentials.encode()).decode()}
     if data is not None:
         headers['Content-Type'] = content_type
     try:
-        with urlopen(Request(base + path, data=data, headers=headers), timeout=30) as response:
+        with urlopen(Request(base + path, data=data, headers=headers, method=method), timeout=timeout) as response:
             if response.status == 204:
                 return {}
             return response.read().decode('utf-8', errors='replace') if as_text else json.load(response)

@@ -53,16 +53,8 @@ public class ReviewController {
                                 Map<String, Object> variables, String next, List<String> selectedFlowIds) {}
 
     private JsonNode metadata(ProcessInstance instance) {
-        var process = repository.getBpmnModel(instance.getProcessDefinitionId()).getMainProcess();
-        String documentation = process.getDocumentation();
         try {
-            var extensions = process.getExtensionElements().get("diagnosticExecution");
-            if (extensions != null && !extensions.isEmpty()) {
-                return json.readTree(extensions.get(0).getAttributes().get("value").get(0).getValue());
-            }
-            // 已部署的旧版本仍从说明字段读取，不改变正在执行的实例。
-            return documentation == null ? json.createObjectNode()
-                : json.readTree(documentation).path("diagnosticExecution");
+            return DiagnosticMetadata.read(repository, instance.getProcessDefinitionId(), json);
         } catch (Exception ignored) {
             return json.createObjectNode();
         }
@@ -108,6 +100,7 @@ public class ReviewController {
     private boolean internalVariable(String key) {
         return key.startsWith("executionTrace_") || key.startsWith("diagnostic")
             || key.startsWith("pythonSession_") || key.startsWith("route_")
+            || key.startsWith("pythonCheckpoint_")
             || key.startsWith("human_") || key.startsWith("request_")
             || key.startsWith("selectedRoutes_");
     }

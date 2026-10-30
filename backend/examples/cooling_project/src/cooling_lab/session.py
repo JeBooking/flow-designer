@@ -3,6 +3,7 @@ import asyncio
 from .charts import temperature_chart
 from .models import Measurement
 from .simulator import CoolingRig
+__diagnosis_stateless__ = True
 
 
 class CoolingSession:
@@ -12,6 +13,15 @@ class CoolingSession:
         self.scenario = scenario
         self.device = CoolingRig(device_id, scenario)
         self.initial = self.device.read('initial')
+
+    def __diagnosis_checkpoint__(self):
+        return dict(self.__dict__)
+
+    @classmethod
+    def __diagnosis_restore__(cls, state):
+        instance = object.__new__(cls)
+        instance.__dict__.update(state)
+        return instance
 
     def is_overheated(self) -> bool:
         """判断初始温度是否超过工程 CSV 文件中的阈值。"""

@@ -4,6 +4,7 @@ import math
 import uuid
 
 OUTPUT = Path(__file__).resolve().parent.parent / 'output'
+__diagnosis_stateless__ = True
 
 
 def plot(values, title='Temperature', threshold=70):

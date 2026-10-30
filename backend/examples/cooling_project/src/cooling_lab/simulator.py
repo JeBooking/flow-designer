@@ -7,6 +7,7 @@ from .models import Limits, Measurement
 
 
 PROJECT = Path(__file__).resolve().parents[2]
+__diagnosis_stateless__ = True
 
 
 class CoolingRig:
@@ -27,6 +28,17 @@ class CoolingRig:
         self.repairs = []
         self.sequence = 0
         self.lock = threading.RLock()
+
+    def __diagnosis_checkpoint__(self):
+        # 锁只是进程内同步手段；业务状态需保存，锁在恢复时重新创建。
+        return {name: value for name, value in self.__dict__.items() if name != 'lock'}
+
+    @classmethod
+    def __diagnosis_restore__(cls, state):
+        instance = object.__new__(cls)
+        instance.__dict__.update(state)
+        instance.lock = threading.RLock()
+        return instance
 
     def read(self, channel):
         # 并行分支可以同时采集，快照与序号必须来自同一次受保护的状态读取。

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.time.Instant;
+import java.util.UUID;
 import org.flowable.engine.delegate.DelegateExecution;
 import org.flowable.engine.delegate.ExecutionListener;
 import org.flowable.engine.delegate.JavaDelegate;
@@ -20,14 +21,8 @@ public class DiagnosisScheduler implements JavaDelegate, ExecutionListener {
     public void setOperation(Expression value) { operation = value; }
 
     private JsonNode metadata(DelegateExecution execution) {
-        var process = org.flowable.engine.impl.util.CommandContextUtil.getProcessEngineConfiguration().getRepositoryService()
-            .getBpmnModel(execution.getProcessDefinitionId()).getMainProcess();
-        try {
-            return JSON.readTree(process.getExtensionElements().get("diagnosticExecution")
-                .get(0).getAttributes().get("value").get(0).getValue());
-        } catch (Exception error) {
-            throw new IllegalStateException("Missing diagnostic execution metadata", error);
-        }
+        var repository = org.flowable.engine.impl.util.CommandContextUtil.getProcessEngineConfiguration().getRepositoryService();
+        return DiagnosticMetadata.read(repository, execution.getProcessDefinitionId(), JSON);
     }
 
     private ArrayNode array(Object value) {
@@ -78,7 +73,7 @@ public class DiagnosisScheduler implements JavaDelegate, ExecutionListener {
             return;
         }
         if ("failure".equals(action)) {
-            failure(execution, nodeId);
+            failure(execution, nodeId, node);
             return;
         }
         if ("success".equals(action)) {
@@ -126,7 +121,7 @@ public class DiagnosisScheduler implements JavaDelegate, ExecutionListener {
                     targets.add(entry);
                 }
             }
-            if (targets.isEmpty() && "investigation".equals(kind)) failure(execution, nodeId);
+            if (targets.isEmpty() && "investigation".equals(kind)) failure(execution, nodeId, node);
             // 深度优先队列保留当前 fork 的剩余思路；恢复不会重新生成已经领取的兄弟。
             ArrayNode combined = JSON.createArrayNode();
             combined.addAll(targets);
@@ -147,14 +142,21 @@ public class DiagnosisScheduler implements JavaDelegate, ExecutionListener {
         execution.setVariable("diagnosticQueue", queue);
     }
 
-    private void failure(DelegateExecution execution, String nodeId) {
+    private void failure(DelegateExecution execution, String nodeId, JsonNode node) {
         ArrayNode failures = array(execution.getVariable("diagnosticFailures"));
         ObjectNode record = JSON.createObjectNode();
+        record.put("recordVersion", 1);
+        record.put("id", UUID.randomUUID().toString());
+        record.put("executionId", execution.getId());
+        record.put("source", "route");
+        boolean noOutgoing = node.path("outgoing").isEmpty();
+        record.put("code", noOutgoing ? "route/no-outgoing" : "route/unmatched-branch");
         record.put("node", nodeId);
         record.put("nodeId", nodeId);
         record.set("result", JSON.valueToTree(execution.getVariable(nodeId)));
         record.put("branch", String.valueOf(execution.getVariable("route_" + nodeId)));
-        record.put("reason", "No matching outgoing branch / 判断结果没有匹配出口");
+        record.put("reason", noOutgoing ? "Investigation has no outgoing paths / 排查节点没有后续路径"
+            : "No matching outgoing branch / 判断结果没有匹配出口");
         record.set("path", array(execution.getVariable("diagnosticPath")));
         record.put("time", Instant.now().toString());
         failures.add(record);

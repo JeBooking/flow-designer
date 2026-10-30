@@ -2,19 +2,30 @@
 import asyncio
 from datetime import datetime, timezone
 import importlib
+from importlib import metadata as package_metadata
+import hashlib
 import inspect
 import json
 import threading
 import typing
 import traceback
 import uuid
+import sys
+from pathlib import Path
 
 from diagnostic_components import HumanDecisionRequest
+from session_checkpoint import StateCodec, CheckpointUnavailable
+
+
+def environment_signature():
+    return hashlib.sha256(json.dumps([sys.version,
+        sorted(((item.metadata.get('Name') or '').lower(), item.version)
+               for item in package_metadata.distributions())]).encode()).hexdigest()
 
 
 def business_variables(variables):
     return {key: value for key, value in variables.items()
-            if not key.startswith(('executionTrace_', 'selectedRoutes_'))}
+            if not key.startswith(('executionTrace_', 'selectedRoutes_', 'pythonCheckpoint_'))}
 
 
 def trace_time():
@@ -188,10 +199,13 @@ def display_value(value, seen=None, depth=0):
 
 
 class NativeRuntime:
-    def __init__(self):
+    def __init__(self, checkpoint_root=None):
         self.instances = {}
         self.factory_inputs = {}
         self.results = {}
+        self.modules = set()
+        self.checkpoint_root = checkpoint_root
+        self.environment_signature = environment_signature() if checkpoint_root else None
         self.lock = threading.RLock()
         self.loop = asyncio.new_event_loop()
         self.loop_thread = threading.Thread(target=self.loop.run_forever, daemon=True)
@@ -206,6 +220,8 @@ class NativeRuntime:
 
     def target(self, module_name, factory, variables, trace=None):
         module = importlib.import_module(module_name)
+        with self.lock:
+            self.modules.add(module_name)
         if not factory:
             return module
         key = (module_name, factory)
@@ -292,6 +308,44 @@ class NativeRuntime:
             with self.lock:
                 self.results[binding['nodeId']] = result.data if isinstance(result, HumanDecisionRequest) else result
         return result
+
+    def checkpoint(self):
+        modules = []
+        for name in sorted(self.modules):
+            module = importlib.import_module(name)
+            export = getattr(module, '__diagnosis_checkpoint__', None)
+            restore = getattr(module, '__diagnosis_restore__', None)
+            if callable(export) and callable(restore):
+                state = json.loads(json.dumps(self.wait(export()), allow_nan=False))
+                modules.append({'module': name, 'state': state})
+            elif getattr(module, '__diagnosis_stateless__', False) is True:
+                modules.append({'module': name, 'stateless': True})
+            else:
+                raise CheckpointUnavailable('Module must declare stateless globals or checkpoint hooks / 模块需要声明全局无状态或提供检查点接口: ' + name)
+        state = {'instances': [{'module': name, 'factory': factory, 'value': instance,
+            'inputs': self.factory_inputs[(name, factory)]} for (name, factory), instance in self.instances.items()],
+            'results': self.results}
+        return {'version': 1, 'environmentSignature': self.environment_signature,
+            'modules': modules, 'state': StateCodec(self.checkpoint_root).encode(state)}
+
+    def restore_checkpoint(self, snapshot):
+        if snapshot.get('version') != 1:
+            raise CheckpointUnavailable('Unsupported runtime checkpoint / 不支持此检查点版本')
+        if snapshot.get('environmentSignature') != self.environment_signature:
+            raise CheckpointUnavailable('Python environment changed since checkpoint / 检查点之后 Python 或依赖环境已改变')
+        for entry in snapshot['modules']:
+            module = importlib.import_module(entry['module'])
+            if Path(self.checkpoint_root).resolve() not in Path(module.__file__).resolve().parents:
+                raise CheckpointUnavailable('Checkpoint module is outside the registered project / 检查点模块不属于登记工程')
+            if not entry.get('stateless'):
+                self.wait(module.__diagnosis_restore__(entry['state']))
+            elif getattr(module, '__diagnosis_stateless__', False) is not True:
+                raise CheckpointUnavailable('Module stateless declaration changed / 模块无状态声明已改变')
+            self.modules.add(entry['module'])
+        state = StateCodec(self.checkpoint_root).decode(snapshot['state'])
+        self.instances = {(entry['module'], entry['factory']): entry['value'] for entry in state['instances']}
+        self.factory_inputs = {(entry['module'], entry['factory']): entry['inputs'] for entry in state['instances']}
+        self.results = state['results']
 
     def close(self):
         self.loop.call_soon_threadsafe(self.loop.stop)

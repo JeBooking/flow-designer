@@ -1,5 +1,6 @@
 """按流程实例隔离业务解释器，通信仅传调用信息和展示结果。"""
 import hashlib
+import copy
 import json
 import os
 from pathlib import Path
@@ -10,6 +11,7 @@ import threading
 import time
 import uuid
 import weakref
+from session_checkpoint import CheckpointStore, source_signature
 
 
 def project_key(project):
@@ -152,3 +154,134 @@ class SessionManager:
             keys = [key for key in self.sessions if run_id is None or key[0] == run_id]
             for key in keys:
                 self.sessions.pop(key).close()
+
+
+class DurableSession(PythonSession):
+    def __init__(self, project, timeout, path, saved, reopen):
+        super().__init__(project, timeout)
+        self.state_lock = threading.RLock()
+        self.path = path
+        self.project = dict(project)
+        self.reopen = reopen
+        self.responses = saved.get('responses', {}) if saved else {}
+        self.uncertain = False
+        self.record = saved or {'version': 1, 'sessionId': self.id,
+            'sourceSignature': source_signature(project), 'phase': 'new', 'responses': {}}
+        if saved:
+            self.id = saved['sessionId']
+            result = self._call({'operation': 'restore', 'checkpoint': saved['checkpoint']})
+            if not result['ok']:
+                self.close()
+                raise RuntimeError('Python checkpoint restore failed / Python 检查点恢复失败: ' + result['error']) from RuntimeError(result['traceback'])
+
+    def call(self, request):
+        job_id = request.get('jobId')
+        if not job_id:
+            raise RuntimeError('Durable execution requires a job ID / 持久执行缺少作业 ID')
+        with self.state_lock:
+            reopen = self.closed
+            if not reopen:
+                if self.uncertain:
+                    raise RuntimeError('Python action outcome is uncertain / Python 动作结果未确定，不能继续执行')
+                if job_id in self.responses:
+                    return copy.deepcopy(self.responses[job_id])
+                self.record.update(phase='inflight', responses=self.responses)
+                CheckpointStore.write(self.path, self.record)
+                with self.lock:
+                    self.active_calls += 1
+        if reopen:
+            return self.reopen().call(request)
+        response = None
+        try:
+            response = self._call(request)
+            return response
+        finally:
+            with self.state_lock:
+                if response is not None:
+                    self.responses[job_id] = copy.deepcopy(response)
+                else:
+                    self.uncertain = True
+                with self.lock:
+                    self.active_calls -= 1
+                if not self.active_calls and not self.closed and not self.uncertain:
+                    try:
+                        snapshot = self._call({'operation': 'checkpoint'})
+                        if not snapshot['ok']:
+                            raise RuntimeError(snapshot['error'])
+                        self.record.update(phase='ready', checkpoint=snapshot['checkpoint'], responses=self.responses)
+                        CheckpointStore.write(self.path, self.record)
+                        if response is not None:
+                            response['checkpointStatus'] = {'recoverable': True}
+                    except Exception as error:
+                        self.record.update(phase='unsupported', responses=self.responses)
+                        # 检查点失败不掩盖已发生的业务结果，但不能把旧快照当成可恢复现场。
+                        CheckpointStore.write(self.path, self.record)
+                        if response is not None:
+                            response['checkpointStatus'] = {'recoverable': False, 'reason': str(error)}
+                if self.closed and self.active_calls == 0:
+                    self.finalize()
+
+    def acknowledge(self, job_id):
+        with self.state_lock:
+            self.responses.pop(job_id, None)
+            self.record['responses'] = self.responses
+            CheckpointStore.write(self.path, self.record)
+
+    def suspend(self):
+        with self.state_lock:
+            if self.active_calls or self.responses or self.record['phase'] != 'ready':
+                return False
+            # 等待期间源码或依赖可能已更新；先确认仍可恢复，再释放唯一的原生现场。
+            try:
+                if self.record['sourceSignature'] != source_signature(self.project):
+                    return False
+                compatible = self._call({'operation': 'checkpoint_compatible'})
+                if not compatible['ok'] or not compatible['compatible']:
+                    return False
+            except Exception:
+                return False
+            self.close()
+            return True
+
+
+class DurableSessionManager(SessionManager):
+    def __init__(self, timeout, directory, identity):
+        super().__init__(timeout)
+        self.store = CheckpointStore(directory, identity)
+        self.known_runs = set()
+        self.run_keys = {}
+
+    def get(self, run_id, project, expected=None):
+        key = (run_id, project_key(project))
+        with self.lock:
+            self.known_runs.add(run_id)
+            self.run_keys.setdefault(run_id, set()).add(key[1])
+            session = self.sessions.get(key)
+            if session and session.process.poll() is not None:
+                session.close()
+                del self.sessions[key]
+                session = None
+            if session is None:
+                path = self.store.path(*key)
+                saved = self.store.load(path, project, expected)
+                if expected and saved is None:
+                    raise RuntimeError('Python session lost without a recoverable checkpoint / Python 会话已丢失，且没有可恢复检查点')
+                session = DurableSession(project, self.timeout, path, saved,
+                    lambda: self.get(run_id, project, expected or session.id))
+                self.sessions[key] = session
+            if expected and expected != session.id:
+                raise RuntimeError('Python session belongs to another worker / Python 会话由其他工作进程持有')
+            return session
+
+    def suspend(self, run_id):
+        with self.lock:
+            for key in [key for key in self.sessions if key[0] == run_id]:
+                if self.sessions[key].suspend():
+                    del self.sessions[key]
+
+    def finish(self, run_id):
+        with self.lock:
+            self.close(run_id)
+            for project_id in self.run_keys.pop(run_id, set()):
+                self.store.path(run_id, project_id).unlink(missing_ok=True)
+            self.known_runs.discard(run_id)

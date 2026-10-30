@@ -1,5 +1,6 @@
 """判断组件示例：同一接口补齐业务代码后，无须修改流程图即可自动执行。"""
 from diagnostic_components import DecisionComponent, decision
+__diagnosis_stateless__ = True
 
 
 def review_voltage(reading):

@@ -126,6 +126,9 @@ def verify():
                         assert values['diagnosticStatus'] == ('problemSolved' if actions else 'failed')
                         if not actions:
                             assert len(values['diagnosticFailures']) == len(tasks)
+                            assert all(record['recordVersion'] == 1 and record['source'] == 'route'
+                                and record['code'] == 'route/no-outgoing' and record['executionId']
+                                for record in values['diagnosticFailures'])
                             assert {record['nodeId'] for record in values['diagnosticFailures']} == {
                                 task['nodeId'] for task in tasks}
                 print(json.dumps({'passed': True, 'rounds': 24, 'parallelTasksPerRound': 8,

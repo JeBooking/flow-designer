@@ -157,6 +157,7 @@ with tempfile.TemporaryDirectory(prefix='diagnosis-modes-') as directory:
                 wait_for(lambda: finished(failed))
                 state = variables(failed)
                 assert state['diagnosticStatus'] == 'failed' and len(state['diagnosticFailures']) == 3, state
+                assert {record['code'] for record in state['diagnosticFailures']} == {'route/no-outgoing', 'route/unmatched-branch'}, state
             manual = launch('serial', manual=True)
             pending = wait_for(lambda: review(manual))
             assert pending['mode'] == 'decision' and pending['instructions']['assessment'] == 'Assess', pending

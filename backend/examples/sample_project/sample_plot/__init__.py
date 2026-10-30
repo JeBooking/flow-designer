@@ -2,3 +2,4 @@
 from .charts import summarize, draw_chart
 
 __all__ = ['summarize', 'draw_chart']
+__diagnosis_stateless__ = True

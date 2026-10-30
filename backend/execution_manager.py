@@ -14,6 +14,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 from flowable_worker import select_project
+from flowable_bridge import engine_request
 
 
 BACKEND = Path(__file__).resolve().parent
@@ -79,6 +80,54 @@ class ExecutionManager:
         self.workers = {}
         self.closed = False
         self.closing = threading.Event()
+        self.recovery_thread = None
+
+    def start_recovery(self):
+        if self.recovery_thread:
+            return
+
+        def recover():
+            last_errors = {}
+            definitions = {}
+            while not self.closing.is_set():
+                try:
+                    active_definitions, active_instances = set(), set()
+                    for offset in range(0, 200000, 200):
+                        page = engine_request('/process-api/runtime/process-instances?start=' + str(offset) + '&size=200', timeout=5)
+                        for instance in page['data']:
+                            active_instances.add(instance['id'])
+                            definition_id = instance['processDefinitionId']
+                            if definition_id in active_definitions:
+                                continue
+                            active_definitions.add(definition_id)
+                            if self.closing.is_set():
+                                return
+                            if definition_id in definitions:
+                                identity = definitions[definition_id]
+                                with self.lock:
+                                    worker = self.workers.get(identity)
+                                    if identity is None or worker and worker['process'].poll() is None and worker['ready'].is_file():
+                                        continue
+                            if time.monotonic() - last_errors.get(instance['id'], (0, ''))[0] < 60:
+                                continue
+                            try:
+                                manifest = engine_request('/diagnosis-api/instances/' + instance['id'] + '/recovery', timeout=5)
+                                definitions[definition_id] = self.ensure_worker(json.dumps(manifest))
+                            except Exception as error:
+                                message = str(error)
+                                last_errors[instance['id']] = (time.monotonic(), message)
+                                print('Execution recovery deferred: ' + instance['id'] + ': ' + message, file=sys.stderr, flush=True)
+                        if len(page['data']) < 200:
+                            break
+                    definitions = {key: value for key, value in definitions.items() if key in active_definitions}
+                    last_errors = {key: value for key, value in last_errors.items() if key in active_instances}
+                except Exception as error:
+                    if not self.closing.is_set():
+                        print('Execution recovery scan failed: ' + str(error), file=sys.stderr, flush=True)
+                self.closing.wait(5)
+
+        self.recovery_thread = threading.Thread(target=recover, daemon=True, name='execution-recovery')
+        self.recovery_thread.start()
 
     def ensure_worker(self, bindings):
         if self.closing.is_set():
@@ -118,13 +167,13 @@ class ExecutionManager:
             existing = self.workers.get(identity)
             if existing:
                 if existing['process'].poll() is not None or not existing['ready'].is_file():
-                    # 仅新 start 可重建；旧流程的 pythonSession 标记仍会拒绝重造原生对象。
+                    # 协调器可重新订阅；旧实例只能从校验通过的检查点恢复，不能静默重造对象。
                     self._stop(existing)
                     del self.workers[identity]
                 else:
                     if existing['projects'] != projects or existing['execution'] != execution:
                         raise RuntimeError('Worker execution or registered project changed / 工作进程执行绑定或工程登记已改变')
-                    return
+                    return identity
             for entry in self.workers.values():
                 if set(automatic) & entry['topics']:
                     raise RuntimeError('Topics already belong to a different execution manifest / '
@@ -179,7 +228,7 @@ class ExecutionManager:
                                 or ready.get('version') != manifest.get('version')
                                 or ready.get('topics') != sorted(automatic)):
                             raise RuntimeError('Worker readiness identity mismatch / 工作进程就绪身份不匹配')
-                        return
+                        return identity
                     if time.monotonic() >= deadline:
                         raise TimeoutError('Worker readiness timed out / 等待工作进程就绪超时')
                     time.sleep(0.05)
@@ -236,3 +285,5 @@ class ExecutionManager:
                         errors.append(str(error))
             if errors:
                 raise RuntimeError('Worker cleanup failed: ' + '; '.join(errors))
+        if self.recovery_thread:
+            self.recovery_thread.join(timeout=6)

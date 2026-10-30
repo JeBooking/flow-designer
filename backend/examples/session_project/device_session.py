@@ -1,12 +1,21 @@
 from dataclasses import dataclass
 from typing import Optional
 
+__diagnosis_stateless__ = True
+
 
 @dataclass
 class Reading:
     device_id: str
     voltage: float
     attempt: int
+
+    def __diagnosis_checkpoint__(self):
+        return dict(self.__dict__)
+
+    @classmethod
+    def __diagnosis_restore__(cls, state):
+        return cls(**state)
 
 
 class Device:
@@ -18,6 +27,16 @@ class Device:
         self.recovered = False
         self.attempts = 0
         self.latest: Optional[Reading] = None
+
+    def __diagnosis_checkpoint__(self):
+        return dict(self.__dict__)
+
+    @classmethod
+    def __diagnosis_restore__(cls, state):
+        # 恢复只还原已保存状态，不调用构造过程，也不重发 restore 等设备动作。
+        instance = object.__new__(cls)
+        instance.__dict__.update(state)
+        return instance
 
     def ready(self) -> bool:
         """入口排查确认已进入设备会话，再转入采集动作。"""

@@ -11,12 +11,13 @@ import tempfile
 import threading
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError
-from urllib.parse import urlparse, unquote
+from urllib.parse import urlparse, unquote, parse_qs
 import uuid
 from flowable_bridge import compile_workflow, deploy, engine_request
 from execution_manager import ExecutionManager
 from reference_files import open_reference_file
 from python_sessions import SessionManager
+from execution_history import ExecutionHistory
 
 ROOT = Path(__file__).resolve().parent.parent
 WORKER = Path(__file__).with_name('worker.py')
@@ -149,6 +150,7 @@ def paged_history(path):
 
 
 def make_handler(registry, executions):
+    history = ExecutionHistory(failure_reader=paged_history)
     class Handler(SimpleHTTPRequestHandler):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, directory=str(ROOT / 'dist'), **kwargs)
@@ -177,6 +179,7 @@ def make_handler(registry, executions):
             if route == '/api/health':
                 engine_url = urlparse(os.environ.get('FLOWABLE_URL', 'http://127.0.0.1:8080'))
                 self.reply({'ok': True, 'service': 'diagnosis-backend',
+                            'historyVersion': 1, 'recoveryVersion': 1,
                             'flowableUrl': engine_url._replace(netloc=engine_url.netloc.rsplit('@', 1)[-1]).geturl()})
                 return
             if route == '/api/projects':
@@ -189,19 +192,12 @@ def make_handler(registry, executions):
                     self.reply({'error': 'Invalid run ID'}, 400)
                     return
                 try:
-                    failed = paged_history('/process-api/management/deadletter-jobs?processInstanceId=' + run_id)['data']
-                    for job in failed:
-                        if job.get('exceptionMessage'):
-                            job['traceback'] = engine_request('/process-api/management/deadletter-jobs/' + job['id'] + '/exception-stacktrace', as_text=True)
-                    pending_reviews = engine_request('/diagnosis-api/instances/' + run_id + '/review/tasks')['tasks']
-                    self.reply({'process': engine_request('/process-api/history/historic-process-instances/' + run_id),
-                        'failures': failed,
-                        'variables': paged_history('/process-api/history/historic-variable-instances?processInstanceId=' + run_id),
-                        'activities': paged_history('/process-api/history/historic-activity-instances?processInstanceId=' + run_id + '&sort=startTime&order=asc'),
-                        'pendingReviews': pending_reviews,
-                        'review': pending_reviews[0] if pending_reviews else {'pending': False}})
+                    cursor = parse_qs(urlparse(self.path).query).get('cursor', [None])[0]
+                    if cursor and not re.fullmatch(r'[a-f0-9]{32}', cursor):
+                        raise RuntimeError('Invalid history cursor / 历史游标无效')
+                    self.reply(history.read(run_id, cursor))
                 except RuntimeError as error:
-                    self.reply({'error': str(error)}, 502)
+                    self.reply({'error': str(error)}, 404 if isinstance(error.__cause__, HTTPError) and error.__cause__.code == 404 else 502)
                 return
             if route.startswith('/api/'):
                 self.reply({'error': 'Not found'}, 404)
@@ -226,7 +222,9 @@ def make_handler(registry, executions):
             try:
                 size = int(self.headers.get('Content-Length', '0'))
                 large_routes = {'/api/reference-files/open', '/api/flowable/compile', '/api/flowable/start'}
-                limit = 70 * 1024 * 1024 if urlparse(self.path).path in large_routes else 8 * 1024 * 1024
+                path = urlparse(self.path).path
+                large_match = re.fullmatch(r'/api/flowable/match/[A-Za-z0-9_-]+', path)
+                limit = 70 * 1024 * 1024 if path in large_routes or large_match else 8 * 1024 * 1024
                 if not 0 < size <= limit:
                     raise ValueError(f'Total request must be between 1 byte and {limit // (1024 * 1024)} MB; reduce the combined reference file size')
                 data = json.loads(self.rfile.read(size))
@@ -237,6 +235,13 @@ def make_handler(registry, executions):
                     result = open_reference_file(data)
                 elif parts == ['api', 'flowable', 'compile']:
                     result = {'ok': True, **compile_workflow(data['xml'])}
+                elif len(parts) == 4 and parts[:2] == ['api', 'flowable'] and parts[2] == 'match':
+                    if not re.fullmatch(r'[A-Za-z0-9_-]+', parts[3]):
+                        raise ValueError('Invalid run ID')
+                    manifest = json.loads(compile_workflow(data['xml'])['files']['bindings.json'])
+                    current = history.read(parts[3])
+                    result = {'ok': True, 'matches': manifest['version'] == current['version'],
+                              'nodes': current['nodes']}
                 elif len(parts) == 4 and parts[:2] == ['api', 'flowable'] and parts[2] == 'review':
                     if not re.fullmatch(r'[A-Za-z0-9_-]+', parts[3]):
                         raise ValueError('Invalid run ID')
@@ -300,7 +305,7 @@ def make_handler(registry, executions):
     return Handler
 
 
-def create_server(port=8765, registry_file=None, timeout=120, origins=None):
+def create_server(port=8765, registry_file=None, timeout=120, origins=None, recover=False):
     registry = Registry(registry_file or ROOT / 'backend' / '.local' / 'projects.json', timeout)
     executions = ExecutionManager(registry, timeout)
     server = ThreadingHTTPServer(('127.0.0.1', port), make_handler(registry, executions))
@@ -318,6 +323,8 @@ def create_server(port=8765, registry_file=None, timeout=120, origins=None):
     server.allowed_origins = set(origins or []) | {
         f'http://{host}:{p}' for host in ('localhost', '127.0.0.1')
         for p in (5173, 5174, server.server_port)}
+    if recover:
+        executions.start_recovery()
     return server
 
 
@@ -328,7 +335,7 @@ if __name__ == '__main__':
     parser.add_argument('--registry', type=Path, default=None)
     parser.add_argument('--origin', action='append', default=[])
     args = parser.parse_args()
-    server = create_server(args.port, registry_file=args.registry, timeout=args.timeout, origins=args.origin)
+    server = create_server(args.port, registry_file=args.registry, timeout=args.timeout, origins=args.origin, recover=True)
     print(f'Python backend: http://127.0.0.1:{server.server_port}/vue-bpmn-designer/', flush=True)
     def stop(signum, frame):
         raise SystemExit(0)
